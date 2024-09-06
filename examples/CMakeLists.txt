@@ -13,6 +13,7 @@ add_executable(sectionalCurvature sectionalCurvature.cpp)
 add_executable(registration registration.cpp)
 add_executable(DirichletEnergy DirichletEnergy.cpp)
 add_executable(parametricMCM parametricMCM.cpp)
+add_executable(gravitationBending gravitationBending.cpp)
 
 # link libraries
 target_link_libraries(multires_example PRIVATE GOAST::GOAST)
@@ -40,6 +41,8 @@ target_link_libraries(registration PRIVATE GOAST::GOAST)
 target_link_libraries(DirichletEnergy PRIVATE GOAST::GOAST)
 
 target_link_libraries(parametricMCM PRIVATE GOAST::GOAST)
+
+target_link_libraries(gravitationBending PRIVATE GOAST::GOAST)
 
 # Phasefield example currently requires Ipopt
 if (GOAST_WITH_IPOPT)
