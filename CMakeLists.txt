@@ -4,6 +4,8 @@ cmake_minimum_required(VERSION 3.5)
 project(GOAST VERSION 0.1)
 set(CMAKE_CXX_STANDARD 14)
 
+link_directories(/usr/lib)
+
 ################################################################################
 # general settings
 ################################################################################

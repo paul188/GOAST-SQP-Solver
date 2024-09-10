@@ -7,6 +7,8 @@
  * \tparam ConfiguratorType Underlying types for scales, vectors, matrices, etc.
  * \author Johannssen
  */
+#ifndef  GRAVITATIONALBENDINGENERGY_HH
+#define  GRAVITATIONALBENDINGENERGY_HH
 
 #include "GravitationalEnergy.h"
 #include "SimpleBendingEnergy.h"
@@ -20,62 +22,39 @@ class GravitationalBendingEnergy
   typedef typename ConfiguratorType::VecType VecType;
   typedef typename ConfiguratorType::SparseMatrixType MatrixType;
 
-  const MeshTopologySaver& _topology;
-  const VectorType&  _inactiveGeometry;
-  const bool _activeShellIsDeformed;
-  // Stores the forces applied to the vertices
-  const VectorType &_mass_distribution; 
-  // Factor to scale the potential energy
-  const RealType _factor_gravity;
-  const RealType _factor_bending;
+  RealType _factor_bending;
+  RealType _factor_gravity;
+
   // Objects for the simple bending and the gravitational energy
-  GravitationalEnergy<ConfiguratorType> &_gravitationalEnergy;
-  SimpleBendingEnergy<ConfiguratorType> &_simpleBendingEnergy
+  GravitationalEnergy<ConfiguratorType>& _gravitationalEnergy;
+  SimpleBendingEnergy<ConfiguratorType>& _simpleBendingEnergy;
 
 public:
-  GravitationalBendingEnergy( const MeshTopologySaver& topology,
-                                      const VectorType& InactiveGeometry,
-		                              const bool ActiveShellIsDeformed,
-                                      const VectorType &mass_distribution, 
-                                      RealType factor_gravity = 1.,
-                                      RealType factor_bending = 1. )
-                            : _topology( topology), 
-                              _inactiveGeometry(InactiveGeometry), 
-                              _activeShellIsDeformed( ActiveShellIsDeformed),
-                              _mass_distribution( mass_distribution ),
-                              _factor_gravity( factor_gravity ),
-                              _factor_bending( factor_bending ){
-    
-    this->_gravitational_energy = GravitationalEnergy<ConfiguratorType>(_topology,
-                                                                _inactiveGeometry,
-                                                                _activeShellIsDeformed,
-                                                                _mass_distribution,
-                                                                _factor_gravity)
-    
-    this->_simple_bending_energy = SimpleBendingEnergy<ConfiguratorType>(_topology,
-                                                                _inactiveGeometry,
-		                                                        _activeShellIsDeformed,
-                                                                factor_bending)
-    
-                              }
+  GravitationalBendingEnergy( GravitationalEnergy<ConfiguratorType>& gravitationalEnergy,
+                              SimpleBendingEnergy<ConfiguratorType>& simpleBendingEnergy,
+                              RealType factor_gravity = 1.,
+                              RealType factor_bending = 1.)
+                              : _gravitationalEnergy(gravitationalEnergy),
+                              _simpleBendingEnergy(simpleBendingEnergy),
+                              _factor_bending(factor_bending),
+                              _factor_gravity(factor_gravity){}
 
     //energy evaluation
-  void apply( const VectorType& ActiveGeometry, RealType & Dest ) const {
+  void apply( const VectorType& ActiveGeometry, RealType& Dest ) const override {
 
-    RealType & Dest_gravity;
-    RealType & Dest_bending;
+    RealType Dest_gravity = 0;
+    RealType Dest_bending = 0;
 
+    _gravitationalEnergy.apply(ActiveGeometry, Dest_gravity);
+    _simpleBendingEnergy.apply(ActiveGeometry, Dest_bending);
 
-    _gravitational_energy.apply(ActiveGeometry, Dest_gravity);
-    _simple_bending_energy.apply(ActiveGeometry, Dest_bending);
-
-    Dest = Dest_gravity + Dest_bending;
+    Dest = _factor_gravity*Dest_gravity + _factor_bending*Dest_bending;
   }
 };
 
 //==========================================================================================================
 //! \brief First derivative of GravitationalBendingEnergy w.r.t. the deformed configuration
-//! \author Heeren
+//! \author Johannssen
 template<typename ConfiguratorType>
 class GravitationalBendingEnergyGradientDef : public BaseOp<typename ConfiguratorType::VectorType, typename ConfiguratorType::VectorType> {
 
@@ -84,52 +63,67 @@ class GravitationalBendingEnergyGradientDef : public BaseOp<typename Configurato
 	typedef typename ConfiguratorType::VecType    VecType;
 	typedef typename ConfiguratorType::MatType    MatType;
 
-	const VectorType&  _undefShell;
-	const VectorType& _weight;
-  const MeshTopologySaver& _topology;
-  const VectorType&  _inactiveGeometry;
-  const bool _activeShellIsDeformed;
-  // Stores the forces applied to the vertices
-  const VectorType &_mass_distribution; 
-  // Factor to scale the potential energy
-  const RealType _factor;
+  const RealType _factor_gravity;
+  const RealType _factor_bending;
+  // Objects for the gradients of the simple bending and gravitational energy
+  GravitationalEnergyGradientDef<ConfiguratorType> &_gravitationalEnergyGradient;
+  SimpleBendingGradientDef<ConfiguratorType> &_simpleBendingGradient;
 
 public:
-	GravitationalEnergyGradientDef(const MeshTopologySaver& topology,
-                           const VectorType& InactiveGeometry,
-		                       const bool ActiveShellIsDeformed,
-                           const VectorType &mass_distribution, 
-                           RealType factor = 1. )
-                           : _topology( topology), 
-                           _inactiveGeometry(InactiveGeometry), 
-                           _activeShellIsDeformed( ActiveShellIsDeformed),
-                           _mass_distribution( mass_distribution ),
-                           _factor( factor ) {}
+    GravitationalBendingEnergyGradientDef(
+                           GravitationalEnergyGradientDef<ConfiguratorType>& gravitationalEnergyGradient,
+                           SimpleBendingGradientDef<ConfiguratorType>& simpleBendingGradient,
+                           RealType factor_gravity = 1.,
+                           RealType factor_bending = 1.)
+                           : _factor_gravity( factor_gravity ),
+                           _factor_bending( factor_bending ),
+                           _gravitationalEnergyGradient(gravitationalEnergyGradient),
+                           _simpleBendingGradient(simpleBendingGradient){}
 
-	void apply(const VectorType& defShell, VectorType& Dest) const {
-
-  if( defShell.size() != _undefShell.size() ){
-      std::cerr << "size of deformed = " << defShell.size() << " vs. size of undeformed = " << _undefShell.size() << std::endl;
-      throw BasicException( "GravitationalEnergyGradientDef::apply(): sizes dont match!");
+    void apply(const VectorType& defShell, VectorType& Dest) const {
+        VectorType Dest_gravity;
+        _gravitationalEnergyGradient.apply(defShell, Dest_gravity);
+        VectorType Dest_bending;
+        _simpleBendingGradient.apply(defShell, Dest_bending);
+        Dest = _factor_gravity*Dest_gravity + _factor_bending*Dest_bending;
     }
-
-  if (_mass_distribution.size() != _topology.getNumVertices()){
-    std::cerr << "size of masses = " << _mass_distribution.size() << " vs. size of vertices = " << _topology.getNumVertices() << std::endl;
-    throw BasicException( "GravitationalEnergyGradientDef::apply(): sizes dont match!");
-  }
-
-  if( Dest.size() != _undefShell.size() )
-    Dest.resize( _undefShell.size() );
-
-  Dest.setZero();
-
-  const TriMesh& mesh = _topology.getGrid();
-
-  for (TriMesh::VertexIter v_it = mesh.vertices_begin(); v_it != mesh.vertices_end(); ++v_it) {
-    if (!mesh.is_boundary(*v_it)) {
-        int vertexIdx = v_it->idx();
-        Dest[2*_topology.getNumVertices() + vertexIdx] = VecType(0.,0.,_factor*_mass_distribution[vertexIdx]);
-    }
-  }
-  }
 };
+
+//==========================================================================================================
+//! \brief First derivative of GravitationalBendingEnergy w.r.t. the undeformed configuration
+//! \author Johannssen
+template<typename ConfiguratorType>
+class GravitationalBendingEnergyGradientUndef : public BaseOp<typename ConfiguratorType::VectorType, typename ConfiguratorType::VectorType> {
+
+  typedef typename ConfiguratorType::RealType   RealType;
+	typedef typename ConfiguratorType::VectorType VectorType;
+	typedef typename ConfiguratorType::VecType    VecType;
+	typedef typename ConfiguratorType::MatType    MatType;
+
+    const RealType _factor_gravity;
+    const RealType _factor_bending;
+    // Objects for the gradients of the simple bending and gravitational energy
+    GravitationalEnergyGradientUndef<ConfiguratorType> &_gravitationalEnergyGradient;
+    SimpleBendingGradientUndef<ConfiguratorType> &_simpleBendingGradient;
+
+public:
+    GravitationalBendingEnergyGradientUndef(
+                           GravitationalEnergyGradientUndef<ConfiguratorType>& gravitationalEnergyGradient,
+                           SimpleBendingGradientUndef<ConfiguratorType>& simpleBendingGradient,
+                           RealType factor_gravity = 1.,
+                           RealType factor_bending = 1.)
+                           :_gravitationalEnergyGradient(gravitationalEnergyGradient),
+                            _simpleBendingGradient(simpleBendingGradient),
+                           _factor_gravity( factor_gravity ),
+                           _factor_bending( factor_bending ){}
+
+    void apply(const VectorType& defShell, VectorType& Dest) const {
+        VectorType Dest_gravity;
+        _gravitationalEnergyGradient.apply(defShell, Dest_gravity);
+        VectorType Dest_bending;
+        _simpleBendingGradient.apply(defShell, Dest_bending);
+        Dest = _factor_gravity*Dest_gravity + _factor_bending*Dest_bending;
+    }
+};
+
+#endif

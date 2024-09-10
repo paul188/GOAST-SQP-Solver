@@ -5,6 +5,19 @@
 // This Source Code Form is subject to the terms of the Mozilla
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+/*
+#include <vtk-9.3/vtkPLYReader.h>
+#include <vtk-9.3/vtkActor.h>
+#include <vtk-9.3/vtkRenderer.h>
+#include <vtk-9.3/vtkRenderWindow.h>
+#include <vtk-9.3/vtkRenderWindowInteractor.h>
+#include <vtk-9.3/vtkPolyDataMapper.h>
+#include <vtk-9.3/vtkSmartPointer.h>
+
+*/
+
+
 #include <iostream>
 #include <chrono>
 #include <ctime>
@@ -32,7 +45,7 @@ int main(int argc, char *argv[])
 try{
 
     std::cerr << "=================================================================================" << std::endl;
-    std::cerr << "EXAMPLE ON GRAVITATIONAL POTENTIAL ENERGY" << std::endl;
+    std::cerr << "EXAMPLE ON GRAVITATIONAL POTENTIAL ENERGY TOGETHER WITH BENDING" << std::endl;
     std::cerr << "=================================================================================" << std::endl << std::endl;
 
     // load flat plate [0,1]^2
@@ -70,19 +83,25 @@ try{
 
     //THIS IS MY CODE
     VectorType uniform_mass_dist = VectorType::Ones( plateTopol.getNumVertices() );
+    RealType factor_bending = 1.0;
+    RealType factor_gravity = 1.0;
 
     // set up energies
-    GravitationalEnergy<DefaultConfigurator> E( plateTopol, plateGeomDef, true, uniform_mass_dist, 1.0 );
+    // First set up energies seperately
+    GravitationalEnergy<DefaultConfigurator> E_gravity( plateTopol, plateGeomRef, true, uniform_mass_dist, factor_gravity );
+    SimpleBendingEnergy<DefaultConfigurator> E_bending( plateTopol, plateGeomRef, true, factor_bending );
 
+    // Now combine into GravitationalBendingEnergy
+    GravitationalBendingEnergy<DefaultConfigurator> E( E_gravity, E_bending , factor_gravity, factor_bending);
 
-    //OLD CODE 
+    // Set up the gradients seperately
+    GravitationalEnergyGradientDef<DefaultConfigurator> DE_gravity( plateTopol, plateGeomRef, uniform_mass_dist, factor_gravity );
+    SimpleBendingGradientDef<DefaultConfigurator> DE_bending( plateTopol, plateGeomRef, factor_bending );
 
-    // set up energies
-    DirichletEnergy<DefaultConfigurator> E( plateTopol, plateGeomRef, true );
-    DirichletGradientDef<DefaultConfigurator> DE( plateTopol, plateGeomRef );
-    DirichletHessianDef<DefaultConfigurator> D2E( plateTopol, plateGeomRef );
+    GravitationalBendingEnergyGradientDef<DefaultConfigurator> DE( DE_gravity, DE_bending , factor_gravity, factor_bending);
+
     typename DefaultConfigurator::RealType energy;
-
+    
     // set outer optimization parameters
     OptimizationParameters<DefaultConfigurator> optPars;
     optPars.setGradientIterations( 100 );
@@ -106,12 +125,44 @@ try{
 
     // saving
     setGeometry( plate, plateGeomDef );
-    OpenMesh::IO::write_mesh(plate, "solutionDirichlet_DirectMinimization.ply");
+    OpenMesh::IO::write_mesh(plate, "simpleBentPlateSol_new.ply");
 
   } 
   catch ( BasicException &el ){
-        std::cerr << std::endl << "ERROR!! CAUGHT FOLLOWING EXECEPTION: " << std::endl << el.getMessage() << std::endl << std::flush;
+        std::cerr << std::endl << "ERROR!! CAUGHT FOLLOWING EXCEPTION: " << std::endl << el.getMessage() << std::endl << std::flush;
   }
-  
+
+  //Now, start plotting the solution
+
+/*
+vtkSmartPointer<vtkPLYReader> reader = vtkSmartPointer<vtkPLYReader>::New();
+reader->SetFileName("../data/solutionGravitationalBending_DirectMinimization.ply");
+reader->Update();
+
+// Create a mapper
+vtkSmartPointer<vtkPolyDataMapper> mapper = vtkSmartPointer<vtkPolyDataMapper>::New();
+mapper->SetInputConnection(reader->GetOutputPort());
+
+// Create an actor
+vtkSmartPointer<vtkActor> actor = vtkSmartPointer<vtkActor>::New();
+actor->SetMapper(mapper);
+
+// Create a renderer and render window
+vtkSmartPointer<vtkRenderer> renderer = vtkSmartPointer<vtkRenderer>::New();
+vtkSmartPointer<vtkRenderWindow> renderWindow = vtkSmartPointer<vtkRenderWindow>::New();
+renderWindow->AddRenderer(renderer);
+
+// Create a render window interactor
+vtkSmartPointer<vtkRenderWindowInteractor> renderWindowInteractor = vtkSmartPointer<vtkRenderWindowInteractor>::New();
+renderWindowInteractor->SetRenderWindow(renderWindow);
+
+// Add the actor to the scene
+renderer->AddActor(actor);
+renderer->SetBackground(0.1, 0.2, 0.3); // Background color
+
+// Render and interact
+renderWindow->Render();
+renderWindowInteractor->Start();
+*/
   return 0;
 }

@@ -21,5 +21,6 @@
 #include "DiscreteShells/SimpleBendingEnergy.h"
 #include "DiscreteShells/PeriodicBendingFunctional.h"
 #include "DiscreteShells/GravitationalEnergy.h"
+#include "DiscreteShells/GravitationalBendingEnergy.h"
 
 #endif //DISCRETESHELLS_H

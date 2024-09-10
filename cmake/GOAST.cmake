@@ -6,6 +6,13 @@ cmake_minimum_required(VERSION 3.5)
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/Modules)
 
 ################################################################################
+# Set C++ minimum standard
+################################################################################
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+
+################################################################################
 # Mandatory libraries: Eigen, OpenMesh, and SuiteSparse
 ################################################################################
 find_package(Eigen3 REQUIRED)
@@ -97,13 +104,23 @@ endif ()
 # VTK
 ###########################################
 if (GOAST_WITH_VTK)
-  find_package(VTK REQUIRED)
-  if (VTK_VERSION VERSION_LESS "8.90.0")
-    include(${VTK_USE_FILE})
-  endif ()
 
-  target_include_directories(GOAST_all SYSTEM INTERFACE ${VTK_INCLUDE_DIRS})
+  set(VTK_DIR "/usr/local/lib/cmake/vtk-9.3")
+  set(VTK_INCLUDE_DIRS /usr/local/include/vtk-9.3)
+  set(VTK_LIBRARIES /usr/local/lib/vtk-9.3)
+
+  find_package(VTK 9.3 REQUIRED COMPONENTS
+  IOImage
+  CommonCore)
+
+  # VTK 7 headers are in /usr/include/vtk-7.1
+  #target_include_directories(GOAST_all SYSTEM INTERFACE /usr/include/vtk-9.3)
   target_link_libraries(GOAST_all INTERFACE ${VTK_LIBRARIES})
+  target_include_directories(GOAST_all SYSTEM INTERFACE ${VTK_INCLUDE_DIRS})
+
+  message(STATUS "VTK include directories: ${VTK_INCLUDE_DIRS}")
+  message(STATUS "VTK library directories: ${VTK_LIBRARIES}")
+
 
   target_compile_definitions(GOAST_all INTERFACE GOAST_WITH_VTK)
 endif ()

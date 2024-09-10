@@ -11,6 +11,9 @@
  * \tparam ConfiguratorType Underlying types for scales, vectors, matrices, etc.
  * \author Johannssen
  */
+#ifndef  GRAVITATIONALENERGY_HH
+#define  GRAVITATIONALENERGY_HH
+
 template<typename ConfiguratorType>
 class GravitationalEnergy
         : public BaseOp<typename ConfiguratorType::VectorType, typename ConfiguratorType::RealType> {
@@ -66,7 +69,6 @@ public:
       VecType coords_def, coords_undef;
       getXYZCoord<VectorType, VecType>( *defShellP, coords_def, vertexIdx);
       getXYZCoord<VectorType, VecType>( *undefShellP, coords_undef, vertexIdx);
-
       Dest += _mass_distribution[vertexIdx] * ( coords_def[3] - coords_undef[3] );
     }
 
@@ -76,7 +78,7 @@ public:
 
 //==========================================================================================================
 //! \brief First derivative of GravitationalEnergy w.r.t. the deformed configuration
-//! \author Heeren
+//! \author Johannssen
 template<typename ConfiguratorType>
 class GravitationalEnergyGradientDef : public BaseOp<typename ConfiguratorType::VectorType, typename ConfiguratorType::VectorType> {
 
@@ -86,10 +88,7 @@ class GravitationalEnergyGradientDef : public BaseOp<typename ConfiguratorType::
 	typedef typename ConfiguratorType::MatType    MatType;
 
 	const VectorType&  _undefShell;
-	const VectorType& _weight;
   const MeshTopologySaver& _topology;
-  const VectorType&  _inactiveGeometry;
-  const bool _activeShellIsDeformed;
   // Stores the forces applied to the vertices
   const VectorType &_mass_distribution; 
   // Factor to scale the potential energy
@@ -97,13 +96,11 @@ class GravitationalEnergyGradientDef : public BaseOp<typename ConfiguratorType::
 
 public:
 	GravitationalEnergyGradientDef(const MeshTopologySaver& topology,
-                           const VectorType& InactiveGeometry,
-		                       const bool ActiveShellIsDeformed,
-                           const VectorType &mass_distribution, 
+                           const VectorType& undefShell,
+                           const VectorType& mass_distribution, 
                            RealType factor = 1. )
                            : _topology( topology), 
-                           _inactiveGeometry(InactiveGeometry), 
-                           _activeShellIsDeformed( ActiveShellIsDeformed),
+                            _undefShell(undefShell),
                            _mass_distribution( mass_distribution ),
                            _factor( factor ) {}
 
@@ -129,7 +126,8 @@ public:
   for (TriMesh::VertexIter v_it = mesh.vertices_begin(); v_it != mesh.vertices_end(); ++v_it) {
     if (!mesh.is_boundary(*v_it)) {
         int vertexIdx = v_it->idx();
-        Dest[2*_topology.getNumVertices() + vertexIdx] = VecType(0.,0.,_factor*_mass_distribution[vertexIdx]);
+        //Only the z-component of the force is non-zero
+        Dest[2*_topology.getNumVertices() + vertexIdx] = _factor*_mass_distribution[vertexIdx];
     }
   }
   }
@@ -138,4 +136,68 @@ public:
 //Gradient w.r.t. the undeformed configuration is just the negative of the gradient w.r.t. the deformed configuration
 // so VecType(0.,0.,-_factor*_mass_distribution[vertexIdx]);
 
+//==========================================================================================================
+//! \brief First derivative of GravitationalBendingEnergy w.r.t. the undeformed configuration
+//! \author Johannssen
+template<typename ConfiguratorType>
+class GravitationalEnergyGradientUndef : public BaseOp<typename ConfiguratorType::VectorType, typename ConfiguratorType::VectorType> {
+
+  typedef typename ConfiguratorType::RealType   RealType;
+	typedef typename ConfiguratorType::VectorType VectorType;
+	typedef typename ConfiguratorType::VecType    VecType;
+	typedef typename ConfiguratorType::MatType    MatType;
+
+	const VectorType&  _undefShell;
+	const VectorType& _weight;
+  const MeshTopologySaver& _topology;
+  const VectorType&  _inactiveGeometry;
+  const bool _activeShellIsDeformed;
+  // Stores the forces applied to the vertices
+  const VectorType &_mass_distribution; 
+  // Factor to scale the potential energy
+  const RealType _factor;
+
+public:
+	GravitationalEnergyGradientUndef(const MeshTopologySaver& topology,
+                           const VectorType& InactiveGeometry,
+		                       const bool ActiveShellIsDeformed,
+                           const VectorType &mass_distribution, 
+                           RealType factor = 1. )
+                           : _topology( topology), 
+                           _inactiveGeometry(InactiveGeometry), 
+                           _activeShellIsDeformed( ActiveShellIsDeformed),
+                           _mass_distribution( mass_distribution ),
+                           _factor( factor ) {}
+
+	void apply(const VectorType& defShell, VectorType& Dest) const {
+
+  if( defShell.size() != _undefShell.size() ){
+      std::cerr << "size of deformed = " << defShell.size() << " vs. size of undeformed = " << _undefShell.size() << std::endl;
+      throw BasicException( "GravitationalEnergyGradientUndef::apply(): sizes dont match!");
+    }
+
+  if (_mass_distribution.size() != _topology.getNumVertices()){
+    std::cerr << "size of masses = " << _mass_distribution.size() << " vs. size of vertices = " << _topology.getNumVertices() << std::endl;
+    throw BasicException( "GravitationalEnergyGradientUndef::apply(): sizes dont match!");
+  }
+
+  if( Dest.size() != _undefShell.size() )
+    Dest.resize( _undefShell.size() );
+
+  Dest.setZero();
+
+  const TriMesh& mesh = _topology.getGrid();
+
+  for (TriMesh::VertexIter v_it = mesh.vertices_begin(); v_it != mesh.vertices_end(); ++v_it) {
+    if (!mesh.is_boundary(*v_it)) {
+        int vertexIdx = v_it->idx();
+        Dest[2*_topology.getNumVertices() + vertexIdx] = VecType(0.,0.,-_factor*_mass_distribution[vertexIdx]);
+    }
+  }
+  }
+};
+
+// Only the sign changed in the apply method. Everything else is identical when takin gradient w.r.t. undeformed instead of deformed configuration
+
 //All second derivatives are zero, since the potential energy is linear in the deformation
+#endif
