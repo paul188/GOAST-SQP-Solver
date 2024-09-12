@@ -91,14 +91,19 @@ try{
     GravitationalEnergy<DefaultConfigurator> E_gravity( plateTopol, plateGeomRef, true, uniform_mass_dist, factor_gravity );
     SimpleBendingEnergy<DefaultConfigurator> E_bending( plateTopol, plateGeomRef, true, factor_bending );
 
-    // Now combine into GravitationalBendingEnergy
-    GravitationalBendingEnergy<DefaultConfigurator> E( E_gravity, E_bending , factor_gravity, factor_bending);
+    VectorType weights(2);  // Initialize a dynamic-size vector with 2 elements
+    weights[0] = factor_gravity;
+    weights[1] = factor_bending;
+
+    // add gravitational energy and bending energy
+    AdditionOp<DefaultConfigurator> E( weights, E_gravity, E_bending );
 
     // Set up the gradients seperately
     GravitationalEnergyGradientDef<DefaultConfigurator> DE_gravity( plateTopol, plateGeomRef, uniform_mass_dist, factor_gravity );
     SimpleBendingGradientDef<DefaultConfigurator> DE_bending( plateTopol, plateGeomRef, factor_bending );
 
-    GravitationalBendingEnergyGradientDef<DefaultConfigurator> DE( DE_gravity, DE_bending , factor_gravity, factor_bending);
+    // add the gradients
+    AdditionGradient<DefaultConfigurator> DE( weights, DE_gravity, DE_bending );
 
     typename DefaultConfigurator::RealType energy;
     
@@ -125,44 +130,11 @@ try{
 
     // saving
     setGeometry( plate, plateGeomDef );
-    OpenMesh::IO::write_mesh(plate, "simpleBentPlateSol_new.ply");
+    OpenMesh::IO::write_mesh(plate, "simpleBentPlateGravity.ply");
 
   } 
   catch ( BasicException &el ){
         std::cerr << std::endl << "ERROR!! CAUGHT FOLLOWING EXCEPTION: " << std::endl << el.getMessage() << std::endl << std::flush;
   }
-
-  //Now, start plotting the solution
-
-/*
-vtkSmartPointer<vtkPLYReader> reader = vtkSmartPointer<vtkPLYReader>::New();
-reader->SetFileName("../data/solutionGravitationalBending_DirectMinimization.ply");
-reader->Update();
-
-// Create a mapper
-vtkSmartPointer<vtkPolyDataMapper> mapper = vtkSmartPointer<vtkPolyDataMapper>::New();
-mapper->SetInputConnection(reader->GetOutputPort());
-
-// Create an actor
-vtkSmartPointer<vtkActor> actor = vtkSmartPointer<vtkActor>::New();
-actor->SetMapper(mapper);
-
-// Create a renderer and render window
-vtkSmartPointer<vtkRenderer> renderer = vtkSmartPointer<vtkRenderer>::New();
-vtkSmartPointer<vtkRenderWindow> renderWindow = vtkSmartPointer<vtkRenderWindow>::New();
-renderWindow->AddRenderer(renderer);
-
-// Create a render window interactor
-vtkSmartPointer<vtkRenderWindowInteractor> renderWindowInteractor = vtkSmartPointer<vtkRenderWindowInteractor>::New();
-renderWindowInteractor->SetRenderWindow(renderWindow);
-
-// Add the actor to the scene
-renderer->AddActor(actor);
-renderer->SetBackground(0.1, 0.2, 0.3); // Background color
-
-// Render and interact
-renderWindow->Render();
-renderWindowInteractor->Start();
-*/
   return 0;
 }

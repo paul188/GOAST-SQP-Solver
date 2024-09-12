@@ -53,24 +53,39 @@ protected:
   const MeshTopologySaver& _topology;
   const VectorType&  _inactiveGeometry;
   const bool _activeShellIsDeformed;
-  RealType _weight;
+  const VectorType& _weight;
 
 public:
 
   SimpleBendingEnergy( const MeshTopologySaver& topology,
                        const VectorType& InactiveGeometry,
-		       const bool ActiveShellIsDeformed,
-                       RealType Weight = 1. ) 
+		                   const bool ActiveShellIsDeformed,
+                       const VectorType& Weight) 
   : _topology( topology), 
     _inactiveGeometry(InactiveGeometry), 
     _activeShellIsDeformed( ActiveShellIsDeformed),
     _weight(Weight){}
+
+    SimpleBendingEnergy( const MeshTopologySaver& topology,
+                       const VectorType& InactiveGeometry,
+		                   const bool ActiveShellIsDeformed,
+                      RealType Weight = 1. ) 
+  : _topology( topology), 
+    _inactiveGeometry(InactiveGeometry),
+    _weight(VectorType::Constant(_topology.getNumEdges(),Weight)), 
+    _activeShellIsDeformed( ActiveShellIsDeformed)
+    {}
 
   // energy evaluation
   void apply( const VectorType& ActiveGeometry, RealType & Dest ) const {
 
     if( ActiveGeometry.size() != _inactiveGeometry.size() ){
       std::cerr << "size of active = " << ActiveGeometry.size() << " vs. size of inactive = " << _inactiveGeometry.size() << std::endl;
+      throw BasicException( "SimpleBendingEnergy::apply(): sizes dont match!");
+    }
+
+    if (_weight.size() != _topology.getNumEdges()){
+      std::cerr << "size of weight = " << _weight.size() << " vs. size of edges = " << _topology.getNumEdges() << std::endl;
       throw BasicException( "SimpleBendingEnergy::apply(): sizes dont match!");
     }
     
@@ -121,7 +136,7 @@ public:
       RealType elengthSqr( dotProduct(Pj-Pi,Pj-Pi) );       
       delTheta -= getDihedralAngle( Pi, Pj, Pk, Pl );      
       // CAUTION We omitted a factor 3 here!
-      Dest += _weight * delTheta * delTheta * elengthSqr / vol;
+      Dest += _weight[edgeIdx] * delTheta * delTheta * elengthSqr / vol;
       
 #ifdef DEBUGMODE
       if( std::isnan( Dest ) ){
@@ -140,9 +155,14 @@ public:
     }
   }
 
-  void setWeight(double Eta)
+  void setWeight(const VectorType& Eta)
   {
 	  _weight = Eta;
+  }
+
+  void setWeight(double Eta)
+  {
+    _weight.setConstant(Eta);
   }
  };
 
@@ -159,12 +179,17 @@ class SimpleBendingGradientDef : public BaseOp<typename ConfiguratorType::Vector
 
 	const MeshTopologySaver& _topology;
 	const VectorType&  _undefShell;
-	RealType _weight;
+	const VectorType& _weight;
 
 public:
 	SimpleBendingGradientDef(const MeshTopologySaver& topology,
 		const VectorType& undefShell,
-		RealType Weight = 1.) : _topology(topology), _undefShell(undefShell), _weight(Weight) {}
+		const VectorType& Weight) : _topology(topology), _undefShell(undefShell), _weight(Weight) {}
+
+  SimpleBendingGradientDef(const MeshTopologySaver& topology,
+		const VectorType& undefShell,
+		RealType Weight = 1.) : _topology(topology), _undefShell(undefShell),
+    _weight(VectorType::Constant(_topology.getNumEdges(),Weight)) {}
 
 	void apply(const VectorType& defShell, VectorType& Dest) const {
 
@@ -216,7 +241,7 @@ public:
 
 			// compute weighted differnce of dihedral angles
 			delTheta -= getDihedralAngle(Pi, Pj, Pk, Pl);
-			delTheta *= -2. * _weight * elengthSqr / vol;
+			delTheta *= -2. * _weight[edgeIdx] * elengthSqr / vol;
 
 			// compute first derivatives of dihedral angle
 			VecType thetak, thetal, thetai, thetaj;
@@ -252,10 +277,15 @@ public:
 		}
 	}
 
-	void setWeight(double Eta)
+	void setWeight(const VectorType& Eta)
 	{
 		_weight = Eta;
 	}
+
+  void setWeight(RealType Eta)
+  {
+    _weight.setConstant(Eta);
+  }
 };
 
 
@@ -276,20 +306,32 @@ protected:
   
   const MeshTopologySaver& _topology;
   const VectorType& _undefShell;
-  RealType _factor;
+  const VectorType& _weight;
   mutable int _rowOffset, _colOffset;
   
 public:
   SimpleBendingHessianDef( const MeshTopologySaver& topology,
                            const VectorType& undefShell,
-			   const RealType Weight = 1.,
+			                     const VectorType& Weight,
                            int rowOffset = 0, 
                            int colOffset = 0 ) : 
                     _topology( topology),
                     _undefShell(undefShell), 
-                    _factor( Weight ), 
+                    _weight( Weight ), 
                     _rowOffset(rowOffset), 
                     _colOffset(colOffset)  {}
+
+
+  SimpleBendingHessianDef( const MeshTopologySaver& topology,
+                           const VectorType& undefShell,
+			                     const RealType Weight = 1.,
+                           int rowOffset = 0, 
+                           int colOffset = 0 ) : 
+                    _topology( topology),
+                    _undefShell(undefShell), 
+                    _rowOffset(rowOffset), 
+                    _colOffset(colOffset)  ,
+                    _weight(VectorType::Constant(_topology.getNumEdges(),Weight)) {}
     
   void setRowOffset( int rowOffset ) const {
         _rowOffset = rowOffset;
@@ -327,7 +369,11 @@ public:
       std::cerr << "size of undef = " << _undefShell.size() << " vs. size of def = " << defShell.size() << std::endl;
       throw BasicException( "SimpleBendingHessianDef::pushTriplets(): sizes dont match!");
     }
-  
+
+    if( _weight.size() != _topology.getNumEdges() ){
+      std::cerr << "size of weight = " << _weight.size() << " vs. size of edges = " << _topology.getNumEdges() << std::endl;
+      throw BasicException( "SimpleBendingHessianDef::pushTriplets(): sizes dont match!");
+    }
   
     // run over all edges and fill triplets
     for ( int edgeIdx = 0; edgeIdx < _topology.getNumEdges(); ++edgeIdx ){
@@ -384,81 +430,86 @@ public:
       getHessThetaKK( Pi, Pj, Pk, aux );
       tensorProduct.makeTensorProduct( thetak, thetak );
       getWeightedMatrixSum( factor, tensorProduct, delThetaDouble, aux, H);
-      localToGlobal( tripletList, pk, pk, H ); 
+      localToGlobal( tripletList, pk, pk, H , _weight[edgeIdx]); 
             
       //ik & ki (Hki = Hik)
       getHessThetaIK( Pi, Pj, Pk, aux);
       tensorProduct.makeTensorProduct( thetai, thetak );
       getWeightedMatrixSum( factor, tensorProduct, delThetaDouble, aux, H);
-      localToGlobal( tripletList, pi, pk, H );
+      localToGlobal( tripletList, pi, pk, H , _weight[edgeIdx]);
       
       //jk & kj (Hkj = Hjk)
       getHessThetaJK( Pi, Pj, Pk, aux );
       tensorProduct.makeTensorProduct( thetaj, thetak );
       getWeightedMatrixSum( factor, tensorProduct, delThetaDouble, aux, H);
-      localToGlobal( tripletList, pj, pk, H );       
+      localToGlobal( tripletList, pj, pk, H , _weight[edgeIdx]);       
       
       //ll
       getHessThetaKK( Pj, Pi, Pl, aux );
       tensorProduct.makeTensorProduct( thetal, thetal );
       getWeightedMatrixSum( factor, tensorProduct, delThetaDouble, aux, H);
-      localToGlobal( tripletList, pl, pl, H );      
+      localToGlobal( tripletList, pl, pl, H , _weight[edgeIdx]);      
       
       //il & li (Hli = Hil)
       getHessThetaJK( Pj, Pi, Pl, aux);
       tensorProduct.makeTensorProduct( thetai, thetal );
       getWeightedMatrixSum( factor, tensorProduct, delThetaDouble, aux, H);
-      localToGlobal( tripletList, pi, pl, H );
+      localToGlobal( tripletList, pi, pl, H , _weight[edgeIdx]);
       
       //jl & lj (Hlj = Hjl)
       getHessThetaIK( Pj, Pi, Pl, aux);
       tensorProduct.makeTensorProduct( thetaj, thetal );
       getWeightedMatrixSum( factor, tensorProduct, delThetaDouble, aux, H);
-      localToGlobal( tripletList, pj, pl, H );            
+      localToGlobal( tripletList, pj, pl, H , _weight[edgeIdx]);            
       
       //kl/lk: Hkl = 0 and Hlk = 0
       tensorProduct.makeTensorProduct( thetak, thetal );
       tensorProduct *= factor;
-      localToGlobal( tripletList, pk, pl, tensorProduct );
+      localToGlobal( tripletList, pk, pl, tensorProduct , _weight[edgeIdx]);
         
       //ii  
       getHessThetaII( Pi, Pj, Pk, Pl, aux );
       tensorProduct.makeTensorProduct( thetai, thetai );
       getWeightedMatrixSum( factor, tensorProduct, delThetaDouble, aux, H);
-      localToGlobal( tripletList, pi, pi, H );              
+      localToGlobal( tripletList, pi, pi, H , _weight[edgeIdx]);              
 
       //jj
       getHessThetaII( Pj, Pi, Pl, Pk, aux );       
       tensorProduct.makeTensorProduct( thetaj, thetaj );
       getWeightedMatrixSum( factor, tensorProduct, delThetaDouble, aux, H);
-      localToGlobal( tripletList, pj, pj, H );
+      localToGlobal( tripletList, pj, pj, H , _weight[edgeIdx]);
 
       //ij & ji (Hij = Hji)
       getHessThetaJI( Pi, Pj, Pk, Pl, H );     
       H *= delThetaDouble;
       tensorProduct.makeTensorProduct( thetai, thetaj );
       H.addMultiple( tensorProduct, factor );
-      localToGlobal( tripletList, pi, pj, H );  
+      localToGlobal( tripletList, pi, pj, H , _weight[edgeIdx]);  
 
     }
   }
 
-  void setWeight(double Eta)
+  void setWeight(const VectorType& Eta)
   {
-	  _factor = Eta;
+	  _weight = Eta;
+  }
+
+  void setWeight(RealType Eta)
+  {
+    _weight.setConstant(Eta);
   }
 
 protected:
-  void localToGlobal( TripletListType& tripletList, int k, int l, const MatType& localMatrix ) const {
+  void localToGlobal( TripletListType& tripletList, int k, int l, const MatType& localMatrix , RealType weight) const {
     int numV = _topology.getNumVertices();
       for( int i = 0; i < 3; i++ )
         for( int j = 0; j < 3; j++ )
-          tripletList.push_back( TripletType( _rowOffset + i*numV + k, _colOffset + j*numV + l, _factor * localMatrix(i,j) ) );	
+          tripletList.push_back( TripletType( _rowOffset + i*numV + k, _colOffset + j*numV + l, weight * localMatrix(i,j) ) );	
 	
     if( k != l){
       for( int i = 0; i < 3; i++ )
         for( int j = 0; j < 3; j++ )
-          tripletList.push_back( TripletType( _rowOffset + i*numV + l, _colOffset + j*numV + k, _factor * localMatrix(j,i) ) );
+          tripletList.push_back( TripletType( _rowOffset + i*numV + l, _colOffset + j*numV + k, weight * localMatrix(j,i) ) );
     }
   }
   
@@ -477,12 +528,18 @@ class SimpleBendingGradientUndef : public BaseOp<typename ConfiguratorType::Vect
 
   const MeshTopologySaver& _topology;
   const VectorType&  _defShell;
-  const RealType _weight;
+  const VectorType& _weight;
 
 public:
 SimpleBendingGradientUndef( const MeshTopologySaver& topology,
                             const VectorType& defShell,
-                            const RealType Weight = 1. ) : _topology( topology), _defShell(defShell), _weight(Weight) {}
+                            const VectorType& Weight) : _topology( topology), _defShell(defShell), _weight(Weight) {}
+
+SimpleBendingGradientUndef( const MeshTopologySaver& topology,
+                            const VectorType& defShell,
+                            const RealType Weight = 1. ) : _topology( topology), 
+                            _defShell(defShell),
+                            _weight(VectorType::Constant(_topology.getNumEdges(),Weight)){}
 
 void apply( const VectorType& undefShell, VectorType& Dest ) const {
 
@@ -490,6 +547,12 @@ void apply( const VectorType& undefShell, VectorType& Dest ) const {
       std::cerr << "size of undef = " << undefShell.size() << " vs. size of def = " << _defShell.size() << std::endl;
       throw BasicException( "SimpleBendingGradientUndef::apply(): sizes dont match!");
   }
+
+  if( _weight.size() != _topology.getNumEdges() ){
+    std::cerr << "size of weight = " << _weight.size() << " vs. size of edges = " << _topology.getNumEdges() << std::endl;
+    throw BasicException( "SimpleBendingGradientUndef::apply(): sizes dont match!");
+  }
+
       
   if( Dest.size() != undefShell.size() )
     Dest.resize( undefShell.size() );
@@ -567,10 +630,10 @@ void apply( const VectorType& undefShell, VectorType& Dest ) const {
       
       // assemble in global vector
       for( int i = 0; i < 3; i++ ){
-        Dest[i*_topology.getNumVertices() + pi] += _weight * gradi[i];
-        Dest[i*_topology.getNumVertices() + pj] += _weight * gradj[i];
-        Dest[i*_topology.getNumVertices() + pk] += _weight * gradk[i];
-        Dest[i*_topology.getNumVertices() + pl] += _weight * gradl[i];
+        Dest[i*_topology.getNumVertices() + pi] += _weight[edgeIdx] * gradi[i];
+        Dest[i*_topology.getNumVertices() + pj] += _weight[edgeIdx] * gradj[i];
+        Dest[i*_topology.getNumVertices() + pk] += _weight[edgeIdx] * gradk[i];
+        Dest[i*_topology.getNumVertices() + pl] += _weight[edgeIdx] * gradl[i];
       }
 
   }
@@ -595,15 +658,26 @@ protected:
 
   const MeshTopologySaver& _topology;
   const VectorType& _defShell;
-  const RealType _factor;
+  const VectorType& _weight;
   mutable int _rowOffset, _colOffset;
   
 public:
   SimpleBendingHessianUndef( const MeshTopologySaver& topology,
                              const VectorType& defShell,
-			     const RealType Factor = 1., 
+			                       const VectorType& Weight,
                              int rowOffset = 0, 
-                             int colOffset = 0 ) : _topology( topology), _defShell(defShell), _factor( Factor ), _rowOffset(rowOffset),  _colOffset(colOffset){}
+                             int colOffset = 0 ) : _topology( topology), _defShell(defShell), _weight( Weight ), _rowOffset(rowOffset),  _colOffset(colOffset){}
+
+  SimpleBendingHessianUndef( const MeshTopologySaver& topology,
+                             const VectorType& defShell,
+			                       const RealType Weight,
+                             int rowOffset = 0, 
+                             int colOffset = 0 ) : 
+                             _topology( topology),
+                              _defShell(defShell),
+                              _weight(VectorType::Constant(_topology.getNumEdges(),Weight)), 
+                              _rowOffset(rowOffset),
+                                _colOffset(colOffset){}
     
   void setRowOffset( int rowOffset ) const {
         _rowOffset = rowOffset;
@@ -720,14 +794,14 @@ public:
       getHessAreaKK( Pi, Pj, Pk, auxMat );
       H.addMultiple( auxMat, -0.5 * delTheta * delTheta * elengthSqr / vol );           
       H *= 2./vol;
-      localToGlobal( tripletList, pk, pk, H ); 
+      localToGlobal( tripletList, pk, pk, H , _weight[edgeIdx]); 
       
       //lk      
       H.makeTensorProduct( thetal, auxVec );            
       auxMat.makeTensorProduct( areal, auxVec );
       H.addMultiple( auxMat, -1. * delTheta / vol );               
       H *= 2./vol;
-      localToGlobal( tripletList, pl, pk, H ); 
+      localToGlobal( tripletList, pl, pk, H, _weight[edgeIdx]); 
 
       //ik
       H.makeTensorProduct( thetai, auxVec );            
@@ -740,7 +814,7 @@ public:
       auxMat.makeTensorProduct( e, temp );
       H.addMultiple( auxMat, -1.*delTheta );      
       H *= 2./vol;
-      localToGlobal( tripletList, pi, pk, H ); 
+      localToGlobal( tripletList, pi, pk, H , _weight[edgeIdx]); 
 
       //jk
       H.makeTensorProduct( thetaj, auxVec );            
@@ -753,7 +827,7 @@ public:
       auxMat.makeTensorProduct( e, temp );
       H.addMultiple( auxMat, delTheta );         
       H *= 2./vol;
-      localToGlobal( tripletList, pj, pk, H ); 
+      localToGlobal( tripletList, pj, pk, H , _weight[edgeIdx]); 
       
       //*l
       getWeightedVectorSum<RealType>( elengthSqr, thetal, -1. * delTheta * elengthSqr / vol, areal,  auxVec );
@@ -768,7 +842,7 @@ public:
       getHessAreaKK( Pj, Pi, Pl, auxMat );
       H.addMultiple( auxMat, -0.5 * delTheta * delTheta * elengthSqr / vol );           
       H *= 2./vol;
-      localToGlobal( tripletList, pl, pl, H ); 
+      localToGlobal( tripletList, pl, pl, H , _weight[edgeIdx]); 
       
       //il
       H.makeTensorProduct( thetai, auxVec );            
@@ -781,7 +855,7 @@ public:
       auxMat.makeTensorProduct( e, temp );
       H.addMultiple( auxMat, -1.*delTheta );  
       H *= 2./vol;
-      localToGlobal( tripletList, pi, pl, H ); 
+      localToGlobal( tripletList, pi, pl, H , _weight[edgeIdx]); 
       
       //jl
       H.makeTensorProduct( thetaj, auxVec );            
@@ -794,7 +868,7 @@ public:
       auxMat.makeTensorProduct( e, temp );
       H.addMultiple( auxMat, delTheta );  
       H *= 2./vol;
-      localToGlobal( tripletList, pj, pl, H ); 
+      localToGlobal( tripletList, pj, pl, H , _weight[edgeIdx]); 
       
       //*j
       getWeightedVectorSum<RealType>( elengthSqr, thetaj, -1. * delTheta * elengthSqr / vol, areaj,  auxVec );
@@ -816,7 +890,7 @@ public:
       H.addMultiple( auxMat, delTheta ); 
       H.addToDiagonal( delTheta * delTheta );
       H *= 2./vol;
-      localToGlobal( tripletList, pj, pj, H );
+      localToGlobal( tripletList, pj, pj, H , _weight[edgeIdx]);
       
       //ij     
       auxVec.addMultiple( e, delTheta );
@@ -834,7 +908,7 @@ public:
       H.addMultiple( auxMat, -1.*delTheta ); 
       H.addToDiagonal( -1. * delTheta * delTheta );
       H *= 2./vol;
-      localToGlobal( tripletList, pi, pj, H );
+      localToGlobal( tripletList, pi, pj, H , _weight[edgeIdx]);
       
       //*i
       getWeightedVectorSum<RealType>( elengthSqr, thetai, -1. * delTheta * elengthSqr / vol, areai,  auxVec );
@@ -856,22 +930,22 @@ public:
       H.addMultiple( auxMat, -1.*delTheta ); 
       H.addToDiagonal( delTheta * delTheta );
       H *= 2./vol;
-      localToGlobal( tripletList, pi, pi, H );     
+      localToGlobal( tripletList, pi, pi, H , _weight[edgeIdx]);     
     }
     
   }
 
 protected:
-  void localToGlobal( TripletListType& tripletList, int k, int l, const MatType& localMatrix ) const {
+  void localToGlobal( TripletListType& tripletList, int k, int l, const MatType& localMatrix , RealType weight) const {
     int numV = _topology.getNumVertices();
       for( int i = 0; i < 3; i++ )
         for( int j = 0; j < 3; j++ )
-          tripletList.push_back( TripletType( _rowOffset + i*numV + k, _colOffset + j*numV + l, _factor * localMatrix(i,j) ) );	
+          tripletList.push_back( TripletType( _rowOffset + i*numV + k, _colOffset + j*numV + l, weight * localMatrix(i,j) ) );	
 	
     if( k != l)
       for( int i = 0; i < 3; i++ )
         for( int j = 0; j < 3; j++ )
-          tripletList.push_back( TripletType( _rowOffset + i*numV + l, _colOffset + j*numV + k, _factor * localMatrix(j,i) ) );
+          tripletList.push_back( TripletType( _rowOffset + i*numV + l, _colOffset + j*numV + k, weight * localMatrix(j,i) ) );
   }
   
 };
@@ -895,17 +969,26 @@ protected:
   const MeshTopologySaver& _topology;
   const VectorType&  _inactiveGeometry;
   const bool _activeShellIsDeformed, _firstDerivWRTDef;
-  const RealType _factor;
+  const VectorType& _weight;
   mutable int _rowOffset, _colOffset;
 
 public:
-SimpleBendingHessianMixed( const MeshTopologySaver& topology,
+  SimpleBendingHessianMixed( const MeshTopologySaver& topology,
                            const VectorType& InactiveGeometry,
-		           const bool ActiveShellIsDeformed,
-			   const bool FirstDerivWRTDef,
-			   const RealType Factor = 1., 
+		                       const bool ActiveShellIsDeformed,
+			                     const bool FirstDerivWRTDef,
+			                     const VectorType& Weight, 
                            int rowOffset = 0, 
-                           int colOffset = 0 ) : _topology( topology), _inactiveGeometry(InactiveGeometry), _activeShellIsDeformed(ActiveShellIsDeformed), _firstDerivWRTDef( FirstDerivWRTDef ), _factor( Factor ),_rowOffset(rowOffset), _colOffset(colOffset){}
+                           int colOffset = 0 ) : _topology( topology), _inactiveGeometry(InactiveGeometry), _activeShellIsDeformed(ActiveShellIsDeformed), _firstDerivWRTDef( FirstDerivWRTDef ), _weight(Weight),_rowOffset(rowOffset), _colOffset(colOffset){}
+
+  SimpleBendingHessianMixed( const MeshTopologySaver& topology,
+                           const VectorType& InactiveGeometry,
+		                       const bool ActiveShellIsDeformed,
+			                     const bool FirstDerivWRTDef,
+			                     const RealType Weight = 1., 
+                           int rowOffset = 0, 
+                           int colOffset = 0 ) : _topology( topology), _inactiveGeometry(InactiveGeometry), _activeShellIsDeformed(ActiveShellIsDeformed), _firstDerivWRTDef( FirstDerivWRTDef ),_rowOffset(rowOffset), _colOffset(colOffset),
+                           _weight(VectorType::Constant(_topology.getNumEdges(),Weight)){}
     
   void setRowOffset( int rowOffset ) const {
         _rowOffset = rowOffset;
@@ -1033,7 +1116,7 @@ SimpleBendingHessianMixed( const MeshTopologySaver& topology,
         for( int n = 0; n < 4; n++ ){
           MatType matrix;
           matrix.makeTensorProduct( defGrads[m], undefGrads[n] );
-          localToGlobal( tripletList, idx[m], idx[n], matrix );
+          localToGlobal( tripletList, idx[m], idx[n], matrix , _weight[edgeIdx]);
         }
       }
 
@@ -1043,19 +1126,19 @@ SimpleBendingHessianMixed( const MeshTopologySaver& topology,
   }
 
 protected:
-  void localToGlobal( TripletListType& tripletList, int k, int l, const MatType& localMatrix ) const {
+  void localToGlobal( TripletListType& tripletList, int k, int l, const MatType& localMatrix , RealType weight) const {
     int numV = _topology.getNumVertices();
     if( _firstDerivWRTDef )   
     {
       for( int i = 0; i < 3; i++ )
         for( int j = 0; j < 3; j++ )
-          tripletList.push_back( TripletType( _rowOffset + i*numV + k, _colOffset + j*numV + l, _factor * localMatrix(i,j) ) );
+          tripletList.push_back( TripletType( _rowOffset + i*numV + k, _colOffset + j*numV + l, weight * localMatrix(i,j) ) );
     }
     else
     {
       for( int i = 0; i < 3; i++ )
         for( int j = 0; j < 3; j++ )
-          tripletList.push_back( TripletType( _rowOffset + i*numV + l, _colOffset + j*numV + k, _factor * localMatrix(j,i) ) );
+          tripletList.push_back( TripletType( _rowOffset + i*numV + l, _colOffset + j*numV + k, weight * localMatrix(j,i) ) );
     }
   }
   
