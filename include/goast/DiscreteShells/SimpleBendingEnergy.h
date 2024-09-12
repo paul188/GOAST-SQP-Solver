@@ -53,7 +53,7 @@ protected:
   const MeshTopologySaver& _topology;
   const VectorType&  _inactiveGeometry;
   const bool _activeShellIsDeformed;
-  const VectorType& _weight;
+  const VectorType _weight;
 
 public:
 
@@ -179,7 +179,7 @@ class SimpleBendingGradientDef : public BaseOp<typename ConfiguratorType::Vector
 
 	const MeshTopologySaver& _topology;
 	const VectorType&  _undefShell;
-	const VectorType& _weight;
+	const VectorType _weight;
 
 public:
 	SimpleBendingGradientDef(const MeshTopologySaver& topology,
@@ -306,7 +306,7 @@ protected:
   
   const MeshTopologySaver& _topology;
   const VectorType& _undefShell;
-  const VectorType& _weight;
+  const VectorType _weight;
   mutable int _rowOffset, _colOffset;
   
 public:
@@ -528,7 +528,7 @@ class SimpleBendingGradientUndef : public BaseOp<typename ConfiguratorType::Vect
 
   const MeshTopologySaver& _topology;
   const VectorType&  _defShell;
-  const VectorType& _weight;
+  const VectorType _weight;
 
 public:
 SimpleBendingGradientUndef( const MeshTopologySaver& topology,
@@ -658,7 +658,7 @@ protected:
 
   const MeshTopologySaver& _topology;
   const VectorType& _defShell;
-  const VectorType& _weight;
+  const VectorType _weight;
   mutable int _rowOffset, _colOffset;
   
 public:
@@ -969,7 +969,7 @@ protected:
   const MeshTopologySaver& _topology;
   const VectorType&  _inactiveGeometry;
   const bool _activeShellIsDeformed, _firstDerivWRTDef;
-  const VectorType& _weight;
+  const VectorType _weight;
   mutable int _rowOffset, _colOffset;
 
 public:
@@ -1160,24 +1160,23 @@ protected:
   typedef std::vector<TripletType> TripletListType;
   
   const MeshTopologySaver& _topology;
-  RealType _bendWeight;
+  const VectorType _bendWeight;
 
 public:
-  SimpleBendingDeformation( const MeshTopologySaver& Topology, RealType bendWeight ) : _topology( Topology ), _bendWeight( bendWeight ) {}
+  SimpleBendingDeformation( const MeshTopologySaver& Topology, RealType bendWeight ) : _topology( Topology ), _bendWeight( VectorType::Constant(_topology.getNumEdges(), bendWeight) ){}
   
+  SimpleBendingDeformation( const MeshTopologySaver& Topology, const VectorType& bendWeight ) : _topology( Topology ), _bendWeight( bendWeight){}
+
   void applyEnergy ( const VectorType& UndeformedGeom, const VectorType& DeformedGeom, RealType & Dest ) const {
-    SimpleBendingEnergy<ConfiguratorType>( _topology, UndeformedGeom, true ).apply( DeformedGeom, Dest );
-    Dest *= _bendWeight;
+    SimpleBendingEnergy<ConfiguratorType>( _topology, UndeformedGeom, true , _bendWeight).apply( DeformedGeom, Dest );
   }
   
   void applyUndefGradient ( const VectorType& UndeformedGeom, const VectorType& DeformedGeom, VectorType& Dest ) const {
-    SimpleBendingGradientUndef<ConfiguratorType>( _topology, DeformedGeom ).apply( UndeformedGeom, Dest );
-    Dest *= _bendWeight;
+    SimpleBendingGradientUndef<ConfiguratorType>( _topology, DeformedGeom , _bendWeight).apply( UndeformedGeom, Dest );
   }
   
   void applyDefGradient ( const VectorType& UndeformedGeom, const VectorType& DeformedGeom, VectorType& Dest ) const {
-    SimpleBendingGradientDef<ConfiguratorType>( _topology, UndeformedGeom ).apply( DeformedGeom, Dest );
-    Dest *= _bendWeight;
+    SimpleBendingGradientDef<ConfiguratorType>( _topology, UndeformedGeom , _bendWeight).apply( DeformedGeom, Dest );
   }
   
   void pushTripletsDefHessian ( const VectorType& UndefGeom, const VectorType& DefGeom, TripletListType& triplets, int rowOffset, int colOffset, RealType factor = 1.0 ) const {
