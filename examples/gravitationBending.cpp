@@ -6,18 +6,6 @@
 // Public License v. 2.0. If a copy of the MPL was not distributed
 // with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-/*
-#include <vtk-9.3/vtkPLYReader.h>
-#include <vtk-9.3/vtkActor.h>
-#include <vtk-9.3/vtkRenderer.h>
-#include <vtk-9.3/vtkRenderWindow.h>
-#include <vtk-9.3/vtkRenderWindowInteractor.h>
-#include <vtk-9.3/vtkPolyDataMapper.h>
-#include <vtk-9.3/vtkSmartPointer.h>
-
-*/
-
-
 #include <iostream>
 #include <chrono>
 #include <ctime>
@@ -62,11 +50,15 @@ try{
     for( int i = 0; i < plateTopol.getNumVertices(); i++ ){
         VecType coords;
         getXYZCoord<VectorType, VecType>( plateGeomDef, coords, i);
-        if( coords[0] < 0.05 || coords[0] > 0.95 )
+        if( coords[0] == 0.0 || coords[0] == 1.0 )
             bdryMask.push_back( i );
         // deform part of boundary
-        if( coords[0] > 0.95 ) {
-            coords[2] += 0.2;
+        if( coords[0] == 0.0 ) {
+            coords[0] += 0.2;
+            setXYZCoord<VectorType, VecType>( plateGeomDef, coords, i);
+        }
+        else{
+            coords[0] -= 0.2;
             setXYZCoord<VectorType, VecType>( plateGeomDef, coords, i);
         }
     }
@@ -78,63 +70,88 @@ try{
     setGeometry( plate, plateGeomDef );
     OpenMesh::IO::write_mesh(plate, "initPlate.ply");
 
+    // FIRST CONSIDER SOLUTION OF EULER-LAGRANGE-EQUATION
+    std::cerr << "\n\na) OPTIMIZATION BY SOLVING EULER-LAGRANGE EQUATION" << std::endl;
+    // assemble and mask stiffness matrix
+    std::cerr << "Set up system matrix" << std::endl;
+    typename DefaultConfigurator::SparseMatrixType StiffnessMatrix;
+    computeStiffnessMatrix<DefaultConfigurator>( plateTopol, plateGeomRef, StiffnessMatrix );
+    applyMaskToMajor<typename DefaultConfigurator::SparseMatrixType>( bdryMask, StiffnessMatrix );
+
+    // set up right hand side and mask
+    VectorType rhs( plateGeomDef );
+    rhs.setZero();
+    for( int i = 0; i < bdryMask.size(); i++ )
+        rhs[bdryMask[i]] = plateGeomDef[bdryMask[i]];
+
+    // set up linear system and solve
+    std::cerr << "Set up linear system and solve" << std::endl;
+    LinearSolver<DefaultConfigurator> directSolver;
+    VectorType solution;
+    directSolver.prepareSolver( StiffnessMatrix );
+    directSolver.backSubstitute( rhs, solution );
+
+    // get final energy value
+    computeStiffnessMatrix<DefaultConfigurator>( plateTopol, plateGeomRef, StiffnessMatrix );
+    VectorType temp = StiffnessMatrix * solution;
+    std::cerr << "Final Dirichlet energy = " << 0.5 * temp.dot( solution ) << std::endl;
+
+    // saving
+    setGeometry( plate, solution );
+    OpenMesh::IO::write_mesh(plate, "solutionDirichlet_EulerLangrange.ply");
+
     // NOW CONSIDER SOLUTION BY OPTIMIZING DIRICHLET ENERGY
     std::cerr << "\n\nb) OPTIMIZATION BY DIRECT MINIMIZATION" << std::endl;
 
-    //THIS IS MY CODE
-    VectorType uniform_mass_dist = VectorType::Ones( plateTopol.getNumVertices() );
-    RealType factor_bending = 1.0;
-    RealType factor_gravity = 1.0;
-
-    // set up energies
-    // First set up energies seperately
-    GravitationalEnergy<DefaultConfigurator> E_gravity( plateTopol, plateGeomRef, true, uniform_mass_dist, factor_gravity );
-    SimpleBendingEnergy<DefaultConfigurator> E_bending( plateTopol, plateGeomRef, true, factor_bending );
-
-    VectorType weights(2);  // Initialize a dynamic-size vector with 2 elements
-    weights[0] = factor_gravity;
-    weights[1] = factor_bending;
-
-    // add gravitational energy and bending energy
-    AdditionOp<DefaultConfigurator> E( weights, E_gravity, E_bending );
-
-    // Set up the gradients seperately
-    GravitationalEnergyGradientDef<DefaultConfigurator> DE_gravity( plateTopol, plateGeomRef, uniform_mass_dist, factor_gravity );
-    SimpleBendingGradientDef<DefaultConfigurator> DE_bending( plateTopol, plateGeomRef, factor_bending );
-
-    // add the gradients
-    AdditionGradient<DefaultConfigurator> DE( weights, DE_gravity, DE_bending );
+    SimpleBendingEnergy<DefaultConfigurator> E_bend( plateTopol, plateGeomRef, true );
+    SimpleBendingGradientDef<DefaultConfigurator> DE_bend( plateTopol, plateGeomRef );
+    SimpleBendingHessianDef<DefaultConfigurator> D2E_bend( plateTopol, plateGeomRef );
 
     typename DefaultConfigurator::RealType energy;
-    
+
+    NonlinearMembraneEnergy<DefaultConfigurator> E_mem( plateTopol, plateGeomRef, true );
+    NonlinearMembraneGradientDef<DefaultConfigurator> DE_mem( plateTopol, plateGeomRef );
+    NonlinearMembraneHessianDef<DefaultConfigurator> D2E_mem( plateTopol, plateGeomRef );
+
+    RealType factor_membrane = 1.0;
+    RealType factor_bending = 1.0;
+    //RealType factor_gravity = 1.0;
+
+    VectorType factors(2);
+    factors[0] = factor_membrane;
+    factors[1] = factor_bending;
+    //factors[2] = factor_gravity;
+
+    AdditionOp<DefaultConfigurator> E_tot( factors, E_mem, E_bend);
+    AdditionGradient<DefaultConfigurator> DE_tot( factors, DE_mem, DE_bend);
+
     // set outer optimization parameters
     OptimizationParameters<DefaultConfigurator> optPars;
-    optPars.setGradientIterations( 100 );
-    optPars.setBFGSIterations( 50 );
-    optPars.setNewtonIterations( 10 );
+    optPars.setGradientIterations( 1000);
+    optPars.setBFGSIterations( 10000 );
+    optPars.setNewtonIterations( 1000 );
     optPars.setQuietMode( SHOW_TERMINATION_INFO );
-    
-    // optmization with gradient descent
-    std::cerr << "Start gradient descent... " << std::endl;
     VectorType initialization = plateGeomDef;
-    GradientDescent<DefaultConfigurator> GD( E, DE, optPars );
+
+    std::cerr << "Start gradient descent... " << std::endl;
+    GradientDescent<DefaultConfigurator> GD( E_tot, DE_tot,optPars);
     GD.setBoundaryMask( bdryMask );
     GD.solve( initialization, plateGeomDef );
 
-    // optmization with BFGS
     std::cerr << "Start Quasi-Newton... " << std::endl;
     initialization = plateGeomDef;
-    QuasiNewtonBFGS<DefaultConfigurator> QNM( E, DE, optPars );
+    QuasiNewtonBFGS<DefaultConfigurator> QNM( E_tot, DE_tot, optPars);
     QNM.setBoundaryMask( bdryMask );
     QNM.solve( initialization, plateGeomDef );
 
     // saving
     setGeometry( plate, plateGeomDef );
-    OpenMesh::IO::write_mesh(plate, "simpleBentPlateGravity.ply");
+    OpenMesh::IO::write_mesh(plate, "gravitationBendingSolution.ply");
 
   } 
   catch ( BasicException &el ){
-        std::cerr << std::endl << "ERROR!! CAUGHT FOLLOWING EXCEPTION: " << std::endl << el.getMessage() << std::endl << std::flush;
+        std::cerr << std::endl << "ERROR!! CAUGHT FOLLOWING EXECEPTION: " << std::endl << el.getMessage() << std::endl << std::flush;
   }
+  
   return 0;
 }

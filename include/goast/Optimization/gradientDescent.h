@@ -202,7 +202,7 @@ public:
     if ( _quietMode != SUPERQUIET ) {
       std::cout << "=========================================================================================" << std::endl;
       std::cout << "Finished gradient descent after " << iterations << " steps (max. steps = " << _maxIterations << ", tol = " << _stopEpsilon << ")." << std::endl;
-      std::cout << "Final stepsize = " << std::scientific << tau << ", energy = " << energyNew << ", error = " << error << std::endl;
+      std::cout << "Final stepsize = " << std::scientific << std::setprecision(15) << tau << ", energy = " << energyNew << ", error = " << error << std::endl;
       std::cout << "=========================================================================================" << std::endl;
     }
 

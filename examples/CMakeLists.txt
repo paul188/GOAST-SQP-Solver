@@ -14,6 +14,8 @@ add_executable(registration registration.cpp)
 add_executable(DirichletEnergy DirichletEnergy.cpp)
 add_executable(parametricMCM parametricMCM.cpp)
 add_executable(gravitationBending gravitationBending.cpp)
+add_executable(gravitationBending2 gravitationBending2.cpp)
+add_executable(gravitationBending3 gravitationBending3.cpp)
 
 # link libraries
 target_link_libraries(multires_example PRIVATE GOAST::GOAST)
@@ -43,6 +45,10 @@ target_link_libraries(DirichletEnergy PRIVATE GOAST::GOAST)
 target_link_libraries(parametricMCM PRIVATE GOAST::GOAST)
 
 target_link_libraries(gravitationBending PRIVATE GOAST::GOAST)
+
+target_link_libraries(gravitationBending2 PRIVATE GOAST::GOAST)
+
+target_link_libraries(gravitationBending3 PRIVATE GOAST::All)
 
 # Phasefield example currently requires Ipopt
 if (GOAST_WITH_IPOPT)

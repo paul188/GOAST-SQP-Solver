@@ -105,9 +105,9 @@ try{
     std::cerr << "\n\nb) OPTIMIZATION BY DIRECT MINIMIZATION" << std::endl;
 
     // set up energies
-    DirichletEnergy<DefaultConfigurator> E( plateTopol, plateGeomRef, true );
-    DirichletGradientDef<DefaultConfigurator> DE( plateTopol, plateGeomRef );
-    DirichletHessianDef<DefaultConfigurator> D2E( plateTopol, plateGeomRef );
+    SimpleBendingEnergy<DefaultConfigurator> E( plateTopol, plateGeomRef, true );
+    SimpleBendingGradientDef<DefaultConfigurator> DE( plateTopol, plateGeomRef );
+    SimpleBendingHessianDef<DefaultConfigurator> D2E( plateTopol, plateGeomRef );
     typename DefaultConfigurator::RealType energy;
 
     // set outer optimization parameters

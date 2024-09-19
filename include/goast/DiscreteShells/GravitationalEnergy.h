@@ -30,18 +30,22 @@ class GravitationalEnergy
   const VectorType &_mass_distribution; 
   // Factor to scale the potential energy
   const RealType _factor;
+  // Which direction does the gravity act in (default is z-direction)
+  const VectorType &_gravityDirection;
 
 public:
   GravitationalEnergy( const MeshTopologySaver& topology,
                                       const VectorType& InactiveGeometry,
 		                                  const bool ActiveShellIsDeformed,
                                       const VectorType &mass_distribution, 
-                                      RealType factor = 1. )
+                                      const VectorType &gravityDirection,
+                                      RealType factor = 1.)
                             : _topology( topology), 
                               _inactiveGeometry(InactiveGeometry), 
                               _activeShellIsDeformed( ActiveShellIsDeformed),
                               _mass_distribution( mass_distribution ),
-                              _factor( factor ) {}
+                              _factor( factor ),
+                              _gravityDirection( gravityDirection ) {}
 
   //energy evaluation
   void apply( const VectorType& ActiveGeometry, RealType & Dest ) const {
@@ -56,23 +60,33 @@ public:
       throw BasicException( "GravitationalEnergy::apply(): sizes dont match!");
     }
 
+    if( _gravityDirection.size() != 3 ){
+      std::cerr << "size of gravity direction = " << _gravityDirection.size() << std::endl;
+      throw BasicException( "GravitationalEnergy::apply(): gravity direction must be 3-dimensional!");
+    }
+
+    typename DefaultConfigurator::SparseMatrixType StiffnessMatrix;
+    computeStiffnessMatrix<DefaultConfigurator>( _topology, _inactiveGeometry, StiffnessMatrix );
+    // In contrast to Dirichlet Energy, mass acting on boundary will be taken into account
+    // even though the boundary is fixed and does not move
+    // -> so not calling applyMaskToMajor()
+
+    // Next, initialize the vector of displacements
+    MatrixType Displacements(3,_topology.getNumVertices());
+    typename DefaultConfigurator::SparseMatrixType MassMatrix = _mass_distribution.asDiagonal();
+
     const VectorType* defShellP   = _activeShellIsDeformed ? &ActiveGeometry : &_inactiveGeometry;
     const VectorType* undefShellP = _activeShellIsDeformed ? &_inactiveGeometry : &ActiveGeometry;
-    
-    Dest = 0.;
 
     for( int vertexIdx = 0; vertexIdx < _topology.getNumVertices(); ++vertexIdx ){
-      //Does this also sum over boundary vertices? That should be excluded, since we consider them
-      // under fixed boundary conditions. MIGHT NEED TO BE FIXED
-      // But should be fine, the boundary vertices should not move
-
       VecType coords_def, coords_undef;
       getXYZCoord<VectorType, VecType>( *defShellP, coords_def, vertexIdx);
       getXYZCoord<VectorType, VecType>( *undefShellP, coords_undef, vertexIdx);
-      Dest += _mass_distribution[vertexIdx] * ( coords_def[3] - coords_undef[3] );
+      Displacements.col(vertexIdx) = coords_def - coords_undef;
     }
-
-    Dest *= _factor;
+    
+    //Dest = _factor*(_gravityDirection.transpose()*(Displacements.transpose()*MassMatrix*StiffnessMatrix));
+    Dest = _factor*(_gravityDirection*Displacements*MassMatrix*StiffnessMatrix).sum();  
   }
 };
 
@@ -93,16 +107,20 @@ class GravitationalEnergyGradientDef : public BaseOp<typename ConfiguratorType::
   const VectorType &_mass_distribution; 
   // Factor to scale the potential energy
   const RealType _factor;
+  // Which direction does the gravity act in (default is z-direction)
+  const VectorType &_gravityDirection;
 
 public:
 	GravitationalEnergyGradientDef(const MeshTopologySaver& topology,
                            const VectorType& undefShell,
                            const VectorType& mass_distribution, 
-                           RealType factor = 1. )
+                           const VectorType &gravityDirection,
+                           RealType factor = 1.)
                            : _topology( topology), 
                             _undefShell(undefShell),
                            _mass_distribution( mass_distribution ),
-                           _factor( factor ) {}
+                           _factor( factor ),
+                           _gravityDirection( gravityDirection) {}
 
 	void apply(const VectorType& defShell, VectorType& Dest) const {
 
@@ -116,25 +134,34 @@ public:
     throw BasicException( "GravitationalEnergyGradientDef::apply(): sizes dont match!");
   }
 
+  if( _gravityDirection.size() != 3 ){
+      std::cerr << "size of gravity direction = " << _gravityDirection.size() << std::endl;
+      throw BasicException( "GravitationalEnergy::apply(): gravity direction must be 3-dimensional!");
+  }
+
   if( Dest.size() != _undefShell.size() )
     Dest.resize( _undefShell.size() );
 
   Dest.setZero();
 
-  const TriMesh& mesh = _topology.getGrid();
+  typename DefaultConfigurator::SparseMatrixType MassMatrix = _mass_distribution.asDiagonal();
 
-  for (TriMesh::VertexIter v_it = mesh.vertices_begin(); v_it != mesh.vertices_end(); ++v_it) {
-    if (!mesh.is_boundary(*v_it)) {
-        int vertexIdx = v_it->idx();
-        //Only the z-component of the force is non-zero
-        Dest[2*_topology.getNumVertices() + vertexIdx] = _factor*_mass_distribution[vertexIdx];
+
+  typename DefaultConfigurator::SparseMatrixType StiffnessMatrix;
+  computeStiffnessMatrix<DefaultConfigurator>( _topology, _inactiveGeometry, StiffnessMatrix );
+
+  // Now calculate the matrix mass_matrix * stiffness_matrix
+  MatrixType AreaMassMatrix = MassMatrix*StiffnessMatrix;
+
+  for (int i = 0; i < 3; i++){
+    for(int vertexIdx = 0; vertexIdx < _topology.getNumVertices(); vertexIdx++){
+				Dest[i*_topology.getNumVertices() + vertexIdx] = _factor*_gravityDirection[i]*AreaMassMatrix.row(vertexIdx).sum();
     }
-  }
+		}
   }
 };
 
 //Gradient w.r.t. the undeformed configuration is just the negative of the gradient w.r.t. the deformed configuration
-// so VecType(0.,0.,-_factor*_mass_distribution[vertexIdx]);
 
 //==========================================================================================================
 //! \brief First derivative of GravitationalBendingEnergy w.r.t. the undeformed configuration
@@ -148,37 +175,40 @@ class GravitationalEnergyGradientUndef : public BaseOp<typename ConfiguratorType
 	typedef typename ConfiguratorType::MatType    MatType;
 
 	const VectorType&  _undefShell;
-	const VectorType& _weight;
   const MeshTopologySaver& _topology;
-  const VectorType&  _inactiveGeometry;
-  const bool _activeShellIsDeformed;
   // Stores the forces applied to the vertices
   const VectorType &_mass_distribution; 
   // Factor to scale the potential energy
   const RealType _factor;
-
+  // Which direction does the gravity act in (default is z-direction)
+  const VectorType &_gravityDirection;
 public:
 	GravitationalEnergyGradientUndef(const MeshTopologySaver& topology,
-                           const VectorType& InactiveGeometry,
-		                       const bool ActiveShellIsDeformed,
-                           const VectorType &mass_distribution, 
-                           RealType factor = 1. )
+                           const VectorType& undefShell,
+                           const VectorType& mass_distribution, 
+                           const VectorType &gravityDirection,
+                           RealType factor = 1.)
                            : _topology( topology), 
-                           _inactiveGeometry(InactiveGeometry), 
-                           _activeShellIsDeformed( ActiveShellIsDeformed),
+                            _undefShell(undefShell),
                            _mass_distribution( mass_distribution ),
-                           _factor( factor ) {}
+                           _factor( factor ),
+                           _gravityDirection( gravityDirection) {}
 
 	void apply(const VectorType& defShell, VectorType& Dest) const {
 
   if( defShell.size() != _undefShell.size() ){
       std::cerr << "size of deformed = " << defShell.size() << " vs. size of undeformed = " << _undefShell.size() << std::endl;
-      throw BasicException( "GravitationalEnergyGradientUndef::apply(): sizes dont match!");
+      throw BasicException( "GravitationalEnergyGradientDef::apply(): sizes dont match!");
     }
 
   if (_mass_distribution.size() != _topology.getNumVertices()){
     std::cerr << "size of masses = " << _mass_distribution.size() << " vs. size of vertices = " << _topology.getNumVertices() << std::endl;
-    throw BasicException( "GravitationalEnergyGradientUndef::apply(): sizes dont match!");
+    throw BasicException( "GravitationalEnergyGradientDef::apply(): sizes dont match!");
+  }
+
+  if( _gravityDirection.size() != 3 ){
+      std::cerr << "size of gravity direction = " << _gravityDirection.size() << std::endl;
+      throw BasicException( "GravitationalEnergy::apply(): gravity direction must be 3-dimensional!");
   }
 
   if( Dest.size() != _undefShell.size() )
@@ -186,17 +216,22 @@ public:
 
   Dest.setZero();
 
-  const TriMesh& mesh = _topology.getGrid();
+  typename DefaultConfigurator::SparseMatrixType MassMatrix = _mass_distribution.asDiagonal();
 
-  for (TriMesh::VertexIter v_it = mesh.vertices_begin(); v_it != mesh.vertices_end(); ++v_it) {
-    if (!mesh.is_boundary(*v_it)) {
-        int vertexIdx = v_it->idx();
-        Dest[2*_topology.getNumVertices() + vertexIdx] = VecType(0.,0.,-_factor*_mass_distribution[vertexIdx]);
+
+  typename DefaultConfigurator::SparseMatrixType StiffnessMatrix;
+  computeStiffnessMatrix<DefaultConfigurator>( _topology, _inactiveGeometry, StiffnessMatrix );
+
+  // Now calculate the matrix mass_matrix * stiffness_matrix
+  MatrixType AreaMassMatrix = MassMatrix*StiffnessMatrix;
+
+  for (int i = 0; i < 3; i++){
+    for(int vertexIdx = 0; vertexIdx < _topology.getNumVertices(); vertexIdx++){
+				Dest[i*_topology.getNumVertices() + vertexIdx] = -_factor*_gravityDirection[i]*AreaMassMatrix.row(vertexIdx).sum();
     }
-  }
+		}
   }
 };
-
 // Only the sign changed in the apply method. Everything else is identical when takin gradient w.r.t. undeformed instead of deformed configuration
 
 //All second derivatives are zero, since the potential energy is linear in the deformation

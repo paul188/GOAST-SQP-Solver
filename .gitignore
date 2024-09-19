@@ -178,3 +178,4 @@ cmake/GOAST.cmake
 CMakeLists.txt
 CMakeLists.txt
 cmake/GOAST.cmake
+.vscode/settings.json
