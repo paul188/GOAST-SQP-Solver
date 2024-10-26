@@ -173,9 +173,6 @@ _deps
 results
 
 # End of https://www.gitignore.io/api/c++,kate,cmake,clion
-CMakeLists.txt
-cmake/GOAST.cmake
-CMakeLists.txt
-CMakeLists.txt
-cmake/GOAST.cmake
+.vscode/settings.json
+.vscode/tasks.json
 .vscode/settings.json

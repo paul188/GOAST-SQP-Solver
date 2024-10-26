@@ -13,9 +13,16 @@ add_executable(sectionalCurvature sectionalCurvature.cpp)
 add_executable(registration registration.cpp)
 add_executable(DirichletEnergy DirichletEnergy.cpp)
 add_executable(parametricMCM parametricMCM.cpp)
-add_executable(gravitationBending gravitationBending.cpp)
-add_executable(gravitationBending2 gravitationBending2.cpp)
-add_executable(gravitationBending3 gravitationBending3.cpp)
+add_executable(gravitationBending GravitationBending/gravitationBending.cpp)
+add_executable(bendingFold SimpleFold/bendingFold.cpp)
+add_executable(convertNew convert_new.cpp)
+add_executable(bendingFoldParamInterpolation SingleArcCrease/bendingFoldParamInterpolation.cpp )
+add_executable(bendingFoldParamDirichlet SingleArcCrease/bendingFoldParamDirichlet.cpp)
+add_executable(bendingSkewedCompression SkewedCompression/bendingSkewedCompression.cpp)
+add_executable(bendingSmallArc SmallArc/bendingSmallArc.cpp)
+add_executable(bendingSmallArcMembrane SmallArc/bendingSmallArcMembrane.cpp)
+add_executable(bendingSmallArcInterpolation SmallArc/bendingSmallArcInterpolation.cpp)
+add_executable(bendingSmallArcDirichletPartial SmallArc/bendingSmallArcDirichletPartial.cpp)
 
 # link libraries
 target_link_libraries(multires_example PRIVATE GOAST::GOAST)
@@ -46,9 +53,23 @@ target_link_libraries(parametricMCM PRIVATE GOAST::GOAST)
 
 target_link_libraries(gravitationBending PRIVATE GOAST::GOAST)
 
-target_link_libraries(gravitationBending2 PRIVATE GOAST::GOAST)
+#target_link_libraries(GravitationEnergyTest PRIVATE GOAST::GOAST)
 
-target_link_libraries(gravitationBending3 PRIVATE GOAST::All)
+target_link_libraries(bendingFold PRIVATE GOAST::GOAST)
+
+target_link_libraries(bendingFoldParamInterpolation PRIVATE GOAST::GOAST)
+
+target_link_libraries(bendingSkewedCompression PRIVATE GOAST::GOAST)
+
+target_link_libraries(bendingSmallArc PRIVATE GOAST::GOAST)
+
+target_link_libraries(bendingFoldParamDirichlet PRIVATE GOAST::GOAST)
+
+target_link_libraries(bendingSmallArcMembrane PRIVATE GOAST::GOAST)
+
+target_link_libraries(bendingSmallArcInterpolation PRIVATE GOAST::GOAST)
+
+target_link_libraries(bendingSmallArcDirichletPartial PRIVATE GOAST::GOAST)
 
 # Phasefield example currently requires Ipopt
 if (GOAST_WITH_IPOPT)

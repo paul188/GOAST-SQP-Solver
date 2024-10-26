@@ -1,10 +1,13 @@
-// This file is part of GOAST, a C++ library for variational methods in Geometry Processing
-//
-// Copyright (C) 2020 Behrend Heeren & Josua Sassen, University of Bonn <goast@ins.uni-bonn.de>
-//
-// This Source Code Form is subject to the terms of the Mozilla
-// Public License v. 2.0. If a copy of the MPL was not distributed
-// with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+/* 
+ Simulating a fold that results from bending a plate with clamped 
+ boundary conditions. Only NonlinearMembraneEnergy and SimpleBendingEnergy are used.
+ The gravitational energy is not used in this example.
+ We set the weight of the contribution of the middle edge to the bending energy to 0.
+ We thus expect a lot of the bending to happen in the middle of the plate, at the fold.
+ Imagine a piece of paper that is folded in the middle in both directions.
+ So that the fold does not point into any direction, but the edge just doesnt
+ resist bending.
+*/
 
 #include <iostream>
 #include <chrono>
@@ -13,6 +16,7 @@
 
 #include <goast/Core.h>
 #include <goast/DiscreteShells.h>
+#include <cmath>
 
 //==============================================================================================================
 typedef DefaultConfigurator::VectorType VectorType;
@@ -20,7 +24,7 @@ typedef DefaultConfigurator::VecType VecType;
 typedef DefaultConfigurator::RealType RealType;
 
 /** 
- * \brief Minimization of Simple Bending Energy + Potential Gravitational Energy
+ * \brief Simulation of a simple fold 
  * \author Johannssen
  *
  * We optimize this energy by direct optimization via gradient descent or BFGS.
@@ -31,9 +35,9 @@ int main(int argc, char *argv[])
 {
 
 try{
-
+    
     std::cerr << "=================================================================================" << std::endl;
-    std::cerr << "EXAMPLE ON GRAVITATIONAL POTENTIAL ENERGY TOGETHER WITH BENDING" << std::endl;
+    std::cerr << "EXAMPLE ON DIRICHLET ENERGY" << std::endl;
     std::cerr << "=================================================================================" << std::endl << std::endl;
 
     // load flat plate [0,1]^2
@@ -50,18 +54,27 @@ try{
     for( int i = 0; i < plateTopol.getNumVertices(); i++ ){
         VecType coords;
         getXYZCoord<VectorType, VecType>( plateGeomDef, coords, i);
-        if( coords[0] == 0.0 || coords[0] == 1.0 )
+        if( coords[0] < 0.05 || coords[0] > 0.95 )
             bdryMask.push_back( i );
-        // deform part of boundary
-        if( coords[0] == 0.0 ) {
-            coords[0] += 0.2;
+            coords[2] += 0.1;
+            setXYZCoord<VectorType, VecType>( plateGeomDef, coords, i);
+        if( coords[0]  > 0.95 ) {
+            coords[0] = 1.0 - coords[0];
+            RealType phi = 2*M_1_PI * 0.5;
+            RealType coords0 = coords[0];
+            RealType coords1 = coords[1];
+            coords[0] = cos(phi) * coords0 + sin(phi) * coords1;
+            coords[1] = - sin(phi) * coords0 + cos(phi) * coords1;
+            // coords[2] = -0.4 + coords[0];
+            coords[0] += 0.3;
+
+            coords[0] = 1.0 - coords[0];
+            
             setXYZCoord<VectorType, VecType>( plateGeomDef, coords, i);
         }
-        else{
-            coords[0] -= 0.2;
-            setXYZCoord<VectorType, VecType>( plateGeomDef, coords, i);
-        }
+
     }
+
     int numBdryNodes = bdryMask.size();
     std::cerr << "num of bdry nodes = " << numBdryNodes << std::endl;
     extendBoundaryMask( plateTopol.getNumVertices(), bdryMask );
@@ -103,50 +116,55 @@ try{
     // NOW CONSIDER SOLUTION BY OPTIMIZING DIRICHLET ENERGY
     std::cerr << "\n\nb) OPTIMIZATION BY DIRECT MINIMIZATION" << std::endl;
 
+    // set up energies
     SimpleBendingEnergy<DefaultConfigurator> E_bend( plateTopol, plateGeomRef, true );
     SimpleBendingGradientDef<DefaultConfigurator> DE_bend( plateTopol, plateGeomRef );
     SimpleBendingHessianDef<DefaultConfigurator> D2E_bend( plateTopol, plateGeomRef );
-
-    typename DefaultConfigurator::RealType energy;
-
     NonlinearMembraneEnergy<DefaultConfigurator> E_mem( plateTopol, plateGeomRef, true );
     NonlinearMembraneGradientDef<DefaultConfigurator> DE_mem( plateTopol, plateGeomRef );
     NonlinearMembraneHessianDef<DefaultConfigurator> D2E_mem( plateTopol, plateGeomRef );
+    typename DefaultConfigurator::RealType energy;
 
-    RealType factor_membrane = 1.0;
-    RealType factor_bending = 1.0;
-    //RealType factor_gravity = 1.0;
+    VectorType factor = VectorType::Ones(2);
+    factor[1] *= 1.e-3;
 
-    VectorType factors(2);
-    factors[0] = factor_membrane;
-    factors[1] = factor_bending;
-    //factors[2] = factor_gravity;
-
-    AdditionOp<DefaultConfigurator> E_tot( factors, E_mem, E_bend);
-    AdditionGradient<DefaultConfigurator> DE_tot( factors, DE_mem, DE_bend);
+    AdditionOp<DefaultConfigurator> E_tot( factor, E_mem, E_bend );
+    AdditionGradient<DefaultConfigurator> DE_tot( factor, DE_mem, DE_bend );
+    AdditionHessian<DefaultConfigurator> D2E_tot( factor, D2E_mem, D2E_bend );
 
     // set outer optimization parameters
     OptimizationParameters<DefaultConfigurator> optPars;
-    optPars.setGradientIterations( 1000);
+    optPars.setGradientIterations( 10000 );
     optPars.setBFGSIterations( 10000 );
-    optPars.setNewtonIterations( 1000 );
+    optPars.setNewtonIterations( 100000 );
     optPars.setQuietMode( SHOW_TERMINATION_INFO );
-    VectorType initialization = plateGeomDef;
-
+    VectorType initialization = solution;
+    
+    // optmization with gradient descent
     std::cerr << "Start gradient descent... " << std::endl;
-    GradientDescent<DefaultConfigurator> GD( E_tot, DE_tot,optPars);
+
+    GradientDescent<DefaultConfigurator> GD( E_tot, DE_tot, optPars );
     GD.setBoundaryMask( bdryMask );
     GD.solve( initialization, plateGeomDef );
 
+    // optmization with BFGS
     std::cerr << "Start Quasi-Newton... " << std::endl;
     initialization = plateGeomDef;
-    QuasiNewtonBFGS<DefaultConfigurator> QNM( E_tot, DE_tot, optPars);
+    QuasiNewtonBFGS<DefaultConfigurator> QNM( E_tot, DE_tot, optPars );
     QNM.setBoundaryMask( bdryMask );
     QNM.solve( initialization, plateGeomDef );
 
+    // optmization with Newton
+    std::cerr << "Start Newton... " << std::endl;
+    initialization = plateGeomDef;
+    NewtonMethod<DefaultConfigurator> NM( DE_tot, D2E_tot, optPars );
+    NM.setBoundaryMask( bdryMask );
+    NM.solve( initialization, plateGeomDef );
+    
+
     // saving
     setGeometry( plate, plateGeomDef );
-    OpenMesh::IO::write_mesh(plate, "gravitationBendingSolution.ply");
+    OpenMesh::IO::write_mesh(plate, "solutionDirichlet_DirectMinimization.ply");
 
   } 
   catch ( BasicException &el ){

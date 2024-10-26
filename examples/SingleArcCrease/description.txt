@@ -1,0 +1,6 @@
+in version 2 the only difference to version 1 is that
+the Dirichlet regularisation of the initial deformation
+(not of the reference configuration)
+is done in w.r.t. the physical reference configuration (i.e. shape functions of the stiffness matrix are
+computed on the physical reference configuration) and not, like in the "normal" version shape functions of the 
+stiffness matrix are computed on the initial mesh.

@@ -2,7 +2,9 @@ cmake_minimum_required(VERSION 3.5)
 
 # project name
 project(GOAST VERSION 0.1)
-set(CMAKE_CXX_STANDARD 14)
+#set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 link_directories(/usr/lib)
 

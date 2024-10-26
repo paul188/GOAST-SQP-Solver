@@ -18,8 +18,6 @@
 #include <string.h>
 
 #include "EigenIncludes.h"
-
-
   
 //==========================================================================================================
 // EXCEPTION CLASS
@@ -358,6 +356,23 @@ void extendBoundaryMask(int numVertices, std::vector<int>& mask){
     for( int j = 1; j < 3; j++ )
       for( int i = 0; i < oldSize; i++ )      
         mask[j*oldSize + i ] = j*numVertices + mask[i];
+}
+
+// extend boundary mask to (x,y,z) with active components, so that we can fix f.ex. only x component
+// of a vertex, using activateComponents = [1,0,0]
+void extendBoundaryMaskPartial(int numVertices, std::vector<int>& mask, std::vector<int> &activeComponents){
+
+    int oldSize = mask.size();
+    mask.resize( 3*oldSize );
+    for( int j = 1; j < 3; j++ ){
+      if(activeComponents[j] == 1.0){
+        for( int i = 0; i < oldSize; i++ )      
+          mask[j*oldSize + i ] = j*numVertices + mask[i];
+      }
+      else{
+        continue;
+      }
+    }
 }
 
 

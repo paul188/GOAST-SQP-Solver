@@ -65,15 +65,17 @@ public:
       throw BasicException( "GravitationalEnergy::apply(): gravity direction must be 3-dimensional!");
     }
 
-    typename DefaultConfigurator::SparseMatrixType StiffnessMatrix;
-    computeStiffnessMatrix<DefaultConfigurator>( _topology, _inactiveGeometry, StiffnessMatrix );
+    typename DefaultConfigurator::SparseMatrixType MassMatrix;
+    computeMassMatrix<DefaultConfigurator>( _topology, _inactiveGeometry, MassMatrix , false);
     // In contrast to Dirichlet Energy, mass acting on boundary will be taken into account
     // even though the boundary is fixed and does not move
     // -> so not calling applyMaskToMajor()
 
     // Next, initialize the vector of displacements
-    MatrixType Displacements(3,_topology.getNumVertices());
-    typename DefaultConfigurator::SparseMatrixType MassMatrix = _mass_distribution.asDiagonal();
+    Eigen::MatrixXd Displacements(3,_topology.getNumVertices());
+
+    //How much mass is at each vertex
+    MatrixType MassDistributionMatrix = MatrixType(_mass_distribution.asDiagonal());
 
     const VectorType* defShellP   = _activeShellIsDeformed ? &ActiveGeometry : &_inactiveGeometry;
     const VectorType* undefShellP = _activeShellIsDeformed ? &_inactiveGeometry : &ActiveGeometry;
@@ -82,11 +84,12 @@ public:
       VecType coords_def, coords_undef;
       getXYZCoord<VectorType, VecType>( *defShellP, coords_def, vertexIdx);
       getXYZCoord<VectorType, VecType>( *undefShellP, coords_undef, vertexIdx);
-      Displacements.col(vertexIdx) = coords_def - coords_undef;
+      for (int i = 0; i < 3; i++){
+        Displacements(i,vertexIdx) = coords_def[i] - coords_undef[i];
+      }
     }
-    
-    //Dest = _factor*(_gravityDirection.transpose()*(Displacements.transpose()*MassMatrix*StiffnessMatrix));
-    Dest = _factor*(_gravityDirection*Displacements*MassMatrix*StiffnessMatrix).sum();  
+
+    Dest = -_factor*((_gravityDirection.transpose()*Displacements*MassMatrix*MassDistributionMatrix).sum());
   }
 };
 
@@ -100,6 +103,7 @@ class GravitationalEnergyGradientDef : public BaseOp<typename ConfiguratorType::
 	typedef typename ConfiguratorType::VectorType VectorType;
 	typedef typename ConfiguratorType::VecType    VecType;
 	typedef typename ConfiguratorType::MatType    MatType;
+  typedef typename ConfiguratorType::SparseMatrixType MatrixType;
 
 	const VectorType&  _undefShell;
   const MeshTopologySaver& _topology;
@@ -144,18 +148,17 @@ public:
 
   Dest.setZero();
 
-  typename DefaultConfigurator::SparseMatrixType MassMatrix = _mass_distribution.asDiagonal();
+  MatrixType MassDistributionMatrix = MatrixType(_mass_distribution.asDiagonal());
 
-
-  typename DefaultConfigurator::SparseMatrixType StiffnessMatrix;
-  computeStiffnessMatrix<DefaultConfigurator>( _topology, _inactiveGeometry, StiffnessMatrix );
-
+  typename DefaultConfigurator::SparseMatrixType MassMatrix;
+  computeMassMatrix<DefaultConfigurator>( _topology, _undefShell, MassMatrix , false);
+  
   // Now calculate the matrix mass_matrix * stiffness_matrix
-  MatrixType AreaMassMatrix = MassMatrix*StiffnessMatrix;
+  MatrixType AreaMassMatrix = MassDistributionMatrix*MassMatrix;
 
   for (int i = 0; i < 3; i++){
     for(int vertexIdx = 0; vertexIdx < _topology.getNumVertices(); vertexIdx++){
-				Dest[i*_topology.getNumVertices() + vertexIdx] = _factor*_gravityDirection[i]*AreaMassMatrix.row(vertexIdx).sum();
+				Dest[i*_topology.getNumVertices() + vertexIdx] = -_factor*_gravityDirection[i]*AreaMassMatrix.row(vertexIdx).sum();
     }
 		}
   }
@@ -173,6 +176,8 @@ class GravitationalEnergyGradientUndef : public BaseOp<typename ConfiguratorType
 	typedef typename ConfiguratorType::VectorType VectorType;
 	typedef typename ConfiguratorType::VecType    VecType;
 	typedef typename ConfiguratorType::MatType    MatType;
+  typedef typename ConfiguratorType::SparseMatrixType MatrixType;
+
 
 	const VectorType&  _undefShell;
   const MeshTopologySaver& _topology;
@@ -216,18 +221,18 @@ public:
 
   Dest.setZero();
 
-  typename DefaultConfigurator::SparseMatrixType MassMatrix = _mass_distribution.asDiagonal();
+  typename DefaultConfigurator::SparseMatrixType MassDistributionMatrix = _mass_distribution.asDiagonal();
 
 
-  typename DefaultConfigurator::SparseMatrixType StiffnessMatrix;
-  computeStiffnessMatrix<DefaultConfigurator>( _topology, _inactiveGeometry, StiffnessMatrix );
+  typename DefaultConfigurator::SparseMatrixType MassMatrix;
+  computeStiffnessMatrix<DefaultConfigurator>( _topology, _undefShell, MassMatrix , false);
 
   // Now calculate the matrix mass_matrix * stiffness_matrix
-  MatrixType AreaMassMatrix = MassMatrix*StiffnessMatrix;
+  MatrixType AreaMassMatrix = MassDistributionMatrix*MassMatrix;
 
   for (int i = 0; i < 3; i++){
     for(int vertexIdx = 0; vertexIdx < _topology.getNumVertices(); vertexIdx++){
-				Dest[i*_topology.getNumVertices() + vertexIdx] = -_factor*_gravityDirection[i]*AreaMassMatrix.row(vertexIdx).sum();
+				Dest[i*_topology.getNumVertices() + vertexIdx] = _factor*_gravityDirection[i]*AreaMassMatrix.row(vertexIdx).sum();
     }
 		}
   }
