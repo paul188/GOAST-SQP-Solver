@@ -67,6 +67,8 @@
         "typeinfo": "cpp",
         "valarray": "cpp",
         "variant": "cpp",
-        "codecvt": "cpp"
+        "codecvt": "cpp",
+        "*.ipp": "cpp",
+        "jacobi": "cpp"
     }
 }

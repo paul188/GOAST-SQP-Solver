@@ -15,16 +15,19 @@ add_executable(DirichletEnergy DirichletEnergy.cpp)
 add_executable(parametricMCM parametricMCM.cpp)
 add_executable(gravitationBending GravitationBending/gravitationBending.cpp)
 add_executable(bendingFold SimpleFold/bendingFold.cpp)
-add_executable(convertNew convert_new.cpp)
 add_executable(bendingFoldParamInterpolation SingleArcCrease/bendingFoldParamInterpolation.cpp )
 add_executable(bendingFoldParamDirichlet SingleArcCrease/bendingFoldParamDirichlet.cpp)
 add_executable(bendingSkewedCompression SkewedCompression/bendingSkewedCompression.cpp)
 add_executable(bendingSmallArc SmallArc/bendingSmallArc.cpp)
-add_executable(bendingSmallArcMembrane SmallArc/bendingSmallArcMembrane.cpp)
 add_executable(bendingSmallArcInterpolation SmallArc/bendingSmallArcInterpolation.cpp)
-add_executable(bendingSmallArcDirichletPartial SmallArc/bendingSmallArcDirichletPartial.cpp)
+#add_executable(bendingFoldParamDirichletFoldClass SingleArcCrease/bendingFoldParamDirichletFoldClass.cpp)
+add_executable(SimpleFoldOptimization FoldOptimization/SimpleFoldOptimization.cpp)
+add_executable(QuadMeshTest QuadMeshExamples/QuadMeshTest.cpp)
+add_executable(test FoldOptimization/test.cpp)
 
 # link libraries
+target_link_libraries(QuadMeshTest PRIVATE GOAST::GOAST)
+
 target_link_libraries(multires_example PRIVATE GOAST::GOAST)
 
 target_link_libraries(interpolationShells PRIVATE GOAST::GOAST)
@@ -65,11 +68,13 @@ target_link_libraries(bendingSmallArc PRIVATE GOAST::GOAST)
 
 target_link_libraries(bendingFoldParamDirichlet PRIVATE GOAST::GOAST)
 
-target_link_libraries(bendingSmallArcMembrane PRIVATE GOAST::GOAST)
-
 target_link_libraries(bendingSmallArcInterpolation PRIVATE GOAST::GOAST)
 
-target_link_libraries(bendingSmallArcDirichletPartial PRIVATE GOAST::GOAST)
+target_link_libraries(test PRIVATE GOAST::GOAST)
+
+#target_link_libraries(bendingFoldParamDirichletFoldClass PRIVATE GOAST::GOAST)
+
+target_link_libraries(SimpleFoldOptimization PRIVATE GOAST::GOAST)
 
 # Phasefield example currently requires Ipopt
 if (GOAST_WITH_IPOPT)

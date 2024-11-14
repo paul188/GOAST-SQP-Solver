@@ -39,7 +39,8 @@ try{
     std::cerr << "SIMPLE FOLD SIMULATION" << std::endl;
     std::cerr << "=================================================================================" << std::endl << std::endl;
     
-// load flat plate [0,1]^2
+
+    // load flat plate [0,1]^2
     TriMesh plate;
     OpenMesh::IO::read_mesh(plate, "../../data/plate/plate4SD.ply");
     MeshTopologySaver plateTopol( plate );
@@ -55,7 +56,6 @@ try{
         getXYZCoord<VectorType, VecType>( plateGeomDef, coords, i);
         if( coords[0] < 0.05 || coords[0] > 0.95 ){
             bdryMask.push_back( i );
-            coords[2] -= 0.1;
         // deform part of boundary
             if( coords[0] > 0.95 ) {
                 coords[0] -= 0.2;

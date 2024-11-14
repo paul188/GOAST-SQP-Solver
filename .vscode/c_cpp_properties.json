@@ -4,14 +4,18 @@
             "name": "Linux",
             "includePath": [
                 "${workspaceFolder}/**",
-                "/usr/include/eigen3"
+                "/usr/include/eigen3",
+                "/usr/include/suitesparse",
+                "/usr/include/"
             ],
             "defines": [],
-            "compilerPath": "/usr/bin/clang",
+            //"compilerPath": "/usr/bin/clang",
             "cStandard": "c17",
             "cppStandard": "c++14",
-            "intelliSenseMode": "linux-clang-x64",
-            "configurationProvider": "ms-vscode.cmake-tools"
+            //"intelliSenseMode": "linux-clang-x64",
+            "configurationProvider": "ms-vscode.cmake-tools",
+            "compilerPath": "/usr/bin/g++",
+            "intelliSenseMode": "linux-gcc-x64"
         }
     ],
     "version": 4

@@ -91,6 +91,7 @@ install(FILES
         "cmake/Modules/FindMOSEK.cmake"
         "cmake/Modules/FindOpenMesh.cmake"
         "cmake/Modules/Findtrlib.cmake"
+        #"cmake/Modules/FindTinySpline.cmake"
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/GOAST)
 
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/goast DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})

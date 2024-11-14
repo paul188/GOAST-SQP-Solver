@@ -72,6 +72,7 @@ endif (GOAST_WITH_OPENMP)
 ################################################################################
 # Optional libraries
 ################################################################################
+option(GOAST_WITH_TINYSPLINE "Enable TinySpline interface within GOAST" ON)
 option(GOAST_WITH_IPOPT "Enable Ipopt interface withing GOAST" OFF)
 option(GOAST_WITH_ADOLC "Use the ADOL-C autodiff package" OFF)
 option(GOAST_WITH_VTK "Use the VTK library within GOAST" OFF)
@@ -79,6 +80,30 @@ option(GOAST_WITH_TRLIB "Use the Trlib trust-region subproblem solver package wi
 option(GOAST_WITH_MOSEK "Enable MOSEK interface within GOAST" OFF)
 
 # todo: move to imported targets to make it packagable
+
+
+###########################################
+# TINYSPLINE
+###########################################
+if (GOAST_WITH_TINYSPLINE)
+  set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} /usr/lib64 /usr/include)
+
+  set(tinyspline_DIR /usr/tinyspline/build)
+  set(tinysplinecxx_DIR /usr/tinyspline/build)
+
+  find_package(tinyspline REQUIRED CONFIG PATHS ${tinyspline_DIR})
+  find_package(tinysplinecxx REQUIRED CONFIG PATHS ${tinysplinecxx_DIR})
+
+  message(STATUS "TinySpline found: ${tinyspline_FOUND}")
+  message(STATUS "TinySplineCXX found: ${tinysplinecxx_FOUND}")
+  set_target_properties(tinyspline::tinyspline PROPERTIES
+    IMPORTED_LOCATION "/usr/lib64/libtinyspline.a")
+  set_target_properties(tinysplinecxx::tinysplinecxx PROPERTIES
+    IMPORTED_LOCATION "/usr/lib64/libtinysplinecxx.a")
+  target_link_libraries(GOAST INTERFACE tinyspline::tinyspline)
+  target_link_libraries(GOAST INTERFACE tinysplinecxx::tinysplinecxx)
+  target_compile_definitions(GOAST INTERFACE GOAST_WITH_TINYSPLINE)
+endif ()
 ###########################################
 # IPOPT
 ###########################################

@@ -200,7 +200,7 @@ public:
 
 		if (Dest.size() != defShell.size())
 			Dest.resize(defShell.size());
-
+      
 		Dest.setZero();
 
 		for (int edgeIdx = 0; edgeIdx < _topology.getNumEdges(); ++edgeIdx){

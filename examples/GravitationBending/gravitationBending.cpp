@@ -76,8 +76,6 @@ try{
     SimpleBendingGradientDef<DefaultConfigurator> DE_bend( plateTopol, plateGeomRef );
     SimpleBendingHessianDef<DefaultConfigurator> D2E_bend( plateTopol, plateGeomRef );
 
-    typename DefaultConfigurator::RealType energy;
-
     NonlinearMembraneEnergy<DefaultConfigurator> E_mem( plateTopol, plateGeomRef, true );
     NonlinearMembraneGradientDef<DefaultConfigurator> DE_mem( plateTopol, plateGeomRef );
     NonlinearMembraneHessianDef<DefaultConfigurator> D2E_mem( plateTopol, plateGeomRef );
