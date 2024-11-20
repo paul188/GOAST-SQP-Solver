@@ -54,11 +54,6 @@ try{
     std::cerr << "SIMPLE FOLD OPTIMIZATION" << std::endl;
     std::cerr << "=================================================================================" << std::endl << std::endl;
 
-    std::cout << "Eigen version: "
-              << EIGEN_WORLD_VERSION << "."
-              << EIGEN_MAJOR_VERSION << "."
-              << EIGEN_MINOR_VERSION << std::endl;
-
     // load flat plate [0,1]^2
     TriMesh plate;
     OpenMesh::IO::read_mesh(plate, "../../data/plate/plate4SD.ply");
@@ -130,7 +125,7 @@ try{
     //BoundaryDOFS<DefaultConfigurator> boundaryDOFS(bdryMaskOpt, plateTopol);
 
     // we have 3n vertices and we differentiate after one param t -> (3n +1) x (3n +1)
-    FullMatrixType B_k(3*plateTopol.getNumVertices()+1, 3*plateTopol.getNumVertices()+1);
+    MatrixType B_k(3*plateTopol.getNumVertices()+1, 3*plateTopol.getNumVertices()+1);
     B_k.setIdentity();
     // Create all important energies, their derivatives and hessians and reserve the memory via arena
     // This is prudent, since the members are constant, thus we need to create new energy objects
@@ -181,9 +176,10 @@ try{
     DfoldDofs.apply(plateGeomInitial,DFoldDofs_val); 
 
     VectorType DE_dt = D2E_mix_val*DFoldDofs_val;
+    MatrixType DE_dt_sparse = convertVecToSparseMat(DE_dt);
 
     // Reserve memory for the large matrix and r.h.s for the linear system
-    FullMatrixType A_k(6*plateTopol.getNumVertices()+1, 6*plateTopol.getNumVertices()+1);
+    MatrixType A_k(6*plateTopol.getNumVertices()+1, 6*plateTopol.getNumVertices()+1);
     A_k.setZero();
     VectorType rhs_k = VectorType::Zero(6*plateTopol.getNumVertices()+1);
 
@@ -198,34 +194,20 @@ try{
 
     SQP_Parameters<DefaultConfigurator> pars;
 
-    RealType t = 0;
-
     // In the following, we will always order the derivatives in the following way: (t,\phi)
     // that means in rows and columns, the derivative after the DOF t comes first
 
     while(pars.iter < pars.maxiter &&(DE_val.norm() > pars.eps || DCostFunctional_val.norm() > pars.eps)){
 
-        t += d_k[0];
+        MatrixType neg_DE_dt_transpose = -DE_dt_sparse.transpose();
+        MatrixType neg_D2E_val = - D2E_val;
 
-        std::cout<<"Iteration "<<pars.iter<<std::endl;
-        std::cout<<"Norm1: "<<DE_val.norm()<<std::endl;
-        std::cout<<"Norm2: "<<costFunctional_val<<std::endl;
-        std::cout<<"t: "<<t<<std::endl;
-
-        setGeometry(plate,  plateGeomDef);
-        OpenMesh::IO::write_mesh(plate, "plateGeomDef" + std::to_string(pars.iter) + ".ply");
-        setGeometry(plate, plateGeomRef);
-        OpenMesh::IO::write_mesh(plate, "plateGeomRef" + std::to_string(pars.iter) + ".ply");
-
-        auto start = std::chrono::high_resolution_clock::now();
-
-        A_k.block(0,0,3*plateTopol.getNumVertices()+1,3*plateTopol.getNumVertices()+1) = B_k;
-        
-        // Now, the other two submatrices
-        A_k.block(0,3*plateTopol.getNumVertices()+1,1,3*plateTopol.getNumVertices()) = -DE_dt.transpose();
-        A_k.block(1,3*plateTopol.getNumVertices()+1,3*plateTopol.getNumVertices(),3*plateTopol.getNumVertices()) = -D2E_val;
-        A_k.block(1+3*plateTopol.getNumVertices(),0,3*plateTopol.getNumVertices(),1) = DE_dt;
-        A_k.block(1+3*plateTopol.getNumVertices(),1,3*plateTopol.getNumVertices(),3*plateTopol.getNumVertices()) = D2E_val;
+        std::vector<Eigen::Triplet<double>> ATriplet;
+        assignSparseBlockInplace(A_k, B_k, 0, 0, ATriplet);
+        assignSparseBlockInplace(A_k, neg_DE_dt_transpose,0,3*plateTopol.getNumVertices()+1, ATriplet);
+        assignSparseBlockInplace(A_k, neg_D2E_val, 1,3*plateTopol.getNumVertices()+1, ATriplet);
+        assignSparseBlockInplace(A_k, DE_dt_sparse, 1+3*plateTopol.getNumVertices(),0, ATriplet);
+        assignSparseBlockInplace(A_k, D2E_val, 1+3*plateTopol.getNumVertices(),1, ATriplet);
 
         // Construct the r.h.s for the linear system
         // the derivative of the cost functional
@@ -233,16 +215,10 @@ try{
         // then the derivative of the energy, i.e. the constraint
         rhs_k.segment(1+3*plateTopol.getNumVertices(),3*plateTopol.getNumVertices()) = -DE_val;
 
-        MatrixType A_k_sparse = A_k.sparseView(1e-8);
-
         LinearSolver<DefaultConfigurator> directSolver;
-        directSolver.prepareSolver( A_k_sparse );
+        directSolver.prepareSolver( A_k );
         directSolver.backSubstitute( rhs_k, sol_k );
         auto end = std::chrono::high_resolution_clock::now();
-
-        // Calculate duration in milliseconds
-        std::chrono::duration<double, std::milli> duration = end - start;
-        std::cout << "Time taken for solving the linear system in iteration "<<pars.iter<<": " << duration.count() << " ms" << std::endl;
 
         lambda_diff = lambda_k - lambda_k_prev;
         lambda_k_prev = lambda_k;
@@ -250,7 +226,6 @@ try{
 
         // Now, determine the stepsizes
         pars.alpha = 1.0;
-        pars.mu = 1.0;
 
         RealType comparisonVal = ((DCostFunctional_val.dot(d_k) + 0.5*d_k.transpose().dot(B_k*d_k))/((1-pars.rho)*DE_val.template lpNorm<1>() + 1e-6));
 
@@ -372,8 +347,12 @@ try{
         DiffGradxEnergy_kplus1 = lambda_k.transpose()*(temp);
 
         VectorType y_k = DiffGradxCostFunctional_kplus1 + DiffGradxEnergy_kplus1;
+        //MatrixType y_k_sparse = convertVecToSparseMat(y_k);
+        //MatrixType s_k_sparse = convertVecToSparseMat(s_k);
 
-        BFGS_update<DefaultConfigurator>(y_k,s_k,pars.theta,B_k);
+        FullMatrixType B_k_dense = B_k.toDense();
+
+        BFGS_update<DefaultConfigurator>(y_k,s_k,pars.theta,B_k_dense);
 
         // After all the calculations, we can update the values
         DE_val = DE_kplus1_val;
@@ -382,8 +361,6 @@ try{
         D2E_val = D2E_kplus1_val;
         D2E_mix_val = D2E_mix_kplus1_val;
         DE_dt = DE_dt_kplus_1;
-
-        std::cout<<"COST FUNCTIONAL VALUE: "<<costFunctional_val<<std::endl;
 
         pars.iter++;
     }

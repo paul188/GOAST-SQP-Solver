@@ -6,38 +6,37 @@ typedef typename DefaultConfigurator::SparseMatrixType MatrixType;
 typedef typename DefaultConfigurator::FullMatrixType FullMatrixType;
 
 int main(){
-    std::vector<int> vertexDOFS = {0,1,2,3,4};
-    std::vector<int> bdryMask ={2,4};
-    size_t foldDOFS = 1;
-    BoundaryDOFS<DefaultConfigurator> bdryDOFS(bdryMask, vertexDOFS.size(), foldDOFS);
+    
 
-    MatrixType A(3,3);
+    /*
+    MatrixType A(6,6);
+    A.setZero();
 
-    std::vector<Eigen::Triplet<double>> tripletList;
-    tripletList.push_back(Eigen::Triplet<double>(0,0,1));
-    tripletList.push_back(Eigen::Triplet<double>(0,2,2));
-    tripletList.push_back(Eigen::Triplet<double>(1,1,3));
-    tripletList.push_back(Eigen::Triplet<double>(2,0,4));
-    tripletList.push_back(Eigen::Triplet<double>(2,2,5));
-    A.setFromTriplets(tripletList.begin(), tripletList.end());
+    MatrixType B(3,3);
+    B.setIdentity();
 
-    MatrixType B(2,2);
-    std::vector<Eigen::Triplet<double>> tripletListB;
-    tripletListB.push_back(Eigen::Triplet<double>(0,0,1));
-    tripletListB.push_back(Eigen::Triplet<double>(0,1,2));
-    tripletListB.push_back(Eigen::Triplet<double>(1,0,3));
-    tripletListB.push_back(Eigen::Triplet<double>(1,1,12));
-    B.setFromTriplets(tripletListB.begin(), tripletListB.end());
+    assignSparseBlockInplace(A,B,0,0);
 
-    MatrixType Anew = assignSparseBlock(A, B, 0, 0);
+    MatrixType C(1,3);
+    typedef Eigen::Triplet<double> Tri;
+    std::vector<Tri> tripletVec;
+    tripletVec.push_back(Tri(0,0,2));
+    tripletVec.push_back(Tri(0,1,3));
+    tripletVec.push_back(Tri(0,2,4));
+    C.setFromTriplets(tripletVec.begin(), tripletVec.end());
 
-    FullMatrixType A_temp = Anew.toDense();
+    assignSparseBlockInplace(A,C,0,3);
+
+    FullMatrixType A_temp = A.toDense();
 
     for(int i = 0; i < A_temp.rows(); i++){
         for(int j = 0; j < A_temp.cols(); j++){
-            std::cout << A_temp(i,j) << " ";
+
+            std::cout<<A_temp(i,j)<<" ";
         }
-        std::cout << std::endl;
-    }
+        std::cout<<std::endl;
+    } 
+    */
+
     return 0;
 }

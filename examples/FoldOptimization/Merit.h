@@ -15,7 +15,11 @@ class L1Merit {
         L1Merit(const RealType mu) : _mu(mu) {}
 
         void apply(const VectorType &constraint, const RealType &costFunctional, RealType &dest) const{
-            dest = costFunctional + constraint.template lpNorm<1>();
+            //std::cout<<"Test in L1Merit"<<std::endl;
+            //std::cout<<costFunctional<<std::endl;
+            //std::cout<<_mu<<std::endl;
+            //std::cout<<constraint.template lpNorm<1>()<<std::endl;
+            dest = costFunctional + _mu*constraint.template lpNorm<1>();
         }
 };
 

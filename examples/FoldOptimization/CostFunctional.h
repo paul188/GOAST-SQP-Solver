@@ -16,6 +16,7 @@ class CostFunctional : public BaseOp<typename ConfiguratorType::VectorType, type
         CostFunctional(const std::vector<int> &foldVertices) : _foldVertices(foldVertices) {}
 
         void apply(const VectorType &activeGeometry, RealType &dest) const{
+            dest = 0;
             for(int i = 0; i < _foldVertices.size(); i++){
                 VecType coords;
                 getXYZCoord<VectorType, VecType>(activeGeometry, coords, _foldVertices[i]);

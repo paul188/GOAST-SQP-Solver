@@ -5,6 +5,7 @@
 #include <iostream>
 
 typedef typename DefaultConfigurator::SparseMatrixType MatrixType;
+typedef typename DefaultConfigurator::VectorType VectorType;
 
 void Sparsity( const MatrixType &matrix ){
     int numEntries = 0;
@@ -16,9 +17,21 @@ void Sparsity( const MatrixType &matrix ){
     std::cerr << "Relative number of nonzero entries: " << numEntries / ((int)(matrix.cols()*matrix.rows())) << std::endl;
 }
 
+MatrixType convertVecToSparseMat(const VectorType& vec){
+    MatrixType sparseMatrix(vec.size(), 1); // Single column sparse matrix
+    for (int i = 0; i < vec.size(); ++i) {
+        if (vec[i] != 0.0) {
+            sparseMatrix.insert(i, 0) = vec[i];
+        }
+    }
+
+    //sparseMatrix.makeCompressed();
+    return sparseMatrix;
+}
+
 // method to extract a block from a sparse matrix
 typedef Eigen::Triplet<double> Tri;
-MatrixType extractSparseBlock(MatrixType M, int ibegin, int jbegin, int icount, int jcount) {
+MatrixType extractSparseBlock(MatrixType &M, int ibegin, int jbegin, int icount, int jcount) {
     assert(ibegin + icount <= M.rows());
     assert(jbegin + jcount <= M.cols());
     
@@ -44,15 +57,14 @@ MatrixType extractSparseBlock(MatrixType M, int ibegin, int jbegin, int icount, 
 
     MatrixType matS(icount, jcount);
     matS.setFromTriplets(tripletList.begin(), tripletList.end());
+    //matS.makeCompressed();
     return matS;
 }
 
-MatrixType assignSparseBlock(MatrixType M, MatrixType Mblock, int ibegin, int jbegin) {
+/*
+MatrixType assignSparseBlock(MatrixType &M, MatrixType &Mblock, int ibegin, int jbegin) {
     assert(ibegin + Mblock.rows() <= M.rows());
     assert(jbegin + Mblock.cols() <= M.cols());
-
-    M.sortInnerIndices(0, M.outerSize());
-    Mblock.sortInnerIndices(0, Mblock.outerSize());
 
     int Mj,Mi, i, j, currOuterIndex, nextOuterIndex, currOuterIndexBlock, nextOuterIndexBlock;
     std::vector<Tri> tripletList;
@@ -67,6 +79,7 @@ MatrixType assignSparseBlock(MatrixType M, MatrixType Mblock, int ibegin, int jb
         for(int a = currOuterIndex; a < nextOuterIndex ; a++){
             Mj = M.innerIndexPtr()[a];
             tripletList.push_back(Tri(i, Mj, M.valuePtr()[a]));
+            std::cout<<"("<<i<<","<<Mj<<", "<< M.valuePtr()[a]<<")"<<std::endl;
         }
     }
 
@@ -79,6 +92,7 @@ MatrixType assignSparseBlock(MatrixType M, MatrixType Mblock, int ibegin, int jb
         for(int a = currOuterIndex; a < nextOuterIndex ; a++){
             Mj = M.innerIndexPtr()[a];
             tripletList.push_back(Tri(i, Mj, M.valuePtr()[a]));
+            std::cout<<"("<<i<<","<<Mj<<", "<< M.valuePtr()[a]<<")"<<std::endl;
         }
     }
 
@@ -91,11 +105,15 @@ MatrixType assignSparseBlock(MatrixType M, MatrixType Mblock, int ibegin, int jb
         currOuterIndexBlock = Mblock.outerIndexPtr()[i - ibegin];
         nextOuterIndexBlock = Mblock.outerIndexPtr()[i - ibegin + 1];
 
-        // Assign the columns before the block matrix but in the same rows
-        for(int a = currOuterIndex; M.innerIndexPtr()[a] < Mblock.innerIndexPtr()[currOuterIndexBlock] && a < nextOuterIndex; a++)
+        if(!(currOuterIndex == nextOuterIndex)) // Check if there are even any nonzero elements in the big matrix -> if not innerIndexPtr will be invalid
         {
-            Mj = M.innerIndexPtr()[j];
-            tripletList.push_back(Tri(i, Mj, M.valuePtr()[a]));
+            // Assign the columns before the block matrix but in the same rows
+            for(int a = currOuterIndex; M.innerIndexPtr()[a] < jbegin && a < nextOuterIndex; a++)
+            {
+                Mj = M.innerIndexPtr()[j];
+                tripletList.push_back(Tri(i, Mj, M.valuePtr()[a]));
+                std::cout<<"("<<i<<","<<Mj<<", "<< M.valuePtr()[a]<<")"<<std::endl;
+            }
         }
 
         // Assign the block matrix
@@ -103,16 +121,18 @@ MatrixType assignSparseBlock(MatrixType M, MatrixType Mblock, int ibegin, int jb
         {
             Mj = Mblock.innerIndexPtr()[a];
             tripletList.push_back(Tri(i, Mj+jbegin, Mblock.valuePtr()[a]));
+            std::cout<<"("<<i<<","<<Mj+jbegin<<", "<< Mblock.valuePtr()[a]<<")"<<std::endl;
         }
 
-        // Assign the columns after the block matrix but in the same rows
-        for(int a = nextOuterIndexBlock - 1; M.innerIndexPtr()[a] > Mblock.innerIndexPtr()[nextOuterIndexBlock - 1] && a >= currOuterIndex; a++)
-        {
-            Mj = M.innerIndexPtr()[a];
-            tripletList.push_back(Tri(i, Mj, M.valuePtr()[a]));
-        }
-        for(int i = 0; i < tripletList.size(); i++){
-            std::cout<<"("<<tripletList[i].row()<<","<<tripletList[i].col()<<","<<tripletList[i].value()<<")"<<std::endl;
+        if(!(currOuterIndex == nextOuterIndex)){ // Check if row of larger matrix is zero
+            
+            // Assign the columns after the block matrix but in the same rows
+            for(int a = nextOuterIndex - 1; M.innerIndexPtr()[a] > jbegin + Mblock.cols() && a >= currOuterIndex; a--)
+            {
+                Mj = M.innerIndexPtr()[a];
+                tripletList.push_back(Tri(i, Mj, M.valuePtr()[a]));
+                std::cout<<"("<<i<<","<<Mj<<", "<< M.valuePtr()[a]<<")"<<std::endl;
+            }
         }
     }
     MatrixType Mnew(M.rows(), M.cols());
@@ -120,4 +140,164 @@ MatrixType assignSparseBlock(MatrixType M, MatrixType Mblock, int ibegin, int jb
     return Mnew;
 }
 
+// more efficient than assignSparseBlock
+void assignSparseBlockInplace(MatrixType &M, MatrixType &Mblock, int ibegin, int jbegin){
+    assert(ibegin + Mblock.rows() <= M.rows());
+    assert(jbegin + Mblock.cols() <= M.cols());
+
+    int Mj,Mi, i, currOuterIndex, nextOuterIndex, currOuterIndexBlock, nextOuterIndexBlock;
+    std::vector<Tri> tripletList;
+    tripletList.reserve(M.nonZeros() + Mblock.nonZeros());
+
+    if(ibegin > 0)
+    {
+        // Assign the rows above the block matrix
+        for(int i = 0; i < M.rows() && i < ibegin; i++)
+        {
+            currOuterIndex = M.outerIndexPtr()[i];
+            nextOuterIndex = M.outerIndexPtr()[i + 1];
+
+            for(int a = currOuterIndex; a < nextOuterIndex ; a++){
+                Mj = M.innerIndexPtr()[a];
+                tripletList.push_back(Tri(i, Mj, M.valuePtr()[a]));
+                if (i < 0 || i >= M.rows() || Mj < 0 || Mj >= M.cols() ) {
+                        std::cerr << "Invalid triplet1: (" << i << ", " << Mj <<  ")" << std::endl;
+                        std::cerr <<"Current outer Index: "<<currOuterIndex<<std::endl;
+                        std::cerr<<"Next outer index: "<<nextOuterIndex<<std::endl;
+                    abort();
+                }
+            }
+        }
+    }
+
+    if(ibegin + Mblock.rows() < M.rows())
+    {
+        // Assign the rows below the block matrix
+        for(int i = ibegin + Mblock.rows(); i < M.rows(); i++)
+        {
+            currOuterIndex = M.outerIndexPtr()[i];
+            nextOuterIndex = M.outerIndexPtr()[i + 1];
+
+            for(int a = currOuterIndex; a < nextOuterIndex ; a++){
+                Mj = M.innerIndexPtr()[a];
+                tripletList.push_back(Tri(i, Mj, M.valuePtr()[a]));
+                if (i < 0 || i >= M.rows() || Mj < 0 || Mj >= M.cols()) {
+                        std::cerr << "Invalid triplet2: (" << i << ", " << Mj  << ")" << std::endl;
+                    abort();
+                }
+            }
+        }
+    }
+
+    // Assign the rows mixed with the block matrix
+    for(int i = ibegin; i < ibegin + Mblock.rows(); i++)
+    {
+        std::cout<<"BOUND FOR I: "<<ibegin + Mblock.rows()<<std::endl;
+        currOuterIndex = M.outerIndexPtr()[i];
+        nextOuterIndex = M.outerIndexPtr()[i + 1];
+
+        currOuterIndexBlock = Mblock.outerIndexPtr()[i - ibegin];
+        nextOuterIndexBlock = Mblock.outerIndexPtr()[i - ibegin + 1];
+
+        if(!(currOuterIndex == nextOuterIndex)) // Check if there are even any nonzero elements in the big matrix -> if not innerIndexPtr will be invalid
+        {
+            // Assign the columns before the block matrix but in the same rows
+            for(int a = currOuterIndex; a < nextOuterIndex && M.innerIndexPtr()[a] < jbegin ; a++)
+            {
+                Mj = M.innerIndexPtr()[a];
+                tripletList.push_back(Tri(i, Mj, M.valuePtr()[a]));
+                if (i < 0 || i >= M.rows() || Mj < 0 || Mj >= M.cols() ) {
+                    std::cerr << "Invalid triplet3: (" << i << ", " << Mj << ", " << Mj + jbegin << ")" << std::endl;
+                abort();
+                }
+            }
+        }
+
+        // Assign the block matrix
+        for(int a = currOuterIndexBlock; a < nextOuterIndexBlock; a++)
+        {
+            Mj = Mblock.innerIndexPtr()[a];
+            tripletList.push_back(Tri(i, Mj+jbegin, Mblock.valuePtr()[a]));
+            if (i < 0 || i >= M.rows() || Mj + jbegin >= M.cols()) {
+                    std::cerr << "Invalid triplet4: (" << i << ", " << Mj + jbegin << ")" << std::endl;
+                abort();
+            }
+        }
+
+        if(!(currOuterIndex == nextOuterIndex)){ // Check if row of larger matrix is zero
+            
+            // Assign the columns after the block matrix but in the same rows
+            for(int a = nextOuterIndex - 1; a >= currOuterIndex && M.innerIndexPtr()[a] > jbegin + Mblock.cols(); a--)
+            {
+                Mj = M.innerIndexPtr()[a];
+                tripletList.push_back(Tri(i, Mj, M.valuePtr()[a]));
+                if (i < 0 || i >= M.rows() || Mj < 0 || Mj >= M.cols()) {
+                    std::cerr << "Invalid triplet5: (" << i << ", " << Mj << ", " << Mj + jbegin << ")" << std::endl;
+                abort();
+                }
+            }
+        }
+    }
+
+    M.setFromTriplets(tripletList.begin(), tripletList.end());
+}
+*/
+
+void assignSparseBlockWithTriplet(std::vector<Tri> &tripletList, const MatrixType &Block, int ibegin, int jbegin)
+{
+    // First, assemble Triplet List of the Block
+    std::vector<Tri> tripletListBlock;
+    tripletListBlock.reserve(Block.nonZeros());
+    for (int k = 0; k < Block.outerSize(); ++k) {
+        for (typename MatrixType::InnerIterator it(Block, k); it; ++it) {
+            // Each element can be accessed by (it.row(), it.col(), it.value())
+            tripletListBlock.push_back(Eigen::Triplet<double>(it.row(), it.col(), it.value()));
+        }
+    }
+
+}
+
+void assignSparseBlockInplace(MatrixType &Base, const MatrixType &Block, int ibegin, int jbegin,
+                            std::vector<Tri> &BaseTriplet)
+{
+    //std::cout<<ibegin + Block.rows() <<" "<<Base.rows()<<" "<<jbegin + Base.cols()<<Base.cols();
+    assert(ibegin + Block.rows() <= Base.rows() && jbegin + Block.cols() <= Base.cols());
+
+    // First, collect Eigen Triplets of Base:
+    if(BaseTriplet.size() == 0){
+        BaseTriplet.reserve(Base.nonZeros() + Block.nonZeros());
+
+        for (int k = 0; k < Base.outerSize(); ++k) {
+            for (typename MatrixType::InnerIterator it(Base, k); it; ++it) {
+                // If we are outside the range of the block matrix, we keep the entries
+                if(it.row() < ibegin || it.row() >= ibegin + Block.rows() || it.col() < jbegin || it.col() >= jbegin + Block.cols())
+                {
+                    BaseTriplet.push_back(Tri(it.row(), it.col(), it.value()));
+                }
+            }
+        }
+
+    }
+    else if(BaseTriplet.size() == Base.nonZeros()){
+        // BaseTriplet has already been initialized
+        // First, remove all triplets that are in the range of the Block matrix
+        for(int i = 0; i < BaseTriplet.size(); i++)
+        {
+            Tri it = BaseTriplet[i];
+            if(it.row() >= ibegin && it.row() < ibegin + Block.rows() && it.col() >= jbegin && it.col() < jbegin + Block.cols())
+            {
+                    BaseTriplet.erase(BaseTriplet.begin()+i);
+            }
+        }
+    }
+
+    for (int k = 0; k < Block.outerSize(); ++k) {
+        for (typename MatrixType::InnerIterator it(Block, k); it; ++it) {
+            // Push back all entries of the block matrix
+            BaseTriplet.push_back(Tri(it.row() + ibegin, it.col() + jbegin, it.value()));
+        }
+    }
+
+    Base.setFromTriplets(BaseTriplet.begin(), BaseTriplet.end());
+}
 #endif // SPARSEMAT_H

@@ -69,6 +69,9 @@
         "variant": "cpp",
         "codecvt": "cpp",
         "*.ipp": "cpp",
-        "jacobi": "cpp"
+        "jacobi": "cpp",
+        "core": "cpp",
+        "specialfunctions": "cpp",
+        "*.inc": "cpp"
     }
 }
