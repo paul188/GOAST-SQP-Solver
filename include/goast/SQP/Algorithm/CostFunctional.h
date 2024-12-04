@@ -20,7 +20,7 @@ class CostFunctional : public BaseOp<typename ConfiguratorType::VectorType, type
             for(int i = 0; i < _foldVertices.size(); i++){
                 VecType coords;
                 getXYZCoord<VectorType, VecType>(activeGeometry, coords, _foldVertices[i]);
-                dest -= coords[2];
+                dest += coords[2];
             }
         }
 };
@@ -36,18 +36,17 @@ class CostFunctionalGradient : public BaseOp<typename ConfiguratorType::VectorTy
         const MeshTopologySaver &_topology;
     
     public:
-        CostFunctionalGradient(const MeshTopologySaver& topology, const std::vector<int> &foldVertices) 
-        : _foldVertices(foldVertices), _topology(topology) {}
+        CostFunctionalGradient(const MeshTopologySaver& topology, const std::vector<int> &foldVertices) : _foldVertices(foldVertices), _topology(topology){}
 
         void apply(const VectorType &activeGeometry, VectorType &dest) const{
 
         // First component, i.e. derivative w.r.t. t is zero.
-           if(dest.size() != activeGeometry.size()+1){
-                dest.resize(activeGeometry.size()+1);
+           if(dest.size() != activeGeometry.size()){
+                dest.resize(activeGeometry.size());
            }
            dest.setZero();
            for(int i = 0; i < _foldVertices.size(); i++){
-                dest[2*_topology.getNumVertices() + _foldVertices[i]+1] = -1;
+                dest[2*_topology.getNumVertices() + _foldVertices[i]] = 1;
            }
         }
 };

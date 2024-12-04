@@ -1,11 +1,11 @@
 #include <goast/Quads.h>
+#include <goast/Core.h>
 
 int main(){
-    MyMesh mesh;
-    QuadMesh qm(mesh);
+    QuadMesh qm;
 
     //middle row of the mesh
-    MyMesh::Point p1 = MyMesh::Point(0,0,0);
+    MyMesh::Point p1 = MyMesh::Point(0.0,0,0);
     MyMesh::Point p2 = MyMesh::Point(1,0,0);
     MyMesh::Point p3 = MyMesh::Point(1,1,0);
     MyMesh::Point p4 = MyMesh::Point(0,1,0);
@@ -53,14 +53,47 @@ int main(){
     FaceHandle fh8 = qm.add_quad(quad_points8);
     FaceHandle fh9 = qm.add_quad(quad_points9);
 
-    std::cout<<"TEST"<<std::endl;
-    std::cout<<qm.is_face_developable(fh)<<std::endl;
-
-/*
-    std::cout<<qm.is_all_quads()<<std::endl;
     std::cout<<qm.is_mesh_developable()<<std::endl;
-    std::cout<<qm.is_face_developable(fh)<<std::endl;
-*/
+
+    qm.write_quad_mesh("quadMesh.ply");
+
+    // Now, test with cube instead -> not developable
+    QuadMesh qm2;
+
+    MyMesh::Point q1 = MyMesh::Point(0.0,0,0);
+    MyMesh::Point q2 = MyMesh::Point(0,1,0);
+    MyMesh::Point q3 = MyMesh::Point(1,1,0);
+    MyMesh::Point q4 = MyMesh::Point(1,0,0);
+    MyMesh::Point q5 = MyMesh::Point(0.0,0,1);
+    MyMesh::Point q6 = MyMesh::Point(0,1,1);
+    MyMesh::Point q7 = MyMesh::Point(1,0,1);
+    MyMesh::Point q8 = MyMesh::Point(1,1,1);
+
+    std::vector<MyMesh::Point> quad_points_cube1 = {q1,q2,q3,q4};
+    std::vector<MyMesh::Point> quad_points_cube2 = {q1,q5,q6,q2};
+    std::vector<MyMesh::Point> quad_points_cube3 = {q1,q4,q7,q5};
+    std::vector<MyMesh::Point> quad_points_cube4 = {q2,q6,q8,q3};
+    std::vector<MyMesh::Point> quad_points_cube5 = {q3,q8,q7,q4};
+    std::vector<MyMesh::Point> quad_points_cube6 = {q5,q7,q8,q6};
+
+    qm2.add_quad(quad_points_cube1);
+    qm2.add_quad(quad_points_cube2);
+    qm2.add_quad(quad_points_cube3);
+    qm2.add_quad(quad_points_cube4);
+    qm2.add_quad(quad_points_cube5);
+    qm2.add_quad(quad_points_cube6);
+
+    std::cout<<qm2.is_mesh_developable()<<std::endl;
+
+    TriMesh triMesh;
+    triMesh = qm.makeTriMeshCentroid();
+
+    OpenMesh::IO::write_mesh(triMesh, "triMesh.ply");
+
+    TriMesh triMesh2;
+    triMesh2 = qm2.makeTriMeshCentroid();
+
+    OpenMesh::IO::write_mesh(triMesh2, "triMesh2.ply");
 
     return 0;
 }

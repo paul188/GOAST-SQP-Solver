@@ -10,13 +10,13 @@
                 "/home/paul_johannssen/Desktop/masterarbeit/goast/include"
             ],
             "defines": [],
-            "compilerPath": "/usr/bin/clang",
+            //"compilerPath": "/usr/bin/clang",
             "cStandard": "c17",
-            "cppStandard": "c++14",
-            "intelliSenseMode": "linux-clang-x64",
+            "cppStandard": "c++17",
+            //"intelliSenseMode": "linux-clang-x64",
             "configurationProvider": "ms-vscode.cmake-tools",
-            //"compilerPath": "/usr/bin/g++",
-            //"intelliSenseMode": "linux-gcc-x64"
+            "compilerPath": "/usr/bin/g++",
+            "intelliSenseMode": "linux-gcc-x64"
         }
     ],
     "version": 4

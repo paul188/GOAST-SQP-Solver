@@ -2,7 +2,7 @@
 #define BOUNDARY_DOFS_H
 
 #include <goast/Core.h>
-#include "SparseMat.h"
+#include "../Utils/SparseMat.h"
 
 // We dont want any translations of the deformed geometry at fixed boundary DOFs
 // To account for that, we need to reduce matrices and vectors to the free DOFs
@@ -120,7 +120,23 @@ class BoundaryDOFS
             return _bdryMaskOpt.size();
         }
 
+        size_t getNumFoldDOFs() const{
+            return _foldDOFs;
+        }
+
+        size_t getNumVertexDOFs() const{
+            return _vertexDOFs;
+        }
+
         // TRANSFORMATIONS FOR VECTORS ##############################################################
+
+        // adds the zero fold dofs to the beginning of the vector
+        void addZeroFoldDOFs(VectorType &vec){
+            VectorType temp = vec;
+            vec.conservativeResize(_vertexDOFs + _foldDOFs);
+            vec.segment(0, _foldDOFs).setZero();
+            vec.segment(_foldDOFs, _vertexDOFs) = temp;
+        }
 
         void transformWithFoldDofsToReducedSpace(VectorType &vec) const{
             // Permute the entries of the vector such that the boundary DOFs are at the beginning
@@ -211,8 +227,6 @@ class BoundaryDOFS
         }
 
         void transformRowColToReducedSpace(MatrixType &mat) const{
-            std::cout<<_vertexDOFs<<std::endl;
-            std::cout<<mat.rows()<<" "<<mat.cols()<<std::endl;
             assert(mat.rows() == _vertexDOFs && mat.cols() == _vertexDOFs);
             transformRowToReducedSpace(mat);
             transformColToReducedSpace(mat);
@@ -221,6 +235,12 @@ class BoundaryDOFS
         void inverseTransformRowCol(MatrixType &mat) const{
             inverseTransformRow(mat);
             inverseTransformCol(mat);
+        }
+
+        void setBoundaryZero(VectorType &Geom){
+            for(int i = 0; i < _bdryMaskOpt.size(); i++){
+                Geom[_bdryMaskOpt[i]] = 0;
+            }
         }
 
     protected:

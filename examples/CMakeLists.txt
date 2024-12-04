@@ -20,11 +20,18 @@ add_executable(bendingFoldParamDirichlet SingleArcCrease/bendingFoldParamDirichl
 add_executable(bendingSkewedCompression SkewedCompression/bendingSkewedCompression.cpp)
 add_executable(bendingSmallArc SmallArc/bendingSmallArc.cpp)
 add_executable(bendingSmallArcInterpolation SmallArc/bendingSmallArcInterpolation.cpp)
-add_executable(SimpleFoldOptimization2 FoldOptimization/SimpleFoldOptimization2.cpp)
+#add_executable(SimpleFoldOptimization2 FoldOptimization/SimpleFoldOptimization2.cpp)
 add_executable(QuadMeshTest QuadMeshExamples/QuadMeshTest.cpp)
-add_executable(test FoldOptimization/test.cpp)
+#add_executable(SimpleFoldOptimization FoldOptimization/SimpleFoldOptimization.cpp)
+add_executable(QuadMeshTest2 QuadMeshExamples/QuadMeshTest2.cpp)
+add_executable(ToyExample FoldOptimization/ToyExample.cpp)
 # link libraries
+
+target_link_libraries(ToyExample PRIVATE GOAST::GOAST)
+
 target_link_libraries(QuadMeshTest PRIVATE GOAST::GOAST)
+
+target_link_libraries(QuadMeshTest2 PRIVATE GOAST::GOAST)
 
 target_link_libraries(multires_example PRIVATE GOAST::GOAST)
 
@@ -54,8 +61,6 @@ target_link_libraries(parametricMCM PRIVATE GOAST::GOAST)
 
 target_link_libraries(gravitationBending PRIVATE GOAST::GOAST)
 
-#target_link_libraries(GravitationEnergyTest PRIVATE GOAST::GOAST)
-
 target_link_libraries(bendingFold PRIVATE GOAST::GOAST)
 
 target_link_libraries(bendingFoldParamInterpolation PRIVATE GOAST::GOAST)
@@ -68,10 +73,9 @@ target_link_libraries(bendingFoldParamDirichlet PRIVATE GOAST::GOAST)
 
 target_link_libraries(bendingSmallArcInterpolation PRIVATE GOAST::GOAST)
 
-#target_link_libraries(bendingFoldParamDirichletFoldClass PRIVATE GOAST::GOAST)
+#target_link_libraries(SimpleFoldOptimization PRIVATE GOAST::GOAST)
 
-target_link_libraries(SimpleFoldOptimization2 PRIVATE GOAST::GOAST)#
-target_link_libraries(test PRIVATE GOAST::GOAST)
+#target_link_libraries(SimpleFoldOptimization2 PRIVATE GOAST::GOAST)
 
 # Phasefield example currently requires Ipopt
 if (GOAST_WITH_IPOPT)

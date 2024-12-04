@@ -1,4 +1,0 @@
-DE_val goes to zero as expected
-But DcostFunctional and CostFunctional values remain constant over iterations why ?
-    -> maybe wrong boundary conditions ?
-    -> no movement in z-direction why ?
