@@ -6,6 +6,7 @@
 
 typedef typename DefaultConfigurator::SparseMatrixType MatrixType;
 typedef typename DefaultConfigurator::VectorType VectorType;
+typedef typename DefaultConfigurator::FullMatrixType FullMatrixType;
 
 void Sparsity( const MatrixType &matrix ){
     int numEntries = 0;
@@ -27,6 +28,24 @@ MatrixType convertVecToSparseMat(const VectorType& vec){
 
     //sparseMatrix.makeCompressed();
     return sparseMatrix;
+}
+
+bool is_posdef(MatrixType H) {
+    auto H_dense = H.toDense();
+    Eigen::LLT<FullMatrixType> llt(H_dense);
+    if (llt.info() == Eigen::NumericalIssue) {
+        return false;
+    }
+    return true;
+}
+
+inline bool is_nan_dense(const FullMatrixType& x) {
+    return x.array().isNaN().any();
+}
+
+inline bool is_nan_sparse(const MatrixType& x) {
+    Eigen::Map<const Eigen::Array<typename MatrixType::Scalar, Eigen::Dynamic, 1>> values(x.valuePtr(), x.nonZeros());
+    return values.isNaN().any();
 }
 
 // method to extract a block from a sparse matrix
@@ -243,6 +262,51 @@ void assignSparseBlockInplace(MatrixType &M, MatrixType &Mblock, int ibegin, int
 }
 */
 
+void printSparseMatrix(const Eigen::SparseMatrix<double>& matrix, const std::string& filename, int precision = 3) {
+    std::ofstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Error: Could not open file " << filename << " for writing.\n";
+        return;
+    }
+
+    // Write matrix dimensions
+    file << "Matrix dimensions: " << matrix.rows() << " x " << matrix.cols() << "\n\n";
+
+    // Convert sparse matrix to dense for readability
+    Eigen::MatrixXd denseMatrix = Eigen::MatrixXd(matrix);
+
+    // Set formatting
+    file << std::fixed << std::setprecision(precision);
+
+    // Print matrix
+    for (int i = 0; i < denseMatrix.rows(); ++i) {
+        for (int j = 0; j < denseMatrix.cols(); ++j) {
+            file << std::setw(8) << denseMatrix(i, j) << " ";
+        }
+        file << "\n";
+    }
+
+    file.close();
+    std::cout << "Sparse matrix successfully printed to " << filename << "\n";
+}
+
+void printMatrixToFile(const Eigen::MatrixXd& matrix, const std::string& filename) {
+    // Open the file
+    std::ofstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Error: Could not open file " << filename << " for writing." << std::endl;
+        return;
+    }
+
+    // Write the matrix to the file
+    file << matrix.format(Eigen::IOFormat(Eigen::StreamPrecision, Eigen::DontAlignCols, " ", "\n"));
+    
+    // Close the file
+    file.close();
+
+    std::cout << "Matrix written to " << filename << std::endl;
+}
+
 void assignSparseBlockWithTriplet(std::vector<Tri> &tripletList, const MatrixType &Block, int ibegin, int jbegin)
 {
     // First, assemble Triplet List of the Block
@@ -299,5 +363,16 @@ void assignSparseBlockInplace(MatrixType &Base, const MatrixType &Block, int ibe
     }
 
     Base.setFromTriplets(BaseTriplet.begin(), BaseTriplet.end());
+}
+
+bool is_posdef_eigen(FullMatrixType H) {
+    Eigen::EigenSolver<FullMatrixType> eigensolver(H);
+    for (int i = 0; i < eigensolver.eigenvalues().rows(); i++) {
+        double v = eigensolver.eigenvalues()(i).real();
+        if (v <= 0) {
+            return false;
+        }
+    }
+    return true;
 }
 #endif // SPARSEMAT_H

@@ -60,12 +60,20 @@ class ProblemDOFs{
             return temp;
         }
 
-        void getFoldDOFs(VectorType &foldDOFs) const{
-            foldDOFs = _foldDOFs;
+        VectorType getFoldDOFs() const{
+            return _foldDOFs;
         }
 
         VectorType getVertexDOFs() const{
             return _vertexDOFs;
+        }
+
+        void setFoldDOFs(const VectorType &foldDOFs){
+            _foldDOFs = foldDOFs;
+        }
+
+        void setVertexDOFs(const VectorType &vertexDOFs){
+            _vertexDOFs = vertexDOFs;
         }
 
     private:

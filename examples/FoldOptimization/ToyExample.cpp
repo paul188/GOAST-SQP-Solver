@@ -48,7 +48,6 @@ try{
         if( std::abs(coords[1]) < 1e-6 || std::abs(coords[1] - 4.0) < 1e-10 ){
             bdryMaskRef_1.push_back( i );
         }
-        // ISSUE HERE WITH VALUES NOT RECOGNIZED
         if(std::abs(coords[1] - 2.3) < 1e-6){
             bdryMaskRef_1.push_back( i );
         }
@@ -62,6 +61,13 @@ try{
     extendBoundaryMask( plateTopol.getNumVertices(), bdryMaskRef_1 );
     std::vector<int> activeRef_2 = (std::vector<int>){1,0,1};
     extendBoundaryMaskPartial( plateTopol.getNumVertices(), bdryMaskRef_2 , activeRef_2);
+
+    for(int i = 0; i < bdryMaskRef_1.size(); i++){
+        std::cerr << bdryMaskRef_1[i] << " ";
+    }
+
+    std::vector<VectorType> def_geometries;
+    std::vector<VectorType> ref_geometries;
 
     // Use an unordered_set to remove duplicates
     std::unordered_set<int> uniqueEntries(bdryMaskRef_1.begin(), bdryMaskRef_1.end());
@@ -109,20 +115,32 @@ try{
     CostFunctional<DefaultConfigurator> costFunctional(foldVertices);
     CostFunctionalGradient<DefaultConfigurator> DcostFunctional(plateTopol,foldVertices);
     
+    RealType factor_membrane = 10000.0;
+    RealType factor_bending = 1.0;
+
     VectorType factors(2);
-    factors << 1.0 , 1.0;
+    factors[0] = factor_membrane;
+    factors[1] = factor_bending;
+
     MyObjectFactory<DefaultConfigurator> factory(factors, plateTopol, edge_weights);
     BoundaryDOFS<DefaultConfigurator> boundaryDOFs(bdryMaskOpt, nVertexDOFs, nFoldDOFs);
     // Create the degrees of freedom object
     ProblemDOFs<DefaultConfigurator> problemDOFs(VectorType::Zero(nFoldDOFs), plateGeomDef, foldDofsPtr, DfoldDofsPtr);
     SQPLineSearchSolver<DefaultConfigurator> solver(pars, costFunctional, DcostFunctional, factory, boundaryDOFs, problemDOFs);
-    solver.solve(plateGeomDef, plateGeomRef);
+    solver.solve(plateGeomRef, def_geometries, ref_geometries);
 
-    setGeometry( plate, plateGeomDef );
-    OpenMesh::IO::write_mesh(plate, "result_plateGeomDef.ply");
+    std::string filename;
 
-    setGeometry( plate, plateGeomRef );
-    OpenMesh::IO::write_mesh(plate, "result_plateGeomRef.ply");
+    for(int i = 0; i < def_geometries.size(); i++){
+        filename = "deformed/plate_" + std::to_string(i) + ".ply";
+        setGeometry(plate, def_geometries[i]);
+        OpenMesh::IO::write_mesh(plate,filename);
+        setGeometry(plate, ref_geometries[i]);
+        filename = "reference/plate_" + std::to_string(i) + ".ply";
+        OpenMesh::IO::write_mesh(plate, filename);
+    }
+
+
 
   } 
   catch ( BasicException &el ){

@@ -27,7 +27,7 @@ class MyObjectFactory {
             // then, generate the energy
             auto *E_bend = new SimpleBendingEnergy<ConfiguratorType>(_plateTopol, plateGeomRef, true, _edge_weights);
             auto *E_membrane = new NonlinearMembraneEnergy<ConfiguratorType>(_plateTopol, plateGeomRef, true);
-            AdditionOp<ConfiguratorType> temp(_factors, *E_bend, *E_membrane);
+            AdditionOp<ConfiguratorType> temp(_factors, *E_membrane,*E_bend);
             temp.apply(plateGeomDef,Dest);
         }
 
@@ -40,7 +40,7 @@ class MyObjectFactory {
             // then, generate the gradient
             auto *DE_bend = new SimpleBendingGradientDef<ConfiguratorType>(_plateTopol, plateGeomRef, _edge_weights);
             auto *DE_membrane = new NonlinearMembraneGradientDef<ConfiguratorType>(_plateTopol, plateGeomRef);
-            AdditionGradient<ConfiguratorType> temp(_factors, *DE_bend, *DE_membrane);
+            AdditionGradient<ConfiguratorType> temp(_factors, *DE_membrane, *DE_bend);
             temp.apply(plateGeomDef, Dest);
         }
 
@@ -52,7 +52,7 @@ class MyObjectFactory {
             // then, generate the hessian
             auto *D2E_bend = new SimpleBendingHessianDef<ConfiguratorType>(_plateTopol, plateGeomRef, _edge_weights);
             auto *D2E_membrane = new NonlinearMembraneHessianDef<ConfiguratorType>(_plateTopol, plateGeomRef);
-            AdditionHessian<ConfiguratorType> temp(_factors, *D2E_bend, *D2E_membrane);
+            AdditionHessian<ConfiguratorType> temp(_factors,*D2E_membrane, *D2E_bend);
             temp.apply(plateGeomDef, Dest);
         }
 
@@ -65,7 +65,7 @@ class MyObjectFactory {
             // generate mixed hessians w.r.t. deformed and undeformed geometry
             auto *D2E_bend_def_undef = new SimpleBendingHessianMixed<ConfiguratorType>(_plateTopol, plateGeomRef, true, true, _edge_weights);
             auto *D2E_membrane_def_undef = new NonlinearMembraneHessianMixed<ConfiguratorType>(_plateTopol, plateGeomRef, true, true);
-            AdditionHessian<ConfiguratorType> temp(_factors, *D2E_bend_def_undef, *D2E_membrane_def_undef);
+            AdditionHessian<ConfiguratorType> temp(_factors, *D2E_membrane_def_undef, *D2E_bend_def_undef);
             MatrixType D2E_def_undef_val;
             temp.apply(plateGeomDef, D2E_def_undef_val);
 
