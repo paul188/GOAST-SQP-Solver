@@ -25,7 +25,9 @@ add_executable(QuadMeshTest QuadMeshExamples/QuadMeshTest.cpp)
 #add_executable(SimpleFoldOptimization FoldOptimization/SimpleFoldOptimization.cpp)
 add_executable(QuadMeshTest2 QuadMeshExamples/QuadMeshTest2.cpp)
 add_executable(ToyExample FoldOptimization/ToyExample.cpp)
+add_executable(ToyExampleNewton FoldOptimization/ToyExampleNewton.cpp)
 # link libraries
+target_link_libraries(ToyExampleNewton PRIVATE GOAST::GOAST)
 
 target_link_libraries(ToyExample PRIVATE GOAST::GOAST)
 

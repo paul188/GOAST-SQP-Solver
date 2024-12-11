@@ -49,7 +49,7 @@ try{
             bdryMaskRef_1.push_back( i );
         }
         if(std::abs(coords[1] - 2.0) < 1e-6){
-            coords[1]+=0.16;
+            //coords[1]+=0.16;
             bdryMaskRef_1.push_back( i );
         }
         if( std::abs(coords[0]) < 1e-6 || std::abs(coords[0] - 1.0) < 6 ){
@@ -88,15 +88,12 @@ try{
         getXYZCoord<VectorType, VecType>( plateGeomDef, coords, i);
         if( coords[1] == 0.0 || coords[1] == 4.0 ){
             bdryMaskOpt.push_back( i );
-            if(std::abs(coords[1] - 2.0) < 1e-6){
-                coords[1]+=0.3;
-            }
             if(coords[1] == 0.0){
-                coords[1] += 0.5;
+                coords[1] += 0.2;
                 coords[2] += 0.2;
             }
             else{
-                coords[1] -= 0.5;
+                coords[1] -= 0.2;
                 coords[2] += 0.2;
             }
         }
@@ -105,32 +102,24 @@ try{
     }
 
     extendBoundaryMask( plateTopol.getNumVertices(), bdryMaskOpt );
-
+    
     auto foldDofsPtr = std::make_shared<FoldDofsSimpleLine<DefaultConfigurator>>(plateTopol,plateGeomInitial, plateGeomRef, bdryMaskRef_1);
 
     std::vector<int> foldVertices;
     foldDofsPtr -> getFoldVertices(foldVertices);
+
+    for(int i = 0; i < foldVertices.size(); i++){
+        VecType coords;
+        getXYZCoord<VectorType, VecType>( plateGeomDef, coords, foldVertices[i]);
+        coords[2]-=0.5;
+        setXYZCoord<VectorType, VecType>( plateGeomDef, coords, foldVertices[i]);
+    }
 
     auto DfoldDofsPtr = std::make_shared<FoldDofsSimpleLineGradient<DefaultConfigurator>>(plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices);
 
     VectorType edge_weights = VectorType::Zero(plateTopol.getNumEdges());
     foldDofsPtr->getEdgeWeights(edge_weights);
 
-    for(int i = 0; i < foldVertices.size(); i++){
-        VecType coords;
-        getXYZCoord<VectorType, VecType>( plateGeomDef, coords, foldVertices[i]);
-        coords[1] += 0.3;
-        coords[2]-= 0.5;
-        setXYZCoord<VectorType, VecType>( plateGeomDef, coords, foldVertices[i]);
-    }
-
-    size_t nFoldDOFs = foldDofsPtr->getNumDofs();
-    size_t nVertexDOFs = 3*plateTopol.getNumVertices();
-    
-    SQPLineSearchParams<DefaultConfigurator> pars;
-    CostFunctional<DefaultConfigurator> costFunctional(foldVertices);
-    CostFunctionalGradient<DefaultConfigurator> DcostFunctional(plateTopol,foldVertices);
-    
     RealType factor_membrane = 10000.0;
     RealType factor_bending = 1.0;
 
@@ -138,23 +127,38 @@ try{
     factors[0] = factor_membrane;
     factors[1] = factor_bending;
 
-    MyObjectFactory<DefaultConfigurator> factory(factors, plateTopol, edge_weights);
-    BoundaryDOFS<DefaultConfigurator> boundaryDOFs(bdryMaskOpt, nVertexDOFs, nFoldDOFs);
-    // Create the degrees of freedom object
-    ProblemDOFs<DefaultConfigurator> problemDOFs(VectorType::Zero(nFoldDOFs), plateGeomDef, foldDofsPtr, DfoldDofsPtr);
-    SQPLineSearchSolver<DefaultConfigurator> solver(pars, costFunctional, DcostFunctional, factory, boundaryDOFs, problemDOFs);
-    solver.solve(plateGeomRef, def_geometries, ref_geometries, fold_DOFs);
+    SimpleBendingEnergy<DefaultConfigurator> E_bend( plateTopol, plateGeomRef, true , edge_weights);
+    SimpleBendingGradientDef<DefaultConfigurator> DE_bend( plateTopol, plateGeomRef , edge_weights);
+    SimpleBendingHessianDef<DefaultConfigurator> D2E_bend( plateTopol, plateGeomRef , edge_weights);
 
-    std::string filename;
+    typename DefaultConfigurator::RealType energy;
 
-    for(int i = 0; i < def_geometries.size(); i++){
-        filename = "deformed/plate_" + std::to_string(i) + ".ply";
-        setGeometry(plate, def_geometries[i]);
-        OpenMesh::IO::write_mesh(plate,filename);
-        setGeometry(plate, ref_geometries[i]);
-        filename = "reference/plate_" + std::to_string(i) + ".ply";
-        OpenMesh::IO::write_mesh(plate, filename);
-    }
+    NonlinearMembraneEnergy<DefaultConfigurator> E_mem( plateTopol, plateGeomRef, true );
+    NonlinearMembraneGradientDef<DefaultConfigurator> DE_mem( plateTopol, plateGeomRef );
+    NonlinearMembraneHessianDef<DefaultConfigurator> D2E_mem( plateTopol, plateGeomRef );
+
+    AdditionOp<DefaultConfigurator> E_tot( factors, E_mem, E_bend);
+    AdditionGradient<DefaultConfigurator> DE_tot( factors, DE_mem, DE_bend);
+    AdditionHessian<DefaultConfigurator> D2E_tot(factors, D2E_mem, D2E_bend);
+
+    // set outer optimization parameters
+    OptimizationParameters<DefaultConfigurator> optPars;
+    optPars.setGradientIterations( 1000);
+    optPars.setBFGSIterations( 1000 );
+    optPars.setNewtonIterations( 1000 );
+    optPars.setQuietMode( SHOW_TERMINATION_INFO );
+    VectorType initialization = plateGeomDef;
+
+    std::cerr<< "Start Newton " <<std::endl;
+    initialization = plateGeomDef;
+    NewtonMethod<DefaultConfigurator> N( DE_tot, D2E_tot, optPars);
+    N.setBoundaryMask( bdryMaskOpt );
+    N.solve( initialization, plateGeomDef );
+
+    // saving
+    setGeometry( plate, plateGeomDef );
+    OpenMesh::IO::write_mesh(plate, "bendingFoldSol_withNewton2.ply");
+
 
   } 
   catch ( BasicException &el ){

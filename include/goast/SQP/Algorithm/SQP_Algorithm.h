@@ -13,7 +13,7 @@ class SQPBaseParams{
     public:
         using RealType = typename ConfiguratorType::RealType;
         RealType eps = 1e-6; // Convergence criterion
-        size_t maxIter = 50; // maximum number of iterations
+        size_t maxIter = 2000; // maximum number of iterations
         size_t iter = 0; // current iteration
 };
 
@@ -78,7 +78,7 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
         // before we translate it with the fold dofs
         // plateGeomDef contains the initial deformed geometry. But since is also contains 
         // our degrees of freedom as the vertexDOFs, we will modify it during the run
-        void solve(const VectorType& plateGeomRef_basic, std::vector<VectorType> &def_geometries, std::vector<VectorType> &ref_geometries)
+        void solve(const VectorType& plateGeomRef_basic, std::vector<VectorType> &def_geometries, std::vector<VectorType> &ref_geometries, std::vector<VectorType> &fold_DOFs)
         {
 
             size_t nAllVertexDOFs = _boundaryDOFs.getNumVertexDOFs();
@@ -132,14 +132,15 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
             VectorType lambda_k_prev = VectorType::Zero(nEffectiveVertexDOFs);
             VectorType lambda_diff = VectorType::Zero(nEffectiveVertexDOFs);
 
-            while(_pars.iter < _pars.maxIter &&(Constraint.norm() > _pars.eps || DCostFunctional_val.norm() > _pars.eps)){
+            while(_pars.iter < _pars.maxIter){ //&&(norm_l1(Constraint) > _pars.eps || norm_l1(DCostFunctional_val) > _pars.eps)){
 
                 // Solve the QP Problem and write the sol into sol_k
                 // solveQPProblem(sol_k, A_k, rhs_k, B_k, D2E_val, DE_dt_sparse, DCostFunctional_val, DE_val, nEffectiveDOFs, nFoldDOFs, nEffectiveVertexDOFs);
 
                 std::cout << "\rIteration: " << std::setw(4) << _pars.iter
-                << " | DE_val: " << std::setw(10) << std::fixed << std::setprecision(4) << Constraint.norm()
-                << " | CostFunctional_val: " << std::setw(10) << std::fixed << std::setprecision(4) << costFunctional_val
+                << " | DE_val: " << std::setprecision(12)<<std::setw(10) << std::setprecision(4) << norm_l1(Constraint)
+                << " | CostFunctional_val: " << std::setprecision(12)<<std::setw(10) << std::setprecision(4) << costFunctional_val
+                << " | Fold Dofs: "<< std::setprecision(12) << _problemDOFs.getFoldDOFs()[0]
                 << std::endl;  // flush to ensure immediate output
 
                 std::vector<Eigen::Triplet<double>> ATriplet;
@@ -149,11 +150,6 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                 assignSparseBlockInplace(A_k, D2E_mix, nEffectiveDOFs,0, ATriplet);
                 assignSparseBlockInplace(A_k, D2E_vertex, nEffectiveDOFs,nFoldDOFs, ATriplet);
 
-                FullMatrixType A_k_dense = A_k.toDense();
-                if(!is_posdef_eigen(A_k_dense)){
-                    std::cerr << "Error: Matrix is not positive definite" << std::endl;
-                }
-
                 // Construct the r.h.s for the linear system
                 // the derivative of the cost functional
                 rhs_k.segment(0,nEffectiveDOFs) = -DCostFunctional_val;
@@ -162,7 +158,7 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
 
                 if(A_k.rows() <= 200){
                     // Use a dense solver instead for such a small system -> sparse solvers could fail here
-
+                    FullMatrixType A_k_dense = A_k.toDense();
                     Eigen::JacobiSVD<FullMatrixType> svd(A_k_dense, Eigen::ComputeThinU | Eigen::ComputeThinV);
                     sol_k = svd.solve(rhs_k);
 
@@ -211,10 +207,6 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                                           Constraint,
                                           B_k,
                                           lineSearchDOFs);
-
-                if(_pars.alpha > 200 && _pars.alpha < 1500){
-                    _pars.alpha = 1e-1;
-                }
 
                 // Apply the steps
                 _problemDOFs += _pars.alpha*d_k_full;
@@ -274,10 +266,12 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                 D2E_vertex = D2E_vertex_kplus1;
                 D2E_mix = D2E_mix_kplus1;
                 lambda_k_prev = lambda_k;
-
-                def_geometries.push_back(_problemDOFs.getVertexDOFs());
-                ref_geometries.push_back(_problemDOFs.getReferenceGeometry());
-
+                
+                if(_pars.iter %100 == 0){
+                    def_geometries.push_back(_problemDOFs.getVertexDOFs());
+                    ref_geometries.push_back(_problemDOFs.getReferenceGeometry());
+                    fold_DOFs.push_back(_problemDOFs.getFoldDOFs());
+                }
                 _pars.iter++;
             }
         }
@@ -313,7 +307,7 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
             }
         }     
 
-        RealType constraint_norm(const VectorType &constr) const {
+        RealType norm_l1(const VectorType &constr) const {
             // avoid division by zero
             RealType c_l1 = std::numeric_limits<RealType>::epsilon();
 
@@ -335,7 +329,7 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
             RealType mu, phi_l1, Dp_phi_l1;
             const RealType tau = _pars.tau;  // line search step decrease, 0 < tau < settings.tau
 
-            RealType constr_l1 = constraint_norm(Constraint);
+            RealType constr_l1 = norm_l1(Constraint);
 
             RealType dBd = d_k.dot(B_k * d_k);
             RealType Cd = CostFunctionalGradient_val.dot(d_k);
@@ -369,7 +363,7 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                 _factory.produceDE_vertex(lineSearchDOFs,Constraint_linesearch);
                 _boundaryDOFs.transformToReducedSpace(Constraint_linesearch);
 
-                RealType phi_l1_step = CostFunctional_val_linesearch + mu * constraint_norm(Constraint_linesearch);
+                RealType phi_l1_step = CostFunctional_val_linesearch + mu * norm_l1(Constraint_linesearch);
 
                 //undo the translation
                 lineSearchDOFs -= alpha*d_k_full;

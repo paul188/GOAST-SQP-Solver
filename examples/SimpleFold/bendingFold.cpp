@@ -13,6 +13,7 @@
 #include <chrono>
 #include <ctime>
 #include <string>
+#include <goast/SQP/Utils/ObjectFactory.h>
 
 #include <goast/Core.h>
 #include <goast/DiscreteShells.h>

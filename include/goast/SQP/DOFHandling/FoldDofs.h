@@ -96,7 +96,7 @@ class FoldDofsSimpleLine : public FoldDofs<ConfiguratorType>, public BaseOp<type
         bool isFoldVertex(const RealType coord_x, const RealType coord_y) const
         {
             const RealType tolerance = 1e-5;  // Adjust as necessary
-            return std::abs(coord_y - 2.3) < tolerance;
+            return std::abs(coord_y - 2.0) < tolerance;
         }
 
         size_t getNumDofs() const {

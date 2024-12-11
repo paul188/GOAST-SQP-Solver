@@ -1,6 +1,7 @@
 #pragma once
 #include <goast/Core.h>
 #include <goast/SQP/DOFHandling/ProblemDOFs.h>
+#include <goast/DiscreteShells.h>
 
 template <typename ConfiguratorType>
 class MyObjectFactory {
