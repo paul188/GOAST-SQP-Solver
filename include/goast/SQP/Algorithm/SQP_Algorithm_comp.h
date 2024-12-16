@@ -1,10 +1,12 @@
 #pragma once
+
 #include <goast/Core.h>
 #include <goast/SQP/Algorithm/CostFunctional.h>
 #include <goast/SQP/Algorithm/Merit.h>
 #include <goast/SQP/DOFHandling/BoundaryDOFS.h>
 #include <goast/SQP/DOFHandling/FoldDofs.h>
 #include <goast/SQP/Utils/ObjectFactory.h>
+
 // Basic Parameters that all SQP Solvers should contain
 template<typename ConfiguratorType>
 class SQPBaseParams{
@@ -14,6 +16,7 @@ class SQPBaseParams{
         size_t maxIter = 2000; // maximum number of iterations
         size_t iter = 0; // current iteration
 };
+
 // Specific parameters needed for SQP Line Search
 template <typename ConfiguratorType>
 class SQPLineSearchParams : public SQPBaseParams<ConfiguratorType>{
@@ -25,25 +28,32 @@ class SQPLineSearchParams : public SQPBaseParams<ConfiguratorType>{
         static constexpr RealType theta = 0.2;
         
         RealType mu = 1.0; // Merit control parameter
+        RealType alpha = 1.0; // Current step size
 };
+
 template <typename ConfiguratorType>
 class SQPBaseSolver{
     public:
         typedef typename ConfiguratorType::VectorType VectorType;
         typedef typename ConfiguratorType::RealType RealType;
         typedef typename ConfiguratorType::SparseMatrixType MatrixType;
+
         SQPBaseSolver(const SQPBaseParams<ConfiguratorType> &pars) : _pars(pars) {}
     protected:
         SQPBaseParams<ConfiguratorType> _pars;
 };
+
 template <typename ConfiguratorType>
 class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
+
     public: 
+
         typedef typename ConfiguratorType::VectorType VectorType;
         typedef typename ConfiguratorType::RealType RealType;
         typedef typename ConfiguratorType::SparseMatrixType MatrixType;
         typedef typename ConfiguratorType::FullMatrixType FullMatrixType;
         typedef typename ConfiguratorType::VecType VecType;
+
         // pars: Parameters for the SQP Solver
         // costFunctional: Cost functional
         // DcostFunctional: Derivative of the cost functional
@@ -55,8 +65,7 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                             const MyObjectFactory<ConfiguratorType> &factory,
                             const BoundaryDOFS<ConfiguratorType> &boundaryDOFs,
                             ProblemDOFs<ConfiguratorType> &problemDOFs,
-                            size_t BFGS_reset = 20,
-                            RealType beta = 0.9) 
+                            size_t BFGS_reset = 15) 
                             : SQPBaseSolver<ConfiguratorType>(pars),
                             _costFunctional(costFunctional),
                             _DcostFunctional(DcostFunctional),
@@ -131,7 +140,6 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                 // solveQPProblem(sol_k, A_k, rhs_k, B_k, D2E_val, DE_dt_sparse, DCostFunctional_val, DE_val, nEffectiveDOFs, nFoldDOFs, nEffectiveVertexDOFs);
 
                 std::cout << "\rIteration: " << std::setw(4) << _pars.iter
-
                 << " | DE_val: " << std::setprecision(12)<<std::setw(10) << std::setprecision(4) << norm_l1(Constraint)
                 << " | CostFunctional_val: " << std::setprecision(12)<<std::setw(10) << std::setprecision(4) << costFunctional_val
                 << " | Fold Dofs: "<< std::setprecision(12) << _problemDOFs.getFoldDOFs()[0]
@@ -193,7 +201,7 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
 
                 ProblemDOFs<ConfiguratorType> lineSearchDOFs(_problemDOFs);
 
-                // Algorithm modifies d_k_full and lambda_diff to be the correct steps
+                // modifies d_k_full and lambda_diff to be the correct steps
                 line_search(costFunctional_val,
                             DCostFunctional_val,
                             d_k,
@@ -207,7 +215,6 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                             rhs_k,
                             nEffectiveDOFs,
                             nEffectiveVertexDOFs,
-                            nFoldDOFs,
                             lineSearchDOFs);
 
                 // Apply the steps
@@ -335,7 +342,6 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                             VectorType &rhs_k,
                             size_t nEffectiveDOFs,
                             size_t nEffectiveVertexDOFs,
-                            size_t nFoldDOFs,
                             ProblemDOFs<ConfiguratorType> &lineSearchDOFs) {
 
             RealType mu, phi_l1, Dp_phi_l1;
@@ -360,14 +366,13 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
             Dp_phi_l1 = Cd - (mu * constr_l1);
 
             RealType alpha = 1.0;
-
             int i;
             
             RealType CostFunctional_val_linesearch;
             VectorType Constraint_linesearch;
             RealType constr_l1_linesearch;
 
-            while(alpha > 1e-13) {
+            while(alpha > 1e-12) {
 
                 // Update deformed and reference geometry
                 lineSearchDOFs += alpha*d_k_full;
@@ -376,7 +381,7 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                 
                 _factory.produceDE_vertex(lineSearchDOFs,Constraint_linesearch);
                 _boundaryDOFs.transformToReducedSpace(Constraint_linesearch);
-
+                
                 constr_l1_linesearch = norm_l1(Constraint_linesearch);
                 RealType phi_l1_step = CostFunctional_val_linesearch + mu * constr_l1_linesearch;
 
@@ -384,11 +389,10 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                     d_k_full *= alpha;
                     lambda_diff *= alpha;
                     return;
-                } 
-                 // If increase in merit together with increase in constraint use second order correction
+                }
+                // If increase in merit together with increase in constraint use second order correction
                 else if ((constr_l1_linesearch > constr_l1) && (alpha == 1.0))
                 {
-                    std::cout<<"Second order correction"<<std::endl;
                     // Compute second order correction
                     VectorType d = Constraint_linesearch - C_k*d_k;
                     VectorType sol_k;
@@ -417,30 +421,10 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                         if(!(A_k*sol_k).isApprox(rhs_k))
                             std::cerr << "Error: Linear sparse system not solved correctly" << std::endl;
                     }
-
-                    VectorType d_k_correction = sol_k.segment(0, nEffectiveDOFs);
-                    _boundaryDOFs.InverseTransformWithFoldDofs(d_k_correction);
-
-                    ProblemDOFs<ConfiguratorType> lineSearchDOFs_corrected = lineSearchDOFs;
-                    lineSearchDOFs_corrected += d_k_correction;
-
-                    VectorType DE_val_corrected;
-                    _factory.produceDE_vertex(lineSearchDOFs_corrected, DE_val_corrected);
-
-                    RealType CostFunctional_val_corrected;
-                    _costFunctional.apply(lineSearchDOFs_corrected.getVertexDOFs(), CostFunctional_val_corrected);
-                    phi_l1_step = CostFunctional_val_corrected + mu * norm_l1(DE_val_corrected);
-
-                    if(phi_l1_step <= (phi_l1 + _pars.eta * Dp_phi_l1)) {
-                        d_k_full += d_k_correction;
-                        lambda_diff = sol_k.segment(nEffectiveDOFs, nEffectiveVertexDOFs) - lambda_k;
-                        return;
-                    }
-                    else {
-                        //undo the translation
-                        lineSearchDOFs -= alpha*d_k_full;
-                        alpha *= _pars.tau;
-                    }
+                    d_k_full = sol_k.segment(0, nEffectiveDOFs) + d_k;
+                    lambda_diff = sol_k.segment(nEffectiveDOFs, nEffectiveVertexDOFs) - lambda_k;
+                    _boundaryDOFs.InverseTransformWithFoldDofs(d_k_full);
+                    return;
                 }
                 else {
                     //undo the translation
@@ -448,8 +432,10 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                     alpha *= _pars.tau;
                 }
             }
+
             d_k_full *= alpha;
             lambda_diff *= alpha;
+            return;
         }
 
         private:
@@ -462,4 +448,3 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
             size_t _BFGS_reset;
 
 };
-

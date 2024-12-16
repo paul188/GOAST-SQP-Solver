@@ -262,6 +262,30 @@ void assignSparseBlockInplace(MatrixType &M, MatrixType &Mblock, int ibegin, int
 }
 */
 
+void printVectorToFile(const VectorType& vec, const std::string& filename, int precision = 3) {
+    std::ofstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Error: Could not open file " << filename << " for writing.\n";
+        return;
+    }
+
+    // Write vector size
+    file << "Vector size: " << vec.size() << "\n\n";
+
+    // Set formatting
+    file << std::fixed << std::setprecision(precision);
+
+    // Print vector
+    for (size_t i = 0; i < vec.size(); ++i) {
+        file << std::setw(8) << vec[i] << "\n";
+    }
+
+    file.close();
+    std::cout << "Vector successfully printed to " << filename << "\n";
+}
+
+
+
 void printSparseMatrix(const Eigen::SparseMatrix<double>& matrix, const std::string& filename, int precision = 3) {
     std::ofstream file(filename);
     if (!file.is_open()) {

@@ -21,7 +21,6 @@ add_executable(bendingSkewedCompression SkewedCompression/bendingSkewedCompressi
 add_executable(bendingSmallArc SmallArc/bendingSmallArc.cpp)
 add_executable(bendingSmallArcInterpolation SmallArc/bendingSmallArcInterpolation.cpp)
 #add_executable(SimpleFoldOptimization2 FoldOptimization/SimpleFoldOptimization2.cpp)
-add_executable(QuadMeshTest QuadMeshExamples/QuadMeshTest.cpp)
 #add_executable(SimpleFoldOptimization FoldOptimization/SimpleFoldOptimization.cpp)
 add_executable(QuadMeshTest2 QuadMeshExamples/QuadMeshTest2.cpp)
 add_executable(ToyExample FoldOptimization/ToyExample.cpp)
@@ -30,8 +29,6 @@ add_executable(ToyExampleNewton FoldOptimization/ToyExampleNewton.cpp)
 target_link_libraries(ToyExampleNewton PRIVATE GOAST::GOAST)
 
 target_link_libraries(ToyExample PRIVATE GOAST::GOAST)
-
-target_link_libraries(QuadMeshTest PRIVATE GOAST::GOAST)
 
 target_link_libraries(QuadMeshTest2 PRIVATE GOAST::GOAST)
 

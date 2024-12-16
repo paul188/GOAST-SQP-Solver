@@ -60,7 +60,13 @@ try{
             bdryMask.push_back(i);
         }
 
-        coords[0]*= 0.8;
+        if(coords[0] == 0.5){
+            coords[2] -= 0.1;
+        }
+
+        coords[0]-=0.5;
+        coords[0]*=0.8;
+        coords[0]+=0.4;
 
         setXYZCoord<VectorType, VecType>( plateGeomDef, coords, i);
     }
@@ -68,6 +74,8 @@ try{
     setGeometry(plate, plateGeomDef);
 
     OpenMesh::IO::write_mesh(plate, "plate_def.ply");
+
+    auto def_geometries = std::make_shared<std::vector<VectorType>>();
     
     SimpleBendingEnergy<DefaultConfigurator> E_bend(plateTopol, plateGeomRef, true, weights);
     SimpleBendingGradientDef<DefaultConfigurator> DE_bend(plateTopol, plateGeomRef, weights);
@@ -90,14 +98,14 @@ try{
 
     // set outer optimization parameters
     OptimizationParameters<DefaultConfigurator> optPars;
-    optPars.setNewtonIterations( 1000 );
+    optPars.setNewtonIterations( 10000 );
     optPars.setQuietMode( SHOW_ALL );
     VectorType initialization = plateGeomDef;
 
     std::cerr<< "Startting Newton Linesearch..."<<std::endl;
     LineSearchNewton<DefaultConfigurator> NLS( E_tot, DE_tot, D2E_tot, optPars);
     NLS.setBoundaryMask( bdryMask );
-    NLS.solve( initialization, plateGeomDef );
+    NLS.solve( initialization, plateGeomDef);
 
     // saving
     setGeometry( plate, plateGeomDef );
