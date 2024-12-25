@@ -39,13 +39,22 @@ bool is_posdef(MatrixType H) {
     return true;
 }
 
-inline bool is_nan_dense(const FullMatrixType& x) {
-    return x.array().isNaN().any();
-}
+inline bool replaceNanWithZero(MatrixType& x) {
+    Eigen::Map<Eigen::Array<typename MatrixType::Scalar, Eigen::Dynamic, 1>> values(x.valuePtr(), x.nonZeros());
+    if (values.hasNaN()) {
+        std::cout << "NaN values detected in the matrix" << std::endl;
 
-inline bool is_nan_sparse(const MatrixType& x) {
-    Eigen::Map<const Eigen::Array<typename MatrixType::Scalar, Eigen::Dynamic, 1>> values(x.valuePtr(), x.nonZeros());
-    return values.isNaN().any();
+        for (int k = 0; k < x.outerSize(); ++k) {
+            for (MatrixType::InnerIterator it(x, k); it; ++it) {
+                if (std::isnan(it.value())) {
+                    it.valueRef() = 0.0;  // Replace NaN with 0
+                }
+            }
+        }
+        
+        return true;
+    }
+    return false;
 }
 
 // method to extract a block from a sparse matrix
@@ -262,7 +271,7 @@ void assignSparseBlockInplace(MatrixType &M, MatrixType &Mblock, int ibegin, int
 }
 */
 
-void printVectorToFile(const VectorType& vec, const std::string& filename, int precision = 3) {
+void printVectorToFile(const VectorType& vec, const std::string& filename, int precision = 5) {
     std::ofstream file(filename);
     if (!file.is_open()) {
         std::cerr << "Error: Could not open file " << filename << " for writing.\n";

@@ -20,9 +20,6 @@ typedef DefaultConfigurator::FullMatrixType FullMatrixType;
 int main(int argc, char *argv[])
 {
 
-  using MatrixType = DefaultConfigurator::SparseMatrixType;
-  using FullMatrixType = DefaultConfigurator::FullMatrixType;
-
 try{
     std::cerr << "=================================================================================" << std::endl;
     std::cerr << "SIMPLE FOLD OPTIMIZATION" << std::endl;
@@ -30,7 +27,7 @@ try{
 
     // load flat plate [0,1]^2
     TriMesh plate;
-    OpenMesh::IO::read_mesh(plate, "../../data/plate/testMesh.ply");
+    OpenMesh::IO::read_mesh(plate, "../../data/plate/testMesh2.ply");
     MeshTopologySaver plateTopol( plate );
     std::cerr << "num of nodes = " << plateTopol.getNumVertices() << std::endl;
     VectorType plateGeomRef, plateGeomDef, plateGeomInitial;
@@ -49,7 +46,7 @@ try{
             bdryMaskRef_1.push_back( i );
         }
         if(std::abs(coords[1] - 2.0) < 1e-6){
-            coords[1]+=0.16;
+            coords[1]+=0.3;
             bdryMaskRef_1.push_back( i );
         }
         if( std::abs(coords[0]) < 1e-6 || std::abs(coords[0] - 1.0) < 6 ){
@@ -119,7 +116,7 @@ try{
     for(int i = 0; i < foldVertices.size(); i++){
         VecType coords;
         getXYZCoord<VectorType, VecType>( plateGeomDef, coords, foldVertices[i]);
-        coords[1] += 0.3;
+        coords[1] += 0.16;
         coords[2]-= 0.5;
         setXYZCoord<VectorType, VecType>( plateGeomDef, coords, foldVertices[i]);
     }
@@ -142,8 +139,13 @@ try{
     BoundaryDOFS<DefaultConfigurator> boundaryDOFs(bdryMaskOpt, nVertexDOFs, nFoldDOFs);
     // Create the degrees of freedom object
     ProblemDOFs<DefaultConfigurator> problemDOFs(VectorType::Zero(nFoldDOFs), plateGeomDef, foldDofsPtr, DfoldDofsPtr);
-    SQPLineSearchSolver<DefaultConfigurator> solver(pars, costFunctional, DcostFunctional, factory, boundaryDOFs, problemDOFs);
-    solver.solve(plateGeomRef, def_geometries, ref_geometries, fold_DOFs);
+    SQPLineSearchSolver<DefaultConfigurator> solver(pars, costFunctional, DcostFunctional, factory, boundaryDOFs, problemDOFs, 10, false, true);
+    // the fold is translated, so currently at 2.16 -> can be minimum at 0.0
+    VectorType lower = VectorType::Ones(nFoldDOFs)*(-2.16);
+    // fold can be maximally at 4.0
+    VectorType upper = VectorType::Ones(nFoldDOFs)*(1.84);
+    std::pair<VectorType, VectorType> foldDOF_bounds(lower, upper);
+    solver.solve(plateGeomRef, def_geometries, ref_geometries, fold_DOFs, foldDOF_bounds);
 
     std::string filename;
 

@@ -73,6 +73,7 @@
         "core": "cpp",
         "specialfunctions": "cpp",
         "*.inc": "cpp",
-        "*.def": "cpp"
+        "*.def": "cpp",
+        "iterativelinearsolvers": "cpp"
     }
 }

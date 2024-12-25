@@ -155,6 +155,9 @@ public:
   }
 
   std::vector<Vec2i> getAdjacentNodesOfEdges( ) const{
+    auto vh = _mesh.halfedge_handle(0);
+    _mesh.face_handle(vh);
+    _mesh.opposite_face_handle(vh);
     return _nodesOfEdges;
   }
   

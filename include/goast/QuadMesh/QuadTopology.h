@@ -35,7 +35,7 @@ protected:
   std::vector< Vec4i > _nodesOfQuads;
   // saves global indices of neighbouring quads for each quad (these are -1 at the boundary )
   std::vector< Vec4i > _neighboursOfQuads;
-  // saves global indices of edges belonging to each triangle
+  // saves global indices of edges belonging to each quad
   std::vector< Vec4i > _edgesOfQuads;
   // saves global indices of neighbouring quads for each edge (these are -1 at the boundary )
   std::vector< Vec2i > _neighboursOfEdges;  
@@ -43,6 +43,8 @@ protected:
   std::vector< Vec2i > _nodesOfEdges;
   // saves global indices of nodes opposite of each edge (two of them are -1 for boundary edges)
   std::vector< Vec4i > _oppositeNodesOfEdges;
+  // saves the halfedge handle indices belonging to a certain face
+  std::vector< Vec4i > _halfedgesOfQuads;
    
   // stores unvalid edges and faces
   BitVector _isEdgeValid, _isFaceValid;
@@ -60,6 +62,8 @@ protected:
         _neighboursOfQuads( _numOfElems ),
         _edgesOfQuads( _numOfElems ),
         _neighboursOfEdges( _numOfEdges ),
+        _oppositeNodesOfEdges( _numOfEdges ),
+        _halfedgesOfQuads( _numOfElems ),
         _nodesOfEdges( _numOfEdges ),
         _isEdgeValid( _numOfEdges, true ), 
         _isFaceValid( _numOfElems, true ),
@@ -83,9 +87,14 @@ protected:
   
       //
       locIdx = 1;
-      for (TriMesh::ConstFaceEdgeIter cfe_it = mesh.cfe_iter(*f_it); cfe_it.is_valid(); ++cfe_it) {
+      for (MyMesh::ConstFaceEdgeIter cfe_it = mesh.cfe_iter(*f_it); cfe_it.is_valid(); ++cfe_it) {
         _edgesOfQuads[f_it->idx()][locIdx] = cfe_it->idx();
         locIdx = (locIdx + 1) % 3;
+      }
+
+      locIdx = 0;
+      for (MyMesh::ConstFaceHalfedgeIter cfh_it = mesh.cfh_iter(*f_it); cfh_it.is_valid(); ++cfh_it){
+        _halfedgesOfQuads[f_it->idx()][locIdx] = cfh_it->idx();
       }
     }
 
@@ -110,12 +119,16 @@ protected:
     return _mesh;
   }
 
-  int getNodeOfTriangle( int globalFaceIndex, int localNodeIndex ) const {
+  int getNodeOfQuad( int globalFaceIndex, int localNodeIndex ) const {
     return _nodesOfQuads[globalFaceIndex][localNodeIndex];
   }
   
-  int getEdgeOfTriangle( int globalFaceIndex, int localEdgeIndex ) const {
+  int getEdgeOfQuad( int globalFaceIndex, int localEdgeIndex ) const {
     return _edgesOfQuads[globalFaceIndex][localEdgeIndex];
+  }
+
+  int getHalfEdgeOfQuad( int globalFaceIndex, int localHalfEdgeIndex ) const {
+    return _halfedgesOfQuads[globalFaceIndex][localHalfEdgeIndex];
   }
 
   int getNeighbourOfQuad( int globalFaceIndex, int localNodeIndex ) const {
@@ -246,10 +259,10 @@ protected:
   Eigen::MatrixXi getConnectivityMatrix() const {
     Eigen::MatrixXi meshF(getNumFaces(), 4);
     for (int faceIdx = 0; faceIdx < getNumFaces(); faceIdx++) {
-      meshF(faceIdx, 0) = getNodeOfTriangle(faceIdx, 0);
-      meshF(faceIdx, 1) = getNodeOfTriangle(faceIdx, 1);
-      meshF(faceIdx, 2) = getNodeOfTriangle(faceIdx, 2);
-      meshF(faceIdx, 3) = getNodeOfTriangle(faceIdx, 3); 
+      meshF(faceIdx, 0) = getNodeOfQuad(faceIdx, 0);
+      meshF(faceIdx, 1) = getNodeOfQuad(faceIdx, 1);
+      meshF(faceIdx, 2) = getNodeOfQuad(faceIdx, 2);
+      meshF(faceIdx, 3) = getNodeOfQuad(faceIdx, 3); 
     }
     return meshF;
   }
