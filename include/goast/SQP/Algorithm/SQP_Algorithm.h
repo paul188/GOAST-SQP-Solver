@@ -89,8 +89,15 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
             size_t nEffectiveVertexDOFs = nAllVertexDOFs - bdryMaskOptSize;
 
             // Initialize the approximate Hessian
-            MatrixType B_k(nEffectiveDOFs, nEffectiveDOFs);
+            FullMatrixType B_k(nEffectiveDOFs, nEffectiveDOFs);
             B_k.setIdentity();
+
+            // Approximation for the inverse of the Hessian
+            FullMatrixType B_k_inv(nEffectiveDOFs, nEffectiveDOFs);
+            B_k_inv.setIdentity();
+
+            // Reserve the memory for the Jacobian of the constraint
+            FullMatrixType C_k(nEffectiveVertexDOFs, nEffectiveDOFs);
 
             // Create the constraint, i.e. that derivative of the energy w.r.t. the vertex DOFs is zero
             VectorType Constraint;
@@ -117,13 +124,8 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
             _boundaryDOFs.transformRowColToReducedSpace(D2E_vertex);
             _boundaryDOFs.transformRowToReducedSpace(D2E_mix);
 
-            // Reserve memory for the large matrix and r.h.s for the linear system
-            // We will do a transformation before initializing A_k s.th. we only neednReducedDOFs x nReducedDOFs matrix
-            MatrixType A_k(nEffectiveDOFs + nEffectiveVertexDOFs, nEffectiveDOFs + nEffectiveVertexDOFs);
+            // Reserve memory for the r.h.s for the linear system
             VectorType rhs_k = VectorType::Zero(nEffectiveDOFs + nEffectiveVertexDOFs);
-
-            // Reserve the memory for the Jacobian of the constraint
-            MatrixType C_k(nEffectiveVertexDOFs, nEffectiveDOFs);
 
             // Create solution vector for linear system that contains as subvector the Lagrange multipliers
             VectorType sol_k = VectorType::Zero(nEffectiveDOFs + nEffectiveVertexDOFs);
@@ -162,17 +164,9 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                 << " | d_k: "<< std::setprecision(12) << norm_l1(d_k)
                 << std::endl;  // flush to ensure immediate output
 
-                A_k.setZero();
                 C_k.setZero();
-
-                std::vector<Eigen::Triplet<RealType>> CTriplet;
-                assignSparseBlockInplace(C_k, D2E_mix,0,0, CTriplet);
-                assignSparseBlockInplace(C_k, D2E_vertex, 0, nFoldDOFs, CTriplet);
-
-                std::vector<Eigen::Triplet<RealType>> ATriplet;
-                assignSparseBlockInplace(A_k, B_k, 0, 0, ATriplet);
-                assignSparseBlockInplace(A_k, -C_k.transpose(),0,nEffectiveDOFs, ATriplet);
-                assignSparseBlockInplace(A_k, C_k, nEffectiveDOFs,0, ATriplet);
+                C_k.block(0,0,nEffectiveVertexDOFs,nFoldDOFs) = D2E_mix.toDense();
+                C_k.block(0,nFoldDOFs,nEffectiveVertexDOFs,nEffectiveVertexDOFs) = D2E_vertex.toDense();
 
                 // Construct the r.h.s for the linear system
                 // the derivative of the cost functional
@@ -180,44 +174,13 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                 // then the derivative of the energy, i.e. the constraint
                 rhs_k.segment(nEffectiveDOFs,nEffectiveVertexDOFs) = -Constraint;
 
-                if(A_k.rows() <= 20000){
-                    // Use a dense solver instead for such a small system -> sparse solvers could fail here
-                    FullMatrixType A_k_dense = A_k.toDense();
+                solveQP(B_k_inv, C_k, rhs_k, d_k, lambda_kplus1, true);
 
-                    Eigen::FullPivLU<FullMatrixType> lu_decomp(A_k_dense);
-                    sol_k = lu_decomp.solve(rhs_k);
-
-                    /*
-                    Eigen::JacobiSVD<FullMatrixType> svd(A_k_dense, Eigen::ComputeThinU | Eigen::ComputeThinV);
-                    sol_k = svd.solve(rhs_k);
-                    */
-
-                    if(!(A_k*sol_k).isApprox(rhs_k)){
-                        //std::cerr << "Error: Linear dense system not solved correctly" << std::endl;
-                        //std::cout<<"Residual: " << (A_k*sol_k - rhs_k).norm()<<std::endl;
-                    }
-                }
-                else{
-                    Eigen::BiCGSTAB<MatrixType> solver;
-                    solver.compute(A_k);
-                    sol_k = solver.solve(rhs_k);
-                    //LinearSolver<ConfiguratorType> solver;
-                    //solver.prepareSolver(A_k);
-                    //solver.backSubstitute(rhs_k, sol_k);
-
-                    if(!(A_k*sol_k).isApprox(rhs_k)){
-                        std::cerr << "Error: Linear sparse system not solved correctly" << std::endl;
-                        std::cout<< "Error norm: "<<norm_l1(A_k*sol_k - rhs_k)<<std::endl;
-                    }
-                }
-
-                d_k = sol_k.segment(0, nEffectiveDOFs);
-                lambda_kplus1 = sol_k.segment(nEffectiveDOFs, nEffectiveVertexDOFs);
                 lambda_diff = lambda_kplus1 - lambda_k;
 
                 // Now, determine the stepsize
 
-                RealType comparisonVal = ((DCostFunctional_val.dot(d_k) + 0.5*d_k.transpose().dot(B_k*d_k))/((1-_pars.rho)*Constraint.template lpNorm<1>()));
+                RealType comparisonVal = ((DCostFunctional_val.dot(d_k) + 0.5*d_k.transpose().dot(B_k*d_k))/((1-_pars.rho)*norm_l1(Constraint)));
 
                 if(_pars.mu < comparisonVal){
                     _pars.mu = (1+1e-6)*comparisonVal; // set mu to a value that is larger than the comparison value
@@ -239,7 +202,7 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                             Constraint,
                             C_k,
                             B_k,
-                            A_k,
+                            B_k_inv,
                             rhs_k,
                             nEffectiveDOFs,
                             nEffectiveVertexDOFs,
@@ -270,11 +233,6 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                 _factory.produceDE_vertex(_problemDOFs, Constraint_kplus1);
                 _boundaryDOFs.transformToReducedSpace(Constraint_kplus1);
 
-                // Update B_k using BFGS update
-                d_k = d_k_full;
-                _boundaryDOFs.transformWithFoldDofsToReducedSpace(d_k);
-                VectorType s_k = d_k;
-
                 // Want to calculate \grad_{x} L(x_{k+1}) - \grad_{x} L(x_{k})
                 VectorType DiffGradxCostFunctional;
                 DiffGradxCostFunctional = DCostFunctional_kplus1_val - DCostFunctional_val;
@@ -298,15 +256,13 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                 assignSparseBlockInplace(temp, D2E_vertex_kplus1 - D2E_vertex, 0,nFoldDOFs, temp_tripletList);
 
                 DiffGradxEnergy_kplus1 = lambda_kplus1.transpose()*(temp);
-                std::cout<<"Dimension test: "<<std::endl;
-                std::cout<<temp.rows()<<", "<<temp.cols()<<std::endl;
-                std::cout<<lambda_kplus1.size()<<std::endl;
                 temp_tripletList.clear();
                 temp.setZero();
 
                 DiffGradxLagrange = DiffGradxCostFunctional + DiffGradxEnergy_kplus1;
 
-                BFGS_update(DiffGradxLagrange, s_k, B_k);
+                // Update BFGS approx of Hessian and inverse Hessian
+                BFGS_update(DiffGradxLagrange, d_k, B_k, B_k_inv);
 
                 // Difference in constraint to check for convergence
                 DiffConstraint = Constraint_kplus1 - Constraint;
@@ -328,10 +284,12 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
             }
         }
 
-        void  BFGS_update(const VectorType &y_k, const VectorType &s_k, MatrixType &B_k){
+        void  BFGS_update(const VectorType &y_k, const VectorType &s_k, FullMatrixType &B_k, FullMatrixType &B_k_inv){
 
             if(_pars.iter > 0 && (_pars.iter % _BFGS_reset == 0)){
+                std::cout<<"Reset BFGS"<<std::endl;
                 B_k.setIdentity();
+                B_k_inv.setIdentity();
                 return;
             }
 
@@ -343,24 +301,16 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
             if(sy < _pars.theta*sBs){
                 sigma = (1-_pars.theta)*sBs/(sBs - sy);
                 y_k2 = sigma*y_k + (1-sigma)*Bs;
+                sy = s_k.dot(y_k2);
             }
 
-            RealType yk2_sk = s_k.dot(y_k2);
-
-            MatrixType yk2_sparse = convertVecToSparseMat(y_k2);
-            MatrixType Bs_sparse = convertVecToSparseMat(Bs);
-
-            MatrixType outer_yk2 = yk2_sparse * yk2_sparse.transpose() / yk2_sk;
-            MatrixType outer_Bs = Bs_sparse * Bs_sparse.transpose() / sBs;
-
-            B_k += outer_yk2 - outer_Bs;
-
-            // Extremely small values lead to nans in B_k
-            if(replaceNanWithZero(B_k)){
-                MatrixType Id(B_k.rows(),B_k.cols());
-                Id.setIdentity();
-                B_k += Id*1e-6;
-            }
+            // Update B_k
+            B_k += ((y_k2 * y_k2.transpose()) / (sy)) - ((Bs * Bs.transpose()) / (sBs));
+            
+            // Now update the inverse of B_k
+            // We dont operate on complex numbers, thus we know s_k^{t} y_k = y_k^{t} s_k
+            FullMatrixType outer_ys = y_k2 * s_k.transpose();
+            B_k_inv += (sy + y_k2.dot(B_k_inv*y_k2))*(s_k * s_k.transpose())/(sy*sy) - (B_k_inv*outer_ys + (outer_ys).transpose()*B_k_inv)/(sy);
         }     
 
         RealType norm_l1(const VectorType &constr) const {
@@ -381,9 +331,9 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                             VectorType &lambda_diff,
                             const VectorType &lambda_k,
                             const VectorType &Constraint,
-                            const MatrixType &C_k,
-                            const MatrixType &B_k,
-                            const MatrixType &A_k,
+                            const FullMatrixType &C_k,
+                            const FullMatrixType &B_k,
+                            const FullMatrixType &B_k_inv,
                             VectorType &rhs_k,
                             size_t nEffectiveDOFs,
                             size_t nEffectiveVertexDOFs,
@@ -446,32 +396,13 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                     // Just need to modify the lower segment of the rhs
                     rhs_k.segment(nEffectiveDOFs,nEffectiveVertexDOFs) = -d;
 
-                    // Now, solve the quadratic problem
-                    if(A_k.rows() <= 20000){
-                        // Use a dense solver instead for such a small system -> sparse solvers could fail here
-                        FullMatrixType A_k_dense = A_k.toDense();
+                    VectorType d_k_correction = VectorType::Zero(nEffectiveDOFs);
 
-                        Eigen::FullPivLU<FullMatrixType> lu_decomp(A_k_dense);
-                        sol_k = lu_decomp.solve(rhs_k);
+                    // lambda_k param is irrelevant, wont be changed/used
+                    solveQP(B_k_inv, C_k, rhs_k, d_k_correction, d_k_correction, false);
 
-                        if(!(A_k*sol_k).isApprox(rhs_k)){
-                            //std::cerr << "Error: Linear dense system not solved correctly" << std::endl;
-                            //std::cout<<"Residual: " << (A_k*sol_k - rhs_k).norm()<<std::endl;
-                        }
-                    }
-                    else{
-                        Eigen::BiCGSTAB<MatrixType> solver;
-                        solver.compute(A_k);
-                        sol_k = solver.solve(rhs_k);
-                        //LinearSolver<ConfiguratorType> solver;
-                        //solver.prepareSolver(A_k);
-                        //solver.backSubstitute(rhs_k, sol_k);
+                    // maybe still have to check the solution quality.
 
-                        if(!(A_k*sol_k).isApprox(rhs_k))
-                            std::cerr << "Error: Linear sparse system not solved correctly" << std::endl;
-                    }
-
-                    VectorType d_k_correction = sol_k.segment(0, nEffectiveDOFs);
                     _boundaryDOFs.InverseTransformWithFoldDofs(d_k_correction);
 
                     ProblemDOFs<ConfiguratorType> lineSearchDOFs_corrected = lineSearchDOFs;
@@ -557,6 +488,24 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
 
             variationFoldDOFs += norm_l1(d_k.segment(0, nFoldDOFs))/nFoldDOFs;
             return false;
+        }
+
+        // In the second order correction, dont want to solve for multipliers
+        // -> multiplier parameter optional
+        void solveQP(const FullMatrixType B_k_inverse, const FullMatrixType &C_k, const VectorType &rhs_k, VectorType &d_k, VectorType& lambda_kplus1, const bool compute_lambda = true) {
+            FullMatrixType F = -(C_k * B_k_inverse * C_k.transpose()).inverse();
+            FullMatrixType E = -B_k_inverse*C_k.transpose()*F;
+            FullMatrixType C = B_k_inverse - E*C_k*B_k_inverse;
+
+            size_t nEffectiveDOFs = B_k_inverse.rows();
+            size_t nEffectiveVertexDOFs = C_k.rows();
+
+            d_k = C*rhs_k.segment(0, nEffectiveDOFs) + E*rhs_k.segment(nEffectiveDOFs, nEffectiveVertexDOFs);
+            
+            // in second order correction dont need to recompute lambda
+            if(compute_lambda){
+                lambda_kplus1 = E.transpose()*rhs_k.segment(0, nEffectiveDOFs) + F*rhs_k.segment(nEffectiveDOFs, nEffectiveVertexDOFs);
+            }
         }
 
         private:
