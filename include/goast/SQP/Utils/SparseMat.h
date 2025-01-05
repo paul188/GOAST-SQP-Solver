@@ -357,7 +357,7 @@ void assignSparseBlockWithTriplet(std::vector<Tri> &tripletList, const MatrixTyp
 void assignSparseBlockInplace(MatrixType &Base, const MatrixType &Block, int ibegin, int jbegin,
                             std::vector<Tri> &BaseTriplet)
 {
-    //std::cout<<ibegin + Block.rows() <<" "<<Base.rows()<<" "<<jbegin + Base.cols()<<Base.cols();
+
     assert(ibegin + Block.rows() <= Base.rows() && jbegin + Block.cols() <= Base.cols());
 
     // First, collect Eigen Triplets of Base:
@@ -407,5 +407,27 @@ bool is_posdef_eigen(FullMatrixType H) {
         }
     }
     return true;
+}
+
+MatrixType vectorToSparseMat(const VectorType &vec, bool asRowVector = false) {
+    // Create a sparse matrix with appropriate dimensions
+    MatrixType sparseMat(asRowVector ? 1 : vec.size(), asRowVector ? vec.size() : 1);
+
+    // Reserve space for non-zero entries
+    sparseMat.reserve(vec.size()); // At most, there could be `vec.size()` non-zero elements.
+
+    // Add non-zero elements to the sparse matrix
+    for (int i = 0; i < vec.size(); ++i) {
+        if (vec[i] != 0) {
+            if (asRowVector) {
+                sparseMat.insert(0, i) = vec[i]; // Insert as a row vector
+            } else {
+                sparseMat.insert(i, 0) = vec[i]; // Insert as a column vector
+            }
+        }
+    }
+
+    sparseMat.makeCompressed(); // Compress the sparse matrix for efficient storage
+    return sparseMat;
 }
 #endif // SPARSEMAT_H

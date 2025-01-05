@@ -9,30 +9,12 @@
 #include <vector>
 #include <unordered_set>
 #include <goast/DiscreteShells.h>
+#include "QuadTopology.h"
 //#include <goast/QuadMesh/ClassicalEnergies.h>
 
 using namespace OpenMesh;
 
-struct QuadTraits : public DefaultTraits
-{
-  /// Use double precision points
-  typedef OpenMesh::Vec3d Point;
-  /// Use double precision Normals
-  typedef OpenMesh::Vec3d Normal;
-  /// Use RGBA Color
-  typedef OpenMesh::Vec4f Color;  
- 
-  // need status attributes for decimation
-  VertexAttributes( OpenMesh::Attributes::Normal );
-  EdgeAttributes(  OpenMesh::Attributes::Color );
-  FaceAttributes(  OpenMesh::Attributes::Normal );  
-};
-
-typedef OpenMesh::PolyMesh_ArrayKernelT<QuadTraits> MyMesh;
-
 class QuadMesh{
-
-    friend class Constraint;
 
     public:
         QuadMesh(){}

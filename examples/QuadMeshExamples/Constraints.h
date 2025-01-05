@@ -1,734 +1,1246 @@
 #include <goast/Quads.h>
 #include <goast/QuadMesh/QuadTopology.h>
-#include <SQP/Utils/SparseMat.h>
 #include <cmath>
+#include <goast/SQP/Utils/SparseMat.h>
+
+class SkippingBdryHalfEdgeIterator{
+    private:
+        const QuadMeshTopologySaver &_quadTopol;
+        const std::vector<int> &_bdryHalfEdges;
+        const size_t _num_halfedges;
+        std::set<int> _noBdryHalfEdges;
+        std::map<int,int> _heh_idx_to_nbdry;
+        std::set<int>::iterator _it;
+    public:
+        SkippingBdryHalfEdgeIterator(const QuadMeshTopologySaver &quadTopol)
+            : _quadTopol(quadTopol),
+              _bdryHalfEdges(quadTopol.getBdryHalfEdges()),
+              _num_halfedges(quadTopol.getNumHalfEdges())
+        {
+            int bdryCounter = 0;
+            for(int i = 0; i < _num_halfedges; i++){
+                if(i == _bdryHalfEdges[bdryCounter]){
+                    _heh_idx_to_nbdry[i] = -1;
+                    bdryCounter++;
+                }
+                else{
+                    _heh_idx_to_nbdry[i] = i - bdryCounter;
+                    _noBdryHalfEdges.insert(i);
+                }
+            }
+
+            _it = _noBdryHalfEdges.begin();
+        }
+
+        void operator++(){
+            _it++;
+        }
+
+        // Postfix increment operator
+        SkippingBdryHalfEdgeIterator operator++(int) {
+            SkippingBdryHalfEdgeIterator temp = *this; // Save the current state
+            ++_it; // Use the prefix increment to advance the iterator
+            return temp; // Return the saved state
+        }
+
+        int idx(){
+            return *_it;
+        }
+
+        int idx_nobdry(){
+            return std::distance(_noBdryHalfEdges.begin(), _it);
+        }
+
+        bool valid(){
+            return _it != _noBdryHalfEdges.end();
+        }
+
+        int to_nbdry(int idx){
+            return _heh_idx_to_nbdry[idx];
+        }
+};
+
+class SkippingBdryFaceIterator{
+    private:
+        const QuadMeshTopologySaver &_quadTopol;
+        const std::vector<int> &_bdryFaces;
+        const size_t _num_faces;
+        std::set<int> _noBdryFaces;
+        std::map<int,int> _face_idx_to_nbdry;
+        std::set<int>::iterator _it;
+
+    public:
+        SkippingBdryFaceIterator(const QuadMeshTopologySaver &quadTopol)
+            : _quadTopol(quadTopol),
+              _bdryFaces(quadTopol.getBdryFaces()),
+              _num_faces(quadTopol.getNumFaces())
+        {
+            int bdryCounter = 0;
+            for(int i = 0; i < _num_faces; i++){
+                if(i == _bdryFaces[bdryCounter]){
+                    _face_idx_to_nbdry[i] = -1;
+                    bdryCounter++;
+                }
+                else{
+                    _face_idx_to_nbdry[i] = i - bdryCounter;
+                    _noBdryFaces.insert(i);
+                }
+            }
+
+            _it = _noBdryFaces.begin();
+        }
+
+        void operator++(){
+            _it++;
+        }
+
+        // Postfix increment operator
+        SkippingBdryFaceIterator operator++(int) {
+            SkippingBdryFaceIterator temp = *this; // Save the current state
+            ++_it; // Use the prefix increment to advance the iterator
+            return temp; // Return the saved state
+        }
+
+        int idx(){
+            return *_it;
+        }
+
+        int id_nobdry(){
+            return std::distance(_noBdryFaces.begin(), _it);
+        }
+
+        bool valid(){
+            return (_it != _noBdryFaces.end());
+        }
+
+        int to_nbdry(int idx){
+            return _face_idx_to_nbdry[idx];
+        }
+};
+
 
 template<typename ConfiguratorType>
-struct Variables{
-    typedef typename ConfiguratorType::RealType RealType;
-    typedef typename ConfiguratorType::VectorType VectorType;
-    typedef typename ConfiguratorType::VecType VecType;
-    typedef typename ConfiguratorType::SparseMatrixType MatrixType;
-    typedef typename ConfiguratorType::FullMatrixType FullMatrixType;
+class VectorView{
+    public:
+        typedef typename ConfiguratorType::RealType RealType;
+        typedef typename ConfiguratorType::VectorType VectorType;
+        typedef typename ConfiguratorType::SparseMatrixType MatrixType;
 
-    FullMatrixType _vertices;
-    VectorType _vertex_weights;
-    FullMatrixType _reweighted_vertices;
-    VectorType _dummy_weights;
-    FullMatrixType _rulings;
-    FullMatrixType _face_normals;
-    FullMatrixType _reweighted_edges_1;  // Tilde{e}_{0,2}
-    FullMatrixType _reweighted_edges_2;  // Tilde{e}_{1,3}
-    FullMatrixType _reweighted_rulings_1;   // Tilde{r}_{1,3}
-    FullMatrixType _reweighted_rulings_2;   // Tilde{r}_{0,2}
+    private:
+        const size_t _num_vertices;
+        const size_t _num_faces;
+        const size_t _num_edges;
+        const size_t _num_halfedges;
+        const size_t _num_bdryHalfEdges;
+        const size_t _num_bdryFaces;
+        VectorType _vec;
+        const QuadMeshTopologySaver &_quadTopol;
+        // map to convert halfedge index to non boundary halfedge index
+        std::map<int,int> _heh_idx_to_nbdry;
 
-    /* Initialize like follows:
-       -> vertices to quad vertices
-       -> vertex_weights to 2.0
-       -> reweighted_vertices to vertices*vertex_weights
-       -> dummy_weights to 1.0
-       -> rulings to 0.0
-       -> face normals to 0.0
-       -> reweighted_edges to 0.0
-         -> reweighted_rulings to 0.0
-    */
-    Variables(QuadMesh &qm, QuadMeshTopologySaver &quadTopol)
-    {
-        int nVertices = quadTopol.getNumVertices();
-        int nFaces = quadTopol.getNumFaces();
-        int nEdges = quadTopol.getNumEdges();
+    public:
+        std::map<std::string, size_t> _idx;
 
-        _vertices.resize(3,nVertices);
-        _vertex_weights.resize(nVertices);
-        _dummy_weights.resize(nVertices);
-        _rulings.resize(3,2*nEdges);
-        _face_normals.resize(3,nFaces);
-        _reweighted_edges_1.resize(3,nFaces);
-        _reweighted_edges_2.resize(3,nFaces);
-        _reweighted_rulings_1.resize(3,nFaces);
-        _reweighted_rulings_2.resize(3,nFaces);
+        /*
+        Ordering of the dofs: 
+        1. dummy_weights from 0 to num_vertices-1
+        2. vertices from num_vertices to 4*num_vertices-1 
+        3. weights from 4*num_vertices to 5*num_vertices-1
+        4. reweighted_vertices from 5*num_vertices to 8*num_vertices-1
+        5. reweighted_edges_1 from 8*num_vertices to (8*num_vertices + 3*num_faces)-1
+        6. reweighted_edges_2 from (8*num_vertices + 3*num_faces) to (8*num_vertices + 6*num_faces)-1
+        7. normals from (8*num_vertices + 6*num_faces) to (8*num_vertices + 9*num_faces)-1
+        8. rulings from (8*num_vertices + 9*num_faces) to (8*num_vertices + 9*num_faces + 3*(num_halfedges - bdryHalfEdges.size()))-1
+        9. reweighted_rulings_1 from (8*num_vertices + 9*num_faces + 3*(num_halfedges - bdryHalfEdges.size()) to (8*num_vertices + 9*num_faces + 3*(num_faces - bdryFaces.size()) + 3*(num_halfedges - bdryHalfEdges.size()))-1
+        10.reweighted_rulings_2 from (8*num_vertices + 9*num_faces + 3*(num_faces - bdryFaces.size()) + 3*(num_halfedges - bdryHalfEdges.size())) to (8*num_vertices + 9*num_faces + 9*num_faces + 6*(num_faces - bdryFaces.size()) + 3*(num_halfedges- bdryHalfEdges.size()))-1
+        */
 
-        getGeometryMat<FullMatrixType>(qm._mesh, _vertices);
+       // We purposely do not include rulings at bdry halfedges 
+       // and reweighted rulings at bdry adjacent faces. They cannot be used to express the developability constraint
+       // and they are not determined by the constraints and further do not play a role in the fairness energy
 
-        _vertex_weights.setConstant(2.0);
-        _dummy_weights.setConstant(1.0);
+        // VectorView with uninitialized vector
+        VectorView(QuadMeshTopologySaver &quadTopol, std::optional<VectorType> vec = std::nullopt)
+            : _num_vertices(quadTopol.getNumVertices()),
+              _num_faces(quadTopol.getNumFaces()),
+              _num_edges(quadTopol.getNumEdges()),
+              _num_halfedges(quadTopol.getNumHalfEdges()),
+              _num_bdryHalfEdges(quadTopol.getBdryHalfEdges().size()),
+              _num_bdryFaces(quadTopol.getBdryFaces().size()),                  
+              _quadTopol(quadTopol)
+        {
 
-        _reweighted_vertices = 2.0*_vertices;
+            _idx["dummy_weights"] = 0;
+            _idx["vertices"] = _num_vertices;
+            _idx["weights"] = 4*_num_vertices;
+            _idx["reweighted_vertices"] = 5*_num_vertices;
+            _idx["reweighted_edges_1"] = 8*_num_vertices;
+            _idx["reweighted_edges_2"] = 8*_num_vertices + 3*_num_faces;
+            _idx["normals"] = 8*_num_vertices + 6*_num_faces;
+            _idx["rulings"] = 8*_num_vertices + 9*_num_faces;
+            _idx["reweighted_rulings_1"] = 8*_num_vertices + 9*_num_faces + 3*(_num_halfedges - _num_bdryHalfEdges);
+            _idx["reweighted_rulings_2"] = 8*_num_vertices + 12*_num_faces - 3*_num_bdryFaces + 3*(_num_halfedges - _num_bdryHalfEdges);
+            _idx["num_dofs"] = 8*_num_vertices + 15*_num_faces - 6*_num_bdryFaces + 3*(_num_halfedges - _num_bdryHalfEdges);
+        
+            if(vec.has_value()){
+                if(vec.value().size() != _idx["num_dofs"]){
+                    std::cerr << "Vector size does not match the number of dofs"<<std::endl;
+                }
+                _vec = vec.value();
+            }
+            else{
+                _vec = VectorType::Zero(_idx["num_dofs"]);
+            }
 
-        _rulings.setZero();
-        _face_normals.setZero();
-        _reweighted_edges_1.setZero();
-        _reweighted_edges_2.setZero();
-        _reweighted_rulings_1.setZero();
-        _reweighted_rulings_2.setZero();
-    }
-
-    setQuadMeshGeometry(QuadMesh &qm, QuadMeshTopologySaver &quadTopol, const Variables& vars){
-        for(int i = 0; i < quadTopol.getNumVertices(); i++){
-            qm._mesh.set_point(qm._mesh.vertex_handle(i), Point(vars._vertices[0,i], vars._vertices[1,i], vars._vertices[2,i]));
         }
-    }
+
+
+        void set_vector(const VectorType &vec){
+            if(vec.size() != _idx["num_dofs"]){
+                std::cerr << "Vector size does not match the number of dofs"<<std::endl;
+            }
+            _vec = vec;
+        }
+
+        RealType dummy_weight(size_t i){
+            if(i >= _num_vertices){
+                std::cerr << "Index out of bounds for dummy weights"<<std::endl;
+            }
+            return _vec[_idx["dummy_weights"] + i];
+        }
+
+        VectorType vertex(size_t i){
+            if(i >= _num_vertices){
+                std::cerr << "Index out of bounds for vertices"<<std::endl;
+            }
+            return _vec.segment(_idx["vertices"] + 3*i,3);
+        }
+
+        RealType vertex_weight(size_t i){
+            if(i >= _num_vertices){
+                std::cerr << "Index out of bounds for vertex weights"<<std::endl;
+            }
+            return _vec[_idx["weights"] + i];
+        }
+
+        VectorType reweighted_vertex(size_t i){
+            if(i >= _num_vertices){
+                std::cerr << "Index out of bounds for reweighted vertices"<<std::endl;
+            }
+            return _vec.segment(_idx["reweighted_vertices"] + 3*i,3);
+        }
+
+        VectorType reweighted_edge_1(size_t i){
+            if(i >= _num_faces){
+                std::cerr << "Index out of bounds for reweighted edges 1"<<std::endl;
+            }
+            return _vec.segment(_idx["reweighted_edges_1"] + 3*i, 3);
+        }
+
+        VectorType reweighted_edge_2(size_t i){
+            if(i >= _num_faces){
+                std::cerr << "Index out of bounds for reweighted edges 2"<<std::endl;
+            }
+            return _vec.segment(_idx["reweighted_edges_2"] + 3*i, 3);
+        }
+
+        VectorType face_normal(size_t i){
+            if(i >= _num_faces){
+                std::cerr << "Index out of bounds for face normals"<<std::endl;
+            }
+            return _vec.segment(_idx["normals"] + 3*i, 3);
+        }
+
+        VectorType ruling(size_t i){
+            if(i >= _num_halfedges){
+                std::cerr << "Index out of bounds for rulings"<<std::endl;
+            }
+            return _vec.segment(_idx["rulings"] + 3*i,3);
+        }
+
+        VectorType reweighted_ruling_1(size_t i){
+            if(i >= _num_faces){
+                std::cerr << "Index out of bounds for reweighted rulings 1"<<std::endl;
+            }
+            return _vec.segment(_idx["reweighted_rulings_1"] + 3*i, 3);
+        }
+
+        VectorType reweighted_ruling_2(size_t i){
+            if(i >= _num_faces){
+                std::cerr << "Index out of bounds for reweighted rulings 1"<<std::endl;
+            }
+            return _vec.segment(_idx["reweighted_rulings_2"] + 3*i, 3);
+        }
 };
 
 template <typename ConfiguratorType>
-class Constraint{
+class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename ConfiguratorType::VectorType>{
     typedef typename ConfiguratorType::RealType RealType;
     typedef typename ConfiguratorType::VectorType VectorType;
     typedef typename ConfiguratorType::VecType VecType;
     typedef typename ConfiguratorType::SparseMatrixType MatrixType;
     typedef typename ConfiguratorType::FullMatrixType FullMatrixType;
 
+    private:
+        QuadMeshTopologySaver &_quadTopol;
+        size_t _num_vertices;
+        size_t _num_faces;
+        size_t _num_edges;
+        size_t _num_halfedges;
+
     public:
+        Constraint(QuadMeshTopologySaver &quadTopol)
+            : _quadTopol(quadTopol),
+              _num_vertices(quadTopol.getNumVertices()),
+              _num_faces(quadTopol.getNumFaces()),
+              _num_edges(quadTopol.getNumEdges()),
+              _num_halfedges(2*_num_edges)
+        {}
+    
     // How to structure the constraints Dest ?
     // First the x, then the y and then the z components of the constraints
     // This way, should be compatible with structure of the geometry
-    void get_constraint_vertex_1(const QuadMesh &qm, const QuadMeshTopologySaver &quadTopol, const Variables &vars, VectorType &Dest){
-        size_t num_vertices = qm.num_vertices();
+    //void get_constraint_vertex_1(const VectorType &vars, VectorType &Dest){
 
-        // Check that all sizes are correct:
-        if( vars._vertices.size() != num_vertices ){
-            std::cerr << "Wrong number of vertices in the variables to calculate constraints"<<std::endl;
+    void get_constraint_vertex_1(const VectorType &vars, VectorType &Dest){
+        VectorView<ConfiguratorType> view(_quadTopol);
+
+        view.set_vector(vars);
+
+        if(Dest.size() != 3*_num_vertices){
+            Dest.resize(3*_num_vertices);
         }
 
-        if( vars._vertex_weights.size() != num_vertices ){
-            std::cerr << "Wrong number of vertex weights in the variables to calculate constraints"<<std::endl;
-        }
-
-        if( vars._reweighted_vertices.size() != num_vertices ){
-            std::cerr << "Wrong number of reweighted vertices in the variables to calculate constraints"<<std::endl;
-        }
-
-        if(Dest.size() != 3*num_vertices){
-            Dest.resize(3*num_vertices);
-        }
-
-        for(int i = 0; i < num_vertices; i++){
-            for(int j = 0; j < 3; j++){
-                Dest[i*3 + j] = vars._reweighted_vertices[j,i] - vars._vertex_weights[i]*vars._vertices[j,i];
-            }
+        for(int i = 0; i < _num_vertices; i++){
+            Dest.segment(3*i,3) = view.reweighted_vertex(i) - view.vertex_weight(i)*view.vertex(i); 
         }
     }
 
-    void get_constraint_vertex_2(const QuadMesh &qm, const QuadMeshTopologySaver &quadTopol, const Variables &vars, VectorType &Dest){
-        size_t num_vertices = qm.num_vertices();
+    void get_constraint_vertex_2(const VectorType &vars, VectorType &Dest){
 
-        if(vars._dummy_weights.size() != num_vertices ){
-            std::cerr << "Wrong number of dummy weights in the variables to calculate constraints"<<std::endl;
+        if(Dest.size() != _num_vertices){
+            Dest.resize(_num_vertices);
         }
 
-        if(Dest.size() != num_vertices){
-            Dest.resize(num_vertices);
-        }
+        VectorView<ConfiguratorType> view(_quadTopol);
 
-        for(int i = 0; i < num_vertices; i++){
-            Dest[i] = vars._vertex_weights[i] - (vars._dummy_weights[i]*vars._dummy_weights[i]) - 1.0;
+
+        for(int i = 0; i < _num_vertices; i++){
+            Dest[i] = view.vertex_weight(i) - (view.dummy_weight(i)*view.dummy_weight(i)) - 1.0;
         }
     }
 
-    void get_constraint_edge_vec_1(const QuadMesh &qm, const QuadMeshTopologySaver &quadTopol, const Variables &vars, VectorType &Dest){
-        size_t num_faces = qm.num_faces();
+    void get_constraint_edge_vec_1(const VectorType &vars, VectorType &Dest){
 
-        if(vars._reweighted_edges.size() != 2*num_faces){
-            std::cerr << "Wrong number of reweighted edges in the variables to calculate constraints"<<std::endl;
+        if(Dest.size() != 3*_num_faces){
+            Dest.resize(3*_num_faces);
         }
 
-        if(Dest.size() != 3*num_faces){
-            Dest.resize(3*num_faces);
-        }
+        VectorView<ConfiguratorType> view(_quadTopol);
 
-        for(int i = 0; i < num_faces; i++){
+        view.set_vector(vars);
+
+        for(int i = 0; i < _num_faces; i++){
                 // First, obtain first vertex idces of the face
-            int node_0 = quadTopol.getNodeOfQuad(i,0);
-            int node_1 = quadTopol.getNodeOfQuad(i,1);
-            int node_2 = quadTopol.getNodeOfQuad(i,2);
-            int node_3 = quadTopol.getNodeOfQuad(i,3);
+            int node_0 = _quadTopol.getNodeOfQuad(i,0);
+            int node_1 = _quadTopol.getNodeOfQuad(i,1);
+            int node_2 = _quadTopol.getNodeOfQuad(i,2);
+            int node_3 = _quadTopol.getNodeOfQuad(i,3);
 
-            VectorType face_constraint = vars._reweighted_edges_1[:,i] - (vars._vertex_weights[node_0] + vars._vertex_weights[node_1])*(vars._reweighted_vertices[:,node_2]+vars._reweighted_vertices[:,node_3]) + (vars._vertex_weights[node_2] + vars._vertex_weights[node_3])*(vars._reweighted_vertices[:,node_1] + vars._reweighted_vertices[:,node_0]);
+            RealType w_0 = view.vertex_weight(node_0);
+            RealType w_1 = view.vertex_weight(node_1);
+            RealType w_2 = view.vertex_weight(node_2);
+            RealType w_3 = view.vertex_weight(node_3);
 
-            Dest.segment(3*i,3) = face_constraint;
+            Dest.segment(3*i,3) = view.reweighted_edge_1(i) - (w_0 + w_1)*(view.reweighted_vertex(node_2)+view.reweighted_vertex(node_3)) + (w_2 + w_3)*(view.reweighted_vertex(node_1) + view.reweighted_vertex(node_0));
         }
     }
 
-    void get_constraint_edge_vec_2(const QuadMesh &qm, const QuadMeshTopologySaver &quadTopol, const Variables &vars, VectorType &Dest){
-        size_t num_faces = qm.num_faces();
+    void get_constraint_edge_vec_2(const VectorType &vars, VectorType &Dest){
 
-        if(vars._reweighted_edges.size() != 2*num_faces){
-            std::cerr << "Wrong number of rulings in the variables to calculate constraints"<<std::endl;
+        if(Dest.size() != 3*_num_faces){
+            Dest.resize(3*_num_faces);
         }
 
-        if(Dest.size() != 3*num_faces){
-            Dest.resize(3*num_faces);
-        }
+        VectorView<ConfiguratorType> view(_quadTopol);
+        view.set_vector(vars);
 
-        for(int i = 0; i < num_faces; i++){
+        for(int i = 0; i < _num_faces; i++){
             // First, obtain first vertex idces of the face
-            int node_0 = quadTopol.getNodeOfQuad(i,0);
-            int node_1 = quadTopol.getNodeOfQuad(i,1);
-            int node_2 = quadTopol.getNodeOfQuad(i,2);
-            int node_3 = quadTopol.getNodeOfQuad(i,3);
+            int node_0 = _quadTopol.getNodeOfQuad(i,0);
+            int node_1 = _quadTopol.getNodeOfQuad(i,1);
+            int node_2 = _quadTopol.getNodeOfQuad(i,2);
+            int node_3 = _quadTopol.getNodeOfQuad(i,3);
 
-            VectorType face_constraint = vars._reweighted_edges_2[:,i] - (vars._vertex_weights[1] + vars._vertex_weights[node_2])*(vars._reweighted_vertices[:,0]+vars._reweighted_vertices[:,3]) - (vars._vertex_weights[node_0] + vars._vertex_weights[node_3])*(vars._reweighted_vertices[:,2] + vars._reweighted_vertices[:,1]);
+            RealType w_0 = view.vertex_weight(node_0);
+            RealType w_1 = view.vertex_weight(node_1);
+            RealType w_2 = view.vertex_weight(node_2);
+            RealType w_3 = view.vertex_weight(node_3);
 
-            Dest.segment(3*i,3) = face_constraint;
+            Dest.segment(3*i,3) = view.reweighted_edge_2(i) - (w_1 + w_2)*(view.reweighted_vertex(node_3)+view.reweighted_vertex(node_0)) + (w_0 + w_3)*(view.reweighted_vertex(node_1) + view.reweighted_vertex(node_2));
         }
     }
 
-    void get_constraint_normal_1(const QuadMesh &qm, const QuadMeshTopologySaver &quadTopol, const Variables &vars, VectorType &Dest){
-        size_t num_faces = qm.num_faces();
+    void get_constraint_normal_1(const VectorType &vars, VectorType &Dest){
 
-        if(vars._face_normals.size() != num_faces){
-            std::cerr << "Wrong number of face normals in the variables to calculate constraints"<<std::endl;
+        if(Dest.size() != _num_faces){
+            Dest.resize(_num_faces);
         }
 
-        if(Dest.size() != num_faces){
-            Dest.resize(num_faces);
-        }
+        VectorView<ConfiguratorType> view(_quadTopol);
+        view.set_vector(vars);
 
-        for(int i = 0; i < num_faces; i++){
-            Dest[i] = vars._face_normals.col(i).dot(vars._reweighted_edges_1.col(i));
+        for(int i = 0; i < _num_faces; i++){
+            Dest[i] = view.face_normal(i).dot(view.reweighted_edge_1(i));
         }
     }
 
-    void get_constraint_normal_2(const QuadMesh &qm, const QuadMeshTopologySaver &quadTopol, const Variables &vars, VectorType &Dest){
-        size_t num_faces = qm.num_faces();
+    void get_constraint_normal_2(const VectorType &vars, VectorType &Dest){
 
-        if(vars._face_normals.size() != num_faces){
-            std::cerr << "Wrong number of face normals in the variables to calculate constraints"<<std::endl;
+        if(Dest.size() != _num_faces){
+            Dest.resize(_num_faces);
         }
 
-        if(Dest.size() != num_faces){
-            Dest.resize(num_faces);
-        }
+        VectorView<ConfiguratorType> view(_quadTopol);
+        view.set_vector(vars);
 
-        for(int i = 0; i < num_faces; i++){
-            Dest[i] = vars._face_normals.col(i).dot(vars._reweighted_edges_2.col(i));
+        for(int i = 0; i < _num_faces; i++){
+            Dest[i] = view.face_normal(i).dot(view.reweighted_edge_2(i));
         }
     }
 
-    void get_constraint_normal_3(const QuadMesh &qm, const QuadMeshTopologySaver &quadTopol, const Variables &vars, VectorType &Dest){
-        size_t num_faces = qm.num_faces();
+    void get_constraint_normal_3(const VectorType &vars, VectorType &Dest){
 
-        if(vars._face_normals.size() != num_faces){
-            std::cerr << "Wrong number of face normals in the variables to calculate constraints"<<std::endl;
+        if(Dest.size() != _num_faces){
+            Dest.resize(_num_faces);
         }
 
-        if(Dest.size() != num_faces){
-            Dest.resize(num_faces);
-        }
+        VectorView<ConfiguratorType> view(_quadTopol);
+        view.set_vector(vars);
 
-        for(int i = 0; i < num_faces; i++){
-            Dest[i] = vars._face_normals.col(i).dot(vars._face_normals.col(i)) - 1.0;
+        for(int i = 0; i < _num_faces; i++){
+            Dest[i] = view.face_normal(i).dot(view.face_normal(i)) - 1.0;
         }
     }
 
-    void get_constraint_ruling_0(const QuadMesh &qm, const QuadMeshTopologySaver &quadTopol, const Variables &vars, VectorType &Dest){
+    void get_constraint_ruling_0(const VectorType &vars, VectorType &Dest){
+
+        VectorView<ConfiguratorType> view(_quadTopol);
+        view.set_vector(vars);
+
+        size_t num_constraints = 3*(_num_halfedges - _quadTopol.getBdryHalfEdges().size());
+
+        if(Dest.size() != num_constraints){
+            Dest.resize(num_constraints);
+        }
+
+        for(SkippingBdryHalfEdgeIterator it(_quadTopol); it.valid(); ++it){
+            int i = it.idx();
+            int i_nobdry = it.idx_nobdry();
+
+            int face_1 = _quadTopol.getFaceOfHalfEdge(i,0);
+            int face_2 = _quadTopol.getFaceOfHalfEdge(i,1);
+
+            Dest.segment(3*i_nobdry,3) = view.ruling(i_nobdry) - (view.face_normal(face_1).template head<3>()).cross(view.face_normal(face_2).template head<3>()); 
+        }
+
+    }
+
+    void get_constraint_ruling_1(const VectorType &vars, VectorType &Dest){
+
+        VectorView<ConfiguratorType> view(_quadTopol);
+        view.set_vector(vars);
+
+        std::vector<int> bdryFaces = _quadTopol.getBdryFaces();
+
+        size_t num_constraints = 3*(_num_faces - bdryFaces.size());
+
+        if(Dest.size() != num_constraints){
+            Dest.resize(num_constraints);
+        }
+
+        SkippingBdryHalfEdgeIterator it_he(_quadTopol);
+
+        for(SkippingBdryFaceIterator it(_quadTopol); it.valid(); it++){
+
+            int i = it.idx();
+            int i_nobdry = it.id_nobdry();
+
+            int node_0 = _quadTopol.getNodeOfQuad(i,0);
+            int node_1 = _quadTopol.getNodeOfQuad(i,1);
+            int node_2 = _quadTopol.getNodeOfQuad(i,2);
+            int node_3 = _quadTopol.getNodeOfQuad(i,3);
+
+            int heh_01 = _quadTopol.getHalfEdgeOfQuad(i,0);
+            int heh_12 = _quadTopol.getHalfEdgeOfQuad(i,1);
+            int heh_23 = _quadTopol.getHalfEdgeOfQuad(i,2);
+            int heh_30 = _quadTopol.getHalfEdgeOfQuad(i,3);
+
+            RealType w0 = view.vertex_weight(node_0);
+            RealType w1 = view.vertex_weight(node_1);
+            RealType w2 = view.vertex_weight(node_2);
+            RealType w3 = view.vertex_weight(node_3);
+
+            VectorType ruling_01 = view.ruling(it_he.to_nbdry(heh_01));
+            VectorType ruling_12 = view.ruling(it_he.to_nbdry(heh_12));
+            VectorType ruling_23 = view.ruling(it_he.to_nbdry(heh_23));
+            VectorType ruling_30 = view.ruling(it_he.to_nbdry(heh_30));
+
+            Dest.segment(3*i_nobdry,3) = view.reweighted_ruling_1(i_nobdry) - (w1 + w2)*ruling_12 + (w3 + w0)*(ruling_30);
+        }
+    }
+
+    void get_constraint_ruling_2(const VectorType &vars, VectorType &Dest){
+
+        VectorView<ConfiguratorType> view(_quadTopol);
+
+        view.set_vector(vars);
+
+        std::vector<int> bdryFaces = _quadTopol.getBdryFaces();
+
+        size_t num_constraints = 3*(_num_faces - bdryFaces.size());
+
+        if(Dest.size() != num_constraints){
+            Dest.resize(num_constraints);
+        }
+
+        SkippingBdryHalfEdgeIterator it_he(_quadTopol);
+
+        for(SkippingBdryFaceIterator it(_quadTopol); it.valid(); it++){
+
+            int i = it.idx();
+            int i_nobdry = it.id_nobdry();
+
+            int node_0 = _quadTopol.getNodeOfQuad(i,0);
+            int node_1 = _quadTopol.getNodeOfQuad(i,1);
+            int node_2 = _quadTopol.getNodeOfQuad(i,2);
+            int node_3 = _quadTopol.getNodeOfQuad(i,3);
+
+            int heh_01 = _quadTopol.getHalfEdgeOfQuad(i,0);
+            int heh_12 = _quadTopol.getHalfEdgeOfQuad(i,1);
+            int heh_23 = _quadTopol.getHalfEdgeOfQuad(i,2);
+            int heh_30 = _quadTopol.getHalfEdgeOfQuad(i,3);
+
+            RealType w0 = view.vertex_weight(node_0);
+            RealType w1 = view.vertex_weight(node_1);
+            RealType w2 = view.vertex_weight(node_2);
+            RealType w3 = view.vertex_weight(node_3);
+
+            VectorType ruling_01 = view.ruling(it_he.to_nbdry(heh_01));
+            VectorType ruling_12 = view.ruling(it_he.to_nbdry(heh_12));
+            VectorType ruling_23 = view.ruling(it_he.to_nbdry(heh_23));
+            VectorType ruling_30 = view.ruling(it_he.to_nbdry(heh_30));
+
+            Dest.segment(3*i_nobdry,3) = view.reweighted_ruling_2(i_nobdry) - (w0 + w1)*ruling_01 + (w2 + w3)*(ruling_23);
+        }
+    }
+
+    void get_constraint_dev(const VectorType &vars, VectorType &Dest){
+
+        VectorView<ConfiguratorType> view(_quadTopol);
+
+        view.set_vector(vars);
+
+        std::vector<int> bdryFaces = _quadTopol.getBdryFaces();
+
+        size_t num_constraints = 3*(_num_faces - bdryFaces.size());
+
+        if(Dest.size() != num_constraints){
+            Dest.resize(num_constraints);
+        }
+
+        Dest.setZero();
+
+        for(SkippingBdryFaceIterator it(_quadTopol); it.valid(); it++){
+            int i = it.idx();
+            int i_nobdry = it.id_nobdry();
+            Dest.segment(3*i_nobdry,3) = (view.reweighted_ruling_1(i_nobdry). template head<3>()).cross(view.reweighted_ruling_2(i_nobdry). template head<3>());
+        }
+    }
+
+    void get_constraint_fair_v(const VectorType &vars, VectorType &Dest)
+    {
+        VectorView<ConfiguratorType> view(_quadTopol);
+        view.set_vector(vars);
+        auto vertex_strips = _quadTopol.getVertexStrips();
+
+        int num_strips = vertex_strips.size();
         
-        size_t num_faces = quadTopol.getNumFaces();
-        
-        if(Dest.size() != 3*num_faces){
-            Dest.resize(3*num_faces);
-        }
-        
-        for(const auto& heh : qm._mesh.halfedge){
-            // first, obtain the indices of the halfedges 
-            size_t i = heh.idx();
-            auto fh1 = qm._mesh.face_handle(heh);
-            auto fh2 = qm._mesh.opposite_face_handle(heh);
-            Dest.segment(3*i,3) = vars._rulings.col(i) - vars._normals.col(fh1).cross(vars._normals.col(fh2)); 
-        }
-    }
-
-    void get_constraint_ruling_1(const QuadMesh &qm, const QuadMeshTopologySaver &quadTopol, const Variables &vars, VectorType &Dest){
-        
-        size_t num_faces = quadTopol.getNumFaces();
-
-        if(Dest.size() != 3*num_faces){
-            Dest.resize(3*num_faces);
+        if(Dest.size() != 3*num_strips){
+            Dest.resize(3*num_strips);
         }
 
-        for(const auto& fh : qm._mesh.faces){
-            int faceIndex = fh.idx();
+        Dest.setZero();
 
-            int node_0 = quadTopol.getNodeOfQuad(faceIndex,0);
-            int node_1 = quadTopol.getNodeOfQuad(faceIndex,1);
-            int node_2 = quadTopol.getNodeOfQuad(faceIndex,2);
-            int node_3 = quadTopol.getNodeOfQuad(faceIndex,3);
-
-            int heh_01 = quadTopol.getHalfEdgeOfQuad(faceIndex,0);
-            int heh_12 = quadTopol.getHalfEdgeOfQuad(faceIndex,1);
-            int heh_23 = quadTopol.getHalfEdgeOfQuad(faceIndex,2);
-            int heh_30 = quadTopol.getHalfEdgeOfQuad(faceIndex,3);
-
-            RealType w0 = vars._vertex_weights[node_0];
-            RealType w1 = vars._vertex_weights[node_1];
-            RealType w2 = vars._vertex_weights[node_2];
-            RealType w3 = vars._vertex_weights[node_3];
-
-            Vec3d ruling_01 = vars._rulings.col(heh_01);
-            Vec3d ruling_12 = vars._rulings.col(heh_12);
-            Vec3d ruling_23 = vars._rulings.col(heh_23);
-            Vec3d ruling_30 = vars._rulings.col(heh_30);
-
-            Dest.segment(3*faceIndex,3) = vars._reweighted_rulings_1.col(faceIndex) - (w1 + w2)*ruling_12 + (w3 + w0)*(ruling_30);
+        for(int i = 0; i < num_strips; i++){
+            int node_0 = std::get<0>(vertex_strips[i]);
+            int node_1 = std::get<1>(vertex_strips[i]);
+            int node_2 = std::get<2>(vertex_strips[i]);
+            Dest.segment(3*i,3) = view.vertex(node_0) - 2*view.vertex(node_1) + view.vertex(node_2);
         }
     }
 
-    void get_constraint_ruling_2(const QuadMesh &qm, const QuadMeshTopologySaver &quadTopol, const Variables &vars, VectorType &Dest){
-        
-        size_t num_faces = quadTopol.getNumFaces();
+    void get_constraint_fair_n(const VectorType &vars, VectorType &Dest)
+    {
+        VectorView<ConfiguratorType> view(_quadTopol);
+        view.set_vector(vars);
 
-        if(Dest.size() != 3*num_faces){
-            Dest.resize(3*num_faces);
+        auto face_strips = _quadTopol.getFaceStrips();
+
+        size_t num_strips = face_strips.size();
+
+        if(Dest.size() != 3*num_strips)
+        {
+            Dest.resize(3*num_strips);
         }
 
-        for(const auto& fh : qm._mesh.faces){
-            int faceIndex = fh.idx();
+        for(int i = 0; i < num_strips; i++)
+        {
+            int face_0 = std::get<0>(face_strips[i]);
+            int face_1 = std::get<1>(face_strips[i]);
+            int face_2 = std::get<2>(face_strips[i]);
 
-            int node_0 = quadTopol.getNodeOfQuad(faceIndex,0);
-            int node_1 = quadTopol.getNodeOfQuad(faceIndex,1);
-            int node_2 = quadTopol.getNodeOfQuad(faceIndex,2);
-            int node_3 = quadTopol.getNodeOfQuad(faceIndex,3);
+            VectorType normal_0 = view.face_normal(face_0);
+            VectorType normal_1 = view.face_normal(face_1);
+            VectorType normal_2 = view.face_normal(face_2);
 
-            int heh_01 = quadTopol.getHalfEdgeOfQuad(faceIndex,0);
-            int heh_12 = quadTopol.getHalfEdgeOfQuad(faceIndex,1);
-            int heh_23 = quadTopol.getHalfEdgeOfQuad(faceIndex,2);
-            int heh_30 = quadTopol.getHalfEdgeOfQuad(faceIndex,3);
-
-            RealType w0 = vars._vertex_weights[node_0];
-            RealType w1 = vars._vertex_weights[node_1];
-            RealType w2 = vars._vertex_weights[node_2];
-            RealType w3 = vars._vertex_weights[node_3];
-
-            Vec3d ruling_01 = vars._rulings.col(heh_01);
-            Vec3d ruling_12 = vars._rulings.col(heh_12);
-            Vec3d ruling_23 = vars._rulings.col(heh_23);
-            Vec3d ruling_30 = vars._rulings.col(heh_30);
-
-            Dest.segment(3*faceIndex,3) = vars._reweighted_rulings_2.col(faceIndex) - (w0 + w1)*ruling_01 + (w2 + w3)*(ruling_23);
+            Dest.segment(3*i,3) = normal_0 - 2*normal_1 + normal_2;
         }
+
     }
 
-    void get_constraint_developable(const QuadMesh &qm, const QuadMeshTopologySaver &quadTopol, const Variables &vars, VectorType &Dest){
-        
-        size_t num_faces = quadTopol.getNumFaces();
+    void apply(const VectorType &vars, VectorType &Dest) const override
+    {
+        VectorView<ConfiguratorType> view(_quadTopol);
+        view.set_vector(vars);
 
-        if(Dest.size() != num_faces){
-            Dest.resize(num_faces);
+        auto halfedge_strips = _quadTopol.getHalfEdgeStrips();
+
+        SkippingBdryHalfEdgeIterator he_it(_quadTopol);
+
+        size_t num_strips = halfedge_strips.size();
+
+        if(Dest.size() != 3*num_strips)
+        {
+            Dest.resize(3*num_strips);
         }
 
-        for(int i = 0; i < quadTopol.getNumFaces(); i++){
-            Dest[i] = vars.reweighted_rulings_1.col(i).cross(vars.reweighted_rulings_2.col(i));
+        Dest.setZero();
+
+        for(int i = 0; i < num_strips; i++)
+        {
+            int he_0 = std::get<0>(halfedge_strips[i]);
+            int he_1 = std::get<1>(halfedge_strips[i]);
+            int he_2 = std::get<2>(halfedge_strips[i]);
+
+            VectorType ruling_0 = view.ruling(he_it.to_nbdry(he_0));
+            VectorType ruling_1 = view.ruling(he_it.to_nbdry(he_1));
+            VectorType ruling_2 = view.ruling(he_it.to_nbdry(he_2));
+
+            Dest.segment(3*i,3) = ruling_0 - 2*ruling_1 + ruling_2;
         }
     }
-};
+    };
 
 template <typename ConfiguratorType>
-class ConstraintGrad{
+class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, typename ConfiguratorType::SparseMatrixType>{
     typedef typename ConfiguratorType::RealType RealType;
     typedef typename ConfiguratorType::VectorType VectorType;
     typedef typename ConfiguratorType::VecType VecType;
     typedef typename ConfiguratorType::SparseMatrixType MatrixType;
-
-    /*
-    Ordering of the dofs: 
-    1. dummy_weights from 0 to num_vertices
-    2. vertices from num_vertices to 4*num_vertices
-    3. weights from 4*num_vertices to 5*num_vertices
-    4. reweighted_vertices from 5*num_vertices to 8*num_vertices
-    5. reweighted_edges_1 from 8*num_vertices to (8*num_vertices + 3*num_faces)
-    6. reweighted_edges_2 from (8*num_vertices + 3*num_faces) to (8*num_vertices + 6*num_faces)
-    7. normals from (8*num_vertices + 6*num_faces) to (8*num_vertices + 9*num_faces)
-    8. rulings from (8*num_vertices + 9*num_faces) to (8*num_vertices + 9*num_faces + 2*num_edges)
-    9. reweighted_rulings from (8*num_vertices + 9*num_faces + 2*num_edges) to 
-    */
+    typedef typename ConfiguratorType::FullMatrixType FullMatrixType;
 
     private:
-        typedef std::pair<size_t,size_t> Bounds;
-        const Bounds _dummy_weights_bounds;
-        const Bounds _vertices_bounds;
-        const Bounds _weights_bounds;
-        const Bounds _reweighted_vertices_bounds;
-        const Bounds _reweighted_edges_1_bounds;
-        const Bounds _reweighted_edges_2_bounds;
-        const Bounds _normals_bounds;
-        const Bounds _rulings_bounds;
-        const Bounds _reweighted_rulings_1_bounds;
-        const Bounds _reweighted_rulings_2_bounds;
-        const size_t _numDofs;
-        const size_t _num_vertices;
-        const size_t _num_edges;
-        const size_t _num_halfedges;
-        const size_t _num_faces;
+        size_t _num_vertices;
+        size_t _num_faces;
+        size_t _num_edges;
+        size_t _num_halfedges;
+        QuadMeshTopologySaver &_quadTopol;
 
     public:
-        ConstraintGrad(size_t num_vertices, size_t num_edges, size_t num_faces)
-                        :_dummy_weights_bounds(0,num_vertices),
-                         _vertices_bounds(num_vertices,4*num_vertices),
-                         _weights_bounds(4*num_vertices,5*num_vertices),
-                         _reweighted_vertices_bounds(5*num_vertices, 8*num_vertices),
-                         _reweighted_edges_1_bounds(8*num_vertices,8*num_vertices + 3*num_faces),
-                         _reweighted_edges_2_bounds(8*num_vertices + 3*num_faces, 8*num_vertices + 6*num_faces),
-                         _normals_bounds(8*num_vertices + 6*num_faces, 8*num_vertices + 9*num_faces),
-                         _rulings_bounds(8*num_vertices + 9*num_faces, 8*num_vertices + 9*num_faces + 2*num_edges),
-                         _reweighted_rulings_1_bounds(8*num_vertices + 9*num_faces + 2*num_edges, 8*num_vertices + 12*num_faces + 2*num_edges),
-                         _reweighted_rulings_2_bounds(8*num_vertices + 12*num_faces + 2*num_edges, 8*num_vertices + 15*num_faces + 2*num_edges),
-                         _numDofs(8*num_vertices + 15*num_faces + 2*num_edges),
-                         _num_vertices(num_vertices),
-                         _num_edges(num_edges),
-                         _num_halfedges(_num_halfedges),
-                         _num_faces(num_faces)
-                         {}
+        ConstraintGrad(QuadMeshTopologySaver &quadTopol)
+        : _quadTopol(quadTopol),
+          _num_vertices(quadTopol.getNumVertices()),
+          _num_faces(quadTopol.getNumFaces()),
+          _num_edges(quadTopol.getNumEdges()),
+          _num_halfedges(quadTopol.getNumHalfEdges())
+        {
 
-        void get_constraintgrad_vertex_1(const QuadMesh &qm, const Variables &vars, MatrixType &Dest){
 
-            // Check that all sizes are correct:
-            if( vars._vertices.size() != _num_vertices ){
-                std::cerr << "Wrong number of vertices in the variables to calculate constraints"<<std::endl;
-            }
+        }
 
-            if( vars._vertex_weights.size() != _num_vertices ){
-                std::cerr << "Wrong number of vertex weights in the variables to calculate constraints"<<std::endl;
-            }
+        //void get_constraintgrad_vertex_1(const VectorType &vars, MatrixType &Dest){
+        void get_constraintgrad_vertex_1(const VectorType &vars, MatrixType &Dest){
 
-            if( vars._reweighted_vertices.size() != _num_vertices ){
-                std::cerr << "Wrong number of reweighted vertices in the variables to calculate constraints"<<std::endl;
-            }
+            VectorView<ConfiguratorType> view(_quadTopol);
+            view.set_vector(vars);
 
-            if(Dest.rows() != 3*_num_vertices || Dest.cols() != _numDofs){
-                Dest.resize(3*_num_vertices, _numDofs);
+            size_t num_dofs = view._idx["num_dofs"];
+
+            if(Dest.rows() != 3*_num_vertices || Dest.cols() != num_dofs){
+                Dest.resize(3*_num_vertices, num_dofs);
             }
 
             Dest.setZero();
+            auto Id = MatrixType(3,3);
+            Id.setIdentity();
 
-            for(int i = 0; i < 3*_num_vertices;i++){
-                int vertexIndex = std::floor(i/3);
-                int coordIndex = i%3;
-                RealType w_i = vars._vertex_weights[vertexIndex];
-
-                Dest(i, i + _vertices_bounds.first) = - w_i;
-                Dest(i, vertexIndex + _weights_bounds.first) = vars._vertices[coordIndex,vertexIndex];
-                Dest(i, i + _reweighted_vertices_bounds.first) = 1.0;
+            for(int i = 0; i < _num_vertices; i++){
+                RealType w_i = view.vertex_weight(i);
+                std::vector<Eigen::Triplet<RealType>> triplet;
+                VectorType vec = -view.vertex(i);
+                MatrixType vec_mat = vectorToSparseMat(vec);
+                assignSparseBlockInplace(Dest,-w_i*Id,3*i,3*i + view._idx["vertices"],triplet);
+                assignSparseBlockInplace(Dest,vec_mat,3*i,3*i + view._idx["weights"],triplet);
+                assignSparseBlockInplace(Dest,Id,3*i,3*i + view._idx["reweighted_vertices"],triplet);
             }
+
         }
 
-        void get_constraintgrad_vertex_2(const QuadMesh &qm, const Variables &vars, MatrixType &Dest){
+        void get_constraintgrad_vertex_2(const VectorType &vars, MatrixType &Dest){
 
-            if(Dest.rows()!= _num_vertices || Dest.cols() != _numDofs){
-                Dest.resize(_num_vertices, _numDofs);
+            VectorView<ConfiguratorType> view(_quadTopol);
+            view.set_vector(vars);
+
+            size_t num_dofs = view._idx["num_dofs"];
+
+            if(Dest.rows()!= _num_vertices || Dest.cols() != num_dofs){
+                Dest.resize(_num_vertices, num_dofs);
             }
             
             for(int i = 0; i < _num_vertices; i++){
-                RealType dummy_i = vars._dummy_weights[i];
-                Dest[i,i] = -2.0*dummy_i;
-                Dest[i, 4*_num_vertices + i] = 1.0;
+                RealType dummy_i = view.dummy_weight(i);
+                // Assign values directly
+                Dest.coeffRef(i, i + view._idx["dummy_weights"]) = -2.0 * dummy_i;
+                Dest.coeffRef(i, i + view._idx["weights"]) = 1.0;
             }
         }
 
-        void get_constraintgrad_edge_vec_1(const QuadMesh &qm, const Variables &vars, MatrixType &Dest){
+        void get_constraintgrad_edge_vec_1(const VectorType &vars, MatrixType &Dest){
 
-            if(Dest.rows() != 3*_num_vertices || Dest.cols() != _numDofs){
-                Dest.resize(3, _numDofs);
+            VectorView<ConfiguratorType> view(_quadTopol);
+            view.set_vector(vars);
+
+            size_t num_dofs = view._idx["num_dofs"];
+
+            if(Dest.rows() != 3*_num_faces || Dest.cols() != num_dofs){
+                Dest.resize(3*_num_faces, num_dofs);
             }
 
             Dest.setZero();
 
             // From average edge vector 1
-            Dest.block(0, _reweighted_edges_1_bounds.first, 3*_num_faces, 3*_num_faces).setIdentity();
+            auto Id = MatrixType(3,3);
+            Id.setIdentity();
+            std::vector<Eigen::Triplet<RealType>> triplet;
+            assignSparseBlockInplace(Dest,Id,0,view._idx["reweighted_edges_1"],triplet);
 
             for(int i = 0; i < _num_faces; i++){
 
                 // First, obtain first vertex idces of the face
-                int node_0 = quadTopol.getNodeOfQuad(i,0);
-                int node_1 = quadTopol.getNodeOfQuad(i,1);
-                int node_2 = quadTopol.getNodeOfQuad(i,2);
-                int node_3 = quadTopol.getNodeOfQuad(i,3);
+                int node_0 = _quadTopol.getNodeOfQuad(i,0);
+                int node_1 = _quadTopol.getNodeOfQuad(i,1);
+                int node_2 = _quadTopol.getNodeOfQuad(i,2);
+                int node_3 = _quadTopol.getNodeOfQuad(i,3);
 
-                RealType w0 = vars._vertex_weights[node_0];
-                RealType w1 = vars._vertex_weights[node_1];
-                RealType w2 = vars._vertex_weights[node_2];
-                RealType w3 = vars._vertex_weights[node_3];
+                RealType w0 = view.vertex_weight(node_0);
+                RealType w1 = view.vertex_weight(node_1);
+                RealType w2 = view.vertex_weight(node_2);
+                RealType w3 = view.vertex_weight(node_3);
 
-                VectorType v0_tilde = vars._reweighted_vertices[:,node_0];
-                VectorType v1_tilde = vars._reweighted_vertices[:,node_1];
-                VectorType v2_tilde = vars._reweighted_vertices[:,node_2];
-                VectorType v3_tilde = vars._reweighted_vertices[:,node_3];
+                VectorType v0_tilde = view.reweighted_vertex(node_0);
+                VectorType v1_tilde = view.reweighted_vertex(node_1);
+                VectorType v2_tilde = view.reweighted_vertex(node_2);
+                VectorType v3_tilde = view.reweighted_vertex(node_3);
 
                 // Derivatives w.r.t. the weights w0, w1, w2, w3
-                Dest.block(_weights_bounds.first + node_0, 3*i, 3, 1) = -(v2_tilde + v3_tilde);
-                Dest.block(_weights_bounds.first + node_1, 3*i, 3, 1) = -(v2_tilde + v3_tilde);
-                Dest.block(_weights_bounds.first + node_2, 3*i, 3, 1) = (v1_tilde + v0_tilde);
-                Dest.block(_weights_bounds.first + node_3, 3*i, 3, 1) = (v1_tilde + v0_tilde);
+                MatrixType sum_1 = vectorToSparseMat((v2_tilde + v3_tilde));
+                MatrixType sum_2 = vectorToSparseMat((v1_tilde + v0_tilde));
+                assignSparseBlockInplace(Dest, -sum_1,3*i,view._idx["weights"] + node_0,triplet);
+                assignSparseBlockInplace(Dest, -sum_1,3*i,view._idx["weights"] + node_1,triplet);
+                assignSparseBlockInplace(Dest, sum_2,3*i,view._idx["weights"] + node_2,triplet);
+                assignSparseBlockInplace(Dest, sum_2,3*i,view._idx["weights"] + node_3,triplet);
 
                 //Derivatives w.r.t. the vertex dofs of reweighted vertices Tilde{v}_0, ..., Tilde{v}_3
-                Dest.block(_reweighted_vertices_bounds.first + 3*node_0,3*i,3,1) = (w2+w3)*VectorType::Ones(3);
-                Dest.block(_reweighted_vertices_bounds.first + 3*node_1,3*i,3,1) = (w2+w3)*VectorType::Ones(3);
-                Dest.block(_reweighted_vertices_bounds.first + 3*node_2,3*i,3,1) = -(w0+w1)*VectorType::Ones(3);
-                Dest.block(_reweighted_vertices_bounds.first + 3*node_3,3*i,3,1) = -(w0+w1)*VectorType::Ones(3);
+                assignSparseBlockInplace(Dest, (w2+w3)*Id,3*i,view._idx["reweighted_vertices"] + 3*node_0,triplet);
+                assignSparseBlockInplace(Dest, (w2+w3)*Id,3*i,view._idx["reweighted_vertices"] + 3*node_1,triplet);
+                assignSparseBlockInplace(Dest, -(w0+w1)*Id,3*i,view._idx["reweighted_vertices"] + 3*node_2,triplet);
+                assignSparseBlockInplace(Dest, -(w0+w1)*Id,3*i,view._idx["reweighted_vertices"] + 3*node_3,triplet);
             }
 
         }
 
-        void get_constraintgrad_edge_vec_2(const QuadMesh &qm, const Variables &vars, MatrixType &Dest){
+        void get_constraintgrad_edge_vec_2(const VectorType &vars, MatrixType &Dest){
 
-            if(Dest.rows() != 3*_num_vertices || Dest.cols() != _numDofs){
-                Dest.resize(3, _numDofs);
+            VectorView<ConfiguratorType> view(_quadTopol);
+            view.set_vector(vars);
+
+            size_t num_dofs = view._idx["num_dofs"];
+
+            if(Dest.rows() != 3*_num_vertices || Dest.cols() != num_dofs){
+                Dest.resize(3*_num_faces, num_dofs);
             }
 
             Dest.setZero();
 
+            std::vector<Eigen::Triplet<RealType>> triplet;
             // From average edge vector 1
-            Dest.block(0, _reweighted_edges_2_bounds.first, 3*num_faces, 3*num_faces).setIdentity();
+            auto Id = MatrixType(3,3);
+            Id.setIdentity();
+            assignSparseBlockInplace(Dest,Id,0,view._idx["reweighted_edges_2"],triplet);
 
             for(int i = 0; i < _num_faces; i++){
 
                 // First, obtain first vertex idces of the face
-                int node_0 = quadTopol.getNodeOfQuad(i,0);
-                int node_1 = quadTopol.getNodeOfQuad(i,1);
-                int node_2 = quadTopol.getNodeOfQuad(i,2);
-                int node_3 = quadTopol.getNodeOfQuad(i,3);
+                int node_0 = _quadTopol.getNodeOfQuad(i,0);
+                int node_1 = _quadTopol.getNodeOfQuad(i,1);
+                int node_2 = _quadTopol.getNodeOfQuad(i,2);
+                int node_3 = _quadTopol.getNodeOfQuad(i,3);
 
-                RealType w0 = vars._vertex_weights[node_0];
-                RealType w1 = vars._vertex_weights[node_1];
-                RealType w2 = vars._vertex_weights[node_2];
-                RealType w3 = vars._vertex_weights[node_3];
+                RealType w0 = view.vertex_weight(node_0);
+                RealType w1 = view.vertex_weight(node_1);
+                RealType w2 = view.vertex_weight(node_2);
+                RealType w3 = view.vertex_weight(node_3);
 
-                VectorType v0_tilde = vars._reweighted_vertices[:,node_0];
-                VectorType v1_tilde = vars._reweighted_vertices[:,node_1];
-                VectorType v2_tilde = vars._reweighted_vertices[:,node_2];
-                VectorType v3_tilde = vars._reweighted_vertices[:,node_3];
+                VectorType v0_tilde = view.reweighted_vertex(node_0);
+                VectorType v1_tilde = view.reweighted_vertex(node_1);
+                VectorType v2_tilde = view.reweighted_vertex(node_2);
+                VectorType v3_tilde = view.reweighted_vertex(node_3);
 
                 // Derivatives w.r.t. the weights w0, w1, w2, w3
-                Dest.block(_weights_bounds.first + node_0, 3*i, 3, 1) = (v2_tilde + v1_tilde);
-                Dest.block(_weights_bounds.first + node_1, 3*i, 3, 1) = -(v0_tilde + v3_tilde);
-                Dest.block(_weights_bounds.first + node_2, 3*i, 3, 1) = -(v0_tilde + v3_tilde);
-                Dest.block(_weights_bounds.first + node_3, 3*i, 3, 1) = (v2_tilde + v1_tilde);
+                MatrixType sum_1 = vectorToSparseMat((v2_tilde + v1_tilde));
+                MatrixType sum_2 = vectorToSparseMat((v0_tilde + v3_tilde));
+    
+                assignSparseBlockInplace(Dest, sum_1,3*i,view._idx["weights"] + node_0,triplet);
+                assignSparseBlockInplace(Dest, -sum_2,3*i,view._idx["weights"] + node_1,triplet);
+                assignSparseBlockInplace(Dest, -sum_2,3*i,view._idx["weights"] + node_2,triplet);
+                assignSparseBlockInplace(Dest, sum_1,3*i,view._idx["weights"] + node_3,triplet);
 
                 //Derivatives w.r.t. the vertex dofs of reweighted vertices Tilde{v}_0, ..., Tilde{v}_3
-                Dest.block(_reweighted_vertices_bounds.first + 3*node_0,3*i,3,1) = -(w1+w2)*VectorType::Ones(3);
-                Dest.block(_reweighted_vertices_bounds.first + 3*node_1,3*i,3,1) = (w0+w3)*VectorType::Ones(3);
-                Dest.block(_reweighted_vertices_bounds.first + 3*node_2,3*i,3,1) = (w0+w3)*VectorType::Ones(3);
-                Dest.block(_reweighted_vertices_bounds.first + 3*node_3,3*i,3,1) = -(w1+w2)*VectorType::Ones(3);
+                assignSparseBlockInplace(Dest,-(w1+w2)*Id,3*i,view._idx["reweighted_vertices"] + 3*node_0,triplet);
+                assignSparseBlockInplace(Dest,(w0+w3)*Id,3*i,view._idx["reweighted_vertices"] + 3*node_1,triplet);
+                assignSparseBlockInplace(Dest,(w0+w3)*Id,3*i,view._idx["reweighted_vertices"] + 3*node_2,triplet);
+                assignSparseBlockInplace(Dest,-(w1+w2)*Id,3*i,view._idx["reweighted_vertices"] + 3*node_3,triplet);
             }
 
         }
 
-        void get_constraintgrad_normal_1(const QuadMesh &qm, const Variables &vars, MatrixType &Dest){
+        void get_constraintgrad_normal_1(const VectorType &vars, MatrixType &Dest){
 
-            if(Dest.rows() != _num_faces || Dest.cols() != _numDofs ){
-                Dest.resize(_num_faces, _numDofs);
+            VectorView<ConfiguratorType> view(_quadTopol);
+            view.set_vector(vars);
+
+            size_t num_dofs = view._idx["num_dofs"];
+
+            if(Dest.rows() != _num_faces || Dest.cols() != num_dofs ){
+                Dest.resize(_num_faces, num_dofs);
             }
 
-            for(const auto& fh : qm._mesh.faces()){
-                size_t i = fh.idx();
+            std::vector<Eigen::Triplet<RealType>> triplet;
+            auto Id = MatrixType(3,3);
+            Id.setIdentity();
 
+            for(int i = 0; i < _num_faces; i++){
                 // Set the derivatives w.r.t. the normals
-                Dest.block(3*i,_normals_bounds.first + 3*i,3,3) = vars._reweighted_edges_1.col(i).asDiagonal();
-                Dest.block(3*i,_reweighted_edges_1_bounds.first + 3*i,3,3) = vars._normals.col(i).asDiagonal();
+                MatrixType vec_1 = vectorToSparseMat(view.reweighted_edge_1(i),true);
+                MatrixType vec_2 = vectorToSparseMat(view.face_normal(i),true);
+                assignSparseBlockInplace(Dest,vec_1,i,view._idx["normals"] + 3*i,triplet);
+                assignSparseBlockInplace(Dest,vec_2,i,view._idx["reweighted_edges_1"] + 3*i,triplet);
             }
         }
 
-        void get_constraintgrad_normal_2(const QuadMesh &qm, const Variables &vars, MatrixType &Dest){
+        void get_constraintgrad_normal_2(const VectorType &vars, MatrixType &Dest){
 
-            if(Dest.rows() != _num_faces || Dest.cols() != _numDofs ){
-                Dest.resize(_num_faces, _numDofs);
+            VectorView<ConfiguratorType> view(_quadTopol);
+            view.set_vector(vars);
+
+            size_t num_dofs = view._idx["num_dofs"];
+
+            if(Dest.rows() != _num_faces || Dest.cols() != num_dofs ){
+                Dest.resize(_num_faces, num_dofs);
             }
 
-            for(const auto& fh : qm._mesh.faces()){
-                size_t i = fh.idx();
+            std::vector<Eigen::Triplet<RealType>> triplet;
 
+            for(int i = 0; i < _num_faces; i++){
                 // Set the derivatives w.r.t. the normals
-                Dest.block(3*i,_normals_bounds.first + 3*i,3,3) = vars._reweighted_edges_2.col(i).asDiagonal();
-                Dest.block(3*i,_reweighted_edges_2_bounds.first + 3*i,3,3) = vars._normals.col(i).asDiagonal();
+                MatrixType vec_1 = vectorToSparseMat(view.reweighted_edge_2(i),true);
+                MatrixType vec_2 = vectorToSparseMat(view.face_normal(i),true);
+                assignSparseBlockInplace(Dest,vec_1,i,view._idx["normals"] + 3*i,triplet);
+                assignSparseBlockInplace(Dest,vec_2,i,view._idx["reweighted_edges_2"] + 3*i,triplet);
             }
         }
 
-        void get_constraintgrad_normal_3(const QuadMesh &qm, const Variables &vars, MatrixType &Dest){
+        void get_constraintgrad_normal_3(const VectorType &vars, MatrixType &Dest){
 
-            if(Dest.rows() != _num_faces || Dest.cols() != _numDofs ){
-                Dest.resize(_num_faces, _numDofs);
+            VectorView<ConfiguratorType> view(_quadTopol);
+            view.set_vector(vars);
+
+            size_t num_dofs = view._idx["num_dofs"];
+
+            if(Dest.rows() != _num_faces || Dest.cols() != num_dofs ){
+                Dest.resize(_num_faces, num_dofs);
             }
 
-            for(const auto& fh : qm._mesh.faces()){
-                size_t i = fh.idx();
+            std::vector<Eigen::Triplet<RealType>> triplet;
 
+            for(int i = 0; i < _num_faces; i++){
                 // Set the derivatives w.r.t. the normals
-                Dest.block(i,_normals_bounds.first + i,1,3) = 2.0*vars._normals.col(i).transpose();
+                MatrixType vec_1 = vectorToSparseMat(view.face_normal(i),true);
+                assignSparseBlockInplace(Dest,2.0*vec_1,i,view._idx["normals"] + i,triplet);
             }
         }
         
-        void get_constraintgrad_ruling_0(const QuadMesh &qm, const Variables &vars, MatrixType &Dest){
+        void get_constraintgrad_ruling_0(const VectorType &vars, MatrixType &Dest){
 
-            if(Dest.rows() != 3*_num_halfedges || Dest.cols() != _numDofs){
-                Dest.resize(3*_num_halfedges, _numDofs);
+            VectorView<ConfiguratorType> view(_quadTopol);
+            view.set_vector(vars);
+
+            std::vector<int> bdryHalfEdges = _quadTopol.getBdryHalfEdges();
+
+            size_t num_dofs = view._idx["num_dofs"];
+
+            size_t num_constraints = 3*(_num_halfedges - bdryHalfEdges.size());
+
+            if(Dest.rows() != num_constraints || Dest.cols() != num_dofs){
+                Dest.resize(num_constraints, num_dofs);
             }
 
             Dest.setZero();
 
-            for(const auto& heh : qm._mesh.halfedges){
-                size_t i = heh.idx();
-                size_t faceIdx_1 = qm._mesh.face_handle(heh);
-                size_t faceIdx_2 = qm._mesh.opposite_face_handle(heh);
-                VectorType normal_1 = vars._normals.col(faceIdx_1);
-                VectorType normal_2 = vars._normals.col(faceIdx_2);
+            std::vector<Eigen::Triplet<RealType>> triplet;
+
+            for(SkippingBdryHalfEdgeIterator it(_quadTopol); it.valid();it++)
+            {
+                int i = it.idx();
+                int i_nobdry = it.idx_nobdry();
+
+                size_t faceIdx_1 = _quadTopol.getFaceOfHalfEdge(i,0);
+                size_t faceIdx_2 = _quadTopol.getFaceOfHalfEdge(i,1);
+                Eigen::Vector3d normal_1 = view.face_normal(faceIdx_1).template head<3>();
+                Eigen::Vector3d normal_2 = view.face_normal(faceIdx_2).template head<3>();
 
                 // First, set the derivative w.r.t. the ruling vector
-                Dest.block(3*i, _rulings_bounds.first + 3*i, 3, 3) = FullMatrixType::Identity(3,3);
+                auto Id = MatrixType(3,3);
+                Id.setIdentity();
+
+                assignSparseBlockInplace(Dest,Id,3*(i_nobdry),view._idx["rulings"] + 3*i_nobdry,triplet);
 
                 // Now, set the derivatives w.r.t. the cross product
                 // First, differentiate w.r.t. normal_1
                 Eigen::Vector3d e;
+                MatrixType vec_prod;
                 e.setZero();
-                e[0] = 1.0; 
-                Dest.block(3*i, _normals_bounds.first + 3*faceIdx_1, 3, 1) = -e.cross(normal_2);
+                e[0] = 1.0;
+                vec_prod = convertVecToSparseMat(-e.cross(normal_2));
+                assignSparseBlockInplace(Dest,vec_prod,3*(i_nobdry),view._idx["normals"] + 3*faceIdx_1,triplet);
                 e[0] = 0.0;
                 e[1] = 1.0;
-                Dest.block(3*i, _normals_bounds.first + 3*faceIdx_1 + 1, 3, 1) = -e.cross(normal_2);
+                vec_prod = convertVecToSparseMat(-e.cross(normal_2));
+                assignSparseBlockInplace(Dest,vec_prod,3*(i_nobdry),view._idx["normals"] + 3*faceIdx_1 + 1,triplet);
                 e[1] = 0.0;
                 e[2] = 1.0;
-                Dest.block(3*i, _normals_bounds.first + 3*faceIdx_1 + 2, 3, 1) = -e.cross(normal_2);
+                vec_prod = convertVecToSparseMat(-e.cross(normal_2));
+                assignSparseBlockInplace(Dest,vec_prod,3*(i_nobdry),view._idx["normals"] + 3*faceIdx_1 + 2,triplet);
 
                 // Now, differentiate w.r.t. normal_2
                 e[2] = 0.0;
                 e[0] = 1.0;
-                Dest.block(3*i, _normals_bounds.first + 3*faceIdx_2, 3, 1) = -normal_1.cross(e);
+                vec_prod = convertVecToSparseMat(e.cross(normal_1));
+                assignSparseBlockInplace(Dest,vec_prod,3*(i_nobdry),view._idx["normals"] + 3*faceIdx_2,triplet);
                 e[0] = 0.0;
                 e[1] = 1.0;
-                Dest.block(3*i, _normals_bounds.first + 3*faceIdx_2 + 1, 3, 1) = -normal_1.cross(e);
+                vec_prod = convertVecToSparseMat(e.cross(normal_1));
+                assignSparseBlockInplace(Dest,vec_prod,3*(i_nobdry),view._idx["normals"] + 3*faceIdx_2 + 1,triplet);
                 e[1] = 0.0;
                 e[2] = 1.0;
-                Dest.block(3*i, _normals_bounds.first + 3*faceIdx_2 + 2, 3, 1) = -normal_1.cross(e);
+                vec_prod = convertVecToSparseMat(e.cross(normal_1));
+                assignSparseBlockInplace(Dest,vec_prod,3*(i_nobdry),view._idx["normals"] + 3*faceIdx_2 + 2,triplet);
             }
-
         }
 
-         void get_constraintgrad_ruling_1(const QuadMesh &qm, const Variables &vars, MatrixType &Dest){
+        void get_constraintgrad_ruling_1(const VectorType& vars, MatrixType &Dest){
 
-            if(Dest.rows() != 3*_num_faces || Dest.cols() != _numDofs){
-                Dest.resize(3*_num_faces, _numDofs);
+            VectorView<ConfiguratorType> view(_quadTopol);
+
+            view.set_vector(vars);
+
+            std::vector<int> bdryFaces = _quadTopol.getBdryFaces();
+
+            size_t num_dofs = view._idx["num_dofs"];
+
+            size_t num_constraints = 3*(_num_faces - bdryFaces.size());
+
+            if(Dest.rows() != num_constraints || Dest.cols() != num_dofs){
+                Dest.resize(num_constraints, num_dofs);
             }
 
             Dest.setZero();
 
-            for(const auto& fh: qm._mesh.faces())
-            {
-                int faceIndex = fh.idx();
+            std::vector<Eigen::Triplet<RealType>> triplet;
+            auto Id = MatrixType(3,3);
+            Id.setIdentity();
 
-                int node_0 = quadTopol.getNodeOfQuad(faceIndex,0);
-                int node_1 = quadTopol.getNodeOfQuad(faceIndex,1);
-                int node_2 = quadTopol.getNodeOfQuad(faceIndex,2);
-                int node_3 = quadTopol.getNodeOfQuad(faceIndex,3);
+            SkippingBdryHalfEdgeIterator it_he(_quadTopol);
 
-                int heh_01 = quadTopol.getHalfEdgeOfQuad(faceIndex,0);
-                int heh_12 = quadTopol.getHalfEdgeOfQuad(faceIndex,1);
-                int heh_23 = quadTopol.getHalfEdgeOfQuad(faceIndex,2);
-                int heh_30 = quadTopol.getHalfEdgeOfQuad(faceIndex,3);
+            for(SkippingBdryFaceIterator it(_quadTopol); it.valid(); it++){
 
-                RealType w0 = vars._vertex_weights[node_0];
-                RealType w1 = vars._vertex_weights[node_1];
-                RealType w2 = vars._vertex_weights[node_2];
-                RealType w3 = vars._vertex_weights[node_3];
+                int i = it.idx();
+                int i_nobdry = it.id_nobdry();
 
-                Vec3d ruling_01 = vars._rulings.col(heh_01);
-                Vec3d ruling_12 = vars._rulings.col(heh_12);
-                Vec3d ruling_23 = vars._rulings.col(heh_23);
-                Vec3d ruling_30 = vars._rulings.col(heh_30);
+                int node_0 = _quadTopol.getNodeOfQuad(i,0);
+                int node_1 = _quadTopol.getNodeOfQuad(i,1);
+                int node_2 = _quadTopol.getNodeOfQuad(i,2);
+                int node_3 = _quadTopol.getNodeOfQuad(i,3);
+
+                auto node_0_vert = view.vertex(node_0);
+                auto node_1_vert = view.vertex(node_1);
+                auto node_2_vert = view.vertex(node_2);
+                auto node_3_vert = view.vertex(node_3);
+
+                int heh_01 = _quadTopol.getHalfEdgeOfQuad(i,0);
+                int heh_12 = _quadTopol.getHalfEdgeOfQuad(i,1);
+                int heh_23 = _quadTopol.getHalfEdgeOfQuad(i,2);
+                int heh_30 = _quadTopol.getHalfEdgeOfQuad(i,3);
+
+                RealType w0 = view.vertex_weight(node_0);
+                RealType w1 = view.vertex_weight(node_1);
+                RealType w2 = view.vertex_weight(node_2);
+                RealType w3 = view.vertex_weight(node_3);
+
+                VectorType ruling_01 = view.ruling(it_he.to_nbdry(heh_01));
+                VectorType ruling_12 = view.ruling(it_he.to_nbdry(heh_12));
+                VectorType ruling_23 = view.ruling(it_he.to_nbdry(heh_23));
+                VectorType ruling_30 = view.ruling(it_he.to_nbdry(heh_30));
 
                 // Differentiate w.r.t. the reweighted ruling r_{1,3,f}
-                Dest.block(3*faceIndex,_reweighted_rulings_1_bounds.first + 3*faceIndex,3,3) = FullMatrixType::Identity(3,3);
+
+                assignSparseBlockInplace(Dest,Id,3*i_nobdry,view._idx["reweighted_rulings_1"] + 3*i_nobdry,triplet);
+
+                MatrixType ruling_30_mat = vectorToSparseMat(ruling_30);
+                MatrixType ruling_12_mat = vectorToSparseMat(ruling_12);
 
                 // Derivatives w.r.t. the weights w0, w1, w2, w3
-                Dest.block(3*faceIndex,_weights_bounds.first + node_0, 3, 1) = (ruling_30);
-                Dest.block(3*faceIndex,_weights_bounds.first + node_1, 3, 1) = -(ruling_12);
-                Dest.block(3*faceIndex,_weights_bounds.first + node_2, 3, 1) = -(ruling_12);
-                Dest.block(3*faceIndex,_weights_bounds.first + node_3, 3, 1) = (ruling_30);
+                assignSparseBlockInplace(Dest, ruling_30_mat,3*i_nobdry,view._idx["weights"] + node_0,triplet);
+                assignSparseBlockInplace(Dest, -ruling_12_mat,3*i_nobdry,view._idx["weights"] + node_1,triplet);
+                assignSparseBlockInplace(Dest, -ruling_12_mat,3*i_nobdry,view._idx["weights"] + node_2,triplet);
+                assignSparseBlockInplace(Dest, ruling_30_mat,3*i_nobdry,view._idx["weights"] + node_3,triplet);
+
+                std::cout<<"Compare: "<<std::endl;
+                std::cout<<view._idx["rulings"] + 3*heh_12<<"; "<<view._idx["rulings"] + 3*it_he.to_nbdry(heh_12)<<std::endl;
+                std::cout<<view._idx["rulings"] + 3*heh_30<<"; "<<view._idx["rulings"] + 3*it_he.to_nbdry(heh_30)<<std::endl;
 
                 //Derivatives w.r.t. the rulings
-                Dest.block(_rulings_bounds.first + 3*heh_12, 3*faceIndex, 3, 3) = -(w1 + w2)*FullMatrixType::Identity(3);
-                Dest.block(_rulings_bounds.first + 3*heh_30, 3*faceIndex, 3, 3) = (w3 + w0)*FullMatrixType::Identity(3);
+                assignSparseBlockInplace(Dest,-(w1 + w2)*Id,3*i_nobdry,view._idx["rulings"] + 3*it_he.to_nbdry(heh_12),triplet);
+                assignSparseBlockInplace(Dest,(w3 + w0)*Id,3*i_nobdry,view._idx["rulings"] + 3*it_he.to_nbdry(heh_30),triplet);
             }
         }
 
-        void get_constraintgrad_ruling_2(const QuadMesh &qm, const Variables &vars, MatrixType &Dest){
+        void get_constraintgrad_ruling_2(const VectorType& vars, MatrixType &Dest){
 
-            if(Dest.rows() != 3*_num_faces || Dest.cols() != _numDofs){
-                Dest.resize(3*_num_faces, _numDofs);
+            VectorView<ConfiguratorType> view(_quadTopol);
+
+            view.set_vector(vars);
+
+            std::vector<int> bdryFaces = _quadTopol.getBdryFaces();
+
+            size_t num_dofs = view._idx["num_dofs"];
+
+            size_t num_constraints = 3*(_num_faces - bdryFaces.size());
+
+            if(Dest.rows() != num_constraints || Dest.cols() != num_dofs){
+                Dest.resize(num_constraints, num_dofs);
             }
 
             Dest.setZero();
 
-            for(const auto& fh: qm._mesh.faces())
-            {
-                int faceIndex = fh.idx();
+            std::vector<Eigen::Triplet<RealType>> triplet;
+            auto Id = MatrixType(3,3);
+            Id.setIdentity();
 
-                int node_0 = quadTopol.getNodeOfQuad(faceIndex,0);
-                int node_1 = quadTopol.getNodeOfQuad(faceIndex,1);
-                int node_2 = quadTopol.getNodeOfQuad(faceIndex,2);
-                int node_3 = quadTopol.getNodeOfQuad(faceIndex,3);
+            SkippingBdryHalfEdgeIterator it_he(_quadTopol);
 
-                int heh_01 = quadTopol.getHalfEdgeOfQuad(faceIndex,0);
-                int heh_12 = quadTopol.getHalfEdgeOfQuad(faceIndex,1);
-                int heh_23 = quadTopol.getHalfEdgeOfQuad(faceIndex,2);
-                int heh_30 = quadTopol.getHalfEdgeOfQuad(faceIndex,3);
+            for(SkippingBdryFaceIterator it(_quadTopol); it.valid(); it++){
 
-                RealType w0 = vars._vertex_weights[node_0];
-                RealType w1 = vars._vertex_weights[node_1];
-                RealType w2 = vars._vertex_weights[node_2];
-                RealType w3 = vars._vertex_weights[node_3];
+                int i = it.idx();
+                int i_nbdry = it.id_nobdry();
 
-                Vec3d ruling_01 = vars._rulings.col(heh_01);
-                Vec3d ruling_12 = vars._rulings.col(heh_12);
-                Vec3d ruling_23 = vars._rulings.col(heh_23);
-                Vec3d ruling_30 = vars._rulings.col(heh_30);
+                int node_0 = _quadTopol.getNodeOfQuad(i,0);
+                int node_1 = _quadTopol.getNodeOfQuad(i,1);
+                int node_2 = _quadTopol.getNodeOfQuad(i,2);
+                int node_3 = _quadTopol.getNodeOfQuad(i,3);
+
+                int heh_01 = _quadTopol.getHalfEdgeOfQuad(i,0);
+                int heh_12 = _quadTopol.getHalfEdgeOfQuad(i,1);
+                int heh_23 = _quadTopol.getHalfEdgeOfQuad(i,2);
+                int heh_30 = _quadTopol.getHalfEdgeOfQuad(i,3);
+
+                RealType w0 = view.vertex_weight(node_0);
+                RealType w1 = view.vertex_weight(node_1);
+                RealType w2 = view.vertex_weight(node_2);
+                RealType w3 = view.vertex_weight(node_3);
+
+                VectorType ruling_01 = view.ruling(it_he.to_nbdry(heh_01));
+                VectorType ruling_23 = view.ruling(it_he.to_nbdry(heh_23));
+
+                MatrixType ruling_01_mat = vectorToSparseMat(ruling_01);
+                MatrixType ruling_23_mat = vectorToSparseMat(ruling_23);
 
                 // Differentiate w.r.t. the reweighted ruling r_{1,3,f}
-                Dest.block(3*faceIndex,_reweighted_rulings_2_bounds.first + 3*faceIndex,3,3) = FullMatrixType::Identity(3,3);
+                assignSparseBlockInplace(Dest,Id,3*i_nbdry,view._idx["reweighted_rulings_2"] + 3*i_nbdry,triplet);
 
                 // Derivatives w.r.t. the weights w0, w1, w2, w3
-                Dest.block(3*faceIndex,_weights_bounds.first + node_0, 3, 1) = -(ruling_01);
-                Dest.block(3*faceIndex,_weights_bounds.first + node_1, 3, 1) = -(ruling_01);
-                Dest.block(3*faceIndex,_weights_bounds.first + node_2, 3, 1) = (ruling_23);
-                Dest.block(3*faceIndex,_weights_bounds.first + node_3, 3, 1) = (ruling_23);
+                assignSparseBlockInplace(Dest, -ruling_01_mat,3*i_nbdry,view._idx["weights"] + node_0,triplet);
+                assignSparseBlockInplace(Dest, -ruling_01_mat,3*i_nbdry,view._idx["weights"] + node_1,triplet);
+                assignSparseBlockInplace(Dest, ruling_23_mat,3*i_nbdry,view._idx["weights"] + node_2,triplet);
+                assignSparseBlockInplace(Dest, ruling_23_mat,3*i_nbdry,view._idx["weights"] + node_3,triplet);
 
                 //Derivatives w.r.t. the rulings
-                Dest.block(_rulings_bounds.first + 3*heh_01, 3*faceIndex, 3, 3) = -(w0 + w1)*FullMatrixType::Identity(3);
-                Dest.block(_rulings_bounds.first + 3*heh_23, 3*faceIndex, 3, 3) = (w2 + w0)*FullMatrixType::Identity(3);
+                assignSparseBlockInplace(Dest,-(w0 + w1)*Id,3*i_nbdry,view._idx["rulings"] + 3*it_he.to_nbdry(heh_01),triplet);
+                assignSparseBlockInplace(Dest,(w2 + w3)*Id,3*i_nbdry,view._idx["rulings"] + 3*it_he.to_nbdry(heh_23),triplet);
             }
         }
 
-        void get_constraintgrad_dev(const QuadMesh &qm, const Variables &vars, MatrixType &Dest){
+        void get_constraintgrad_dev(const VectorType &vars, MatrixType &Dest){
 
-            if(Dest.rows() != _num_faces || Dest.cols() != _numDofs){
-                Dest.resize(_num_faces, _numDofs);
+            VectorView<ConfiguratorType> view(_quadTopol);
+
+            view.set_vector(vars);
+
+            std::vector<int> bdryFaces = _quadTopol.getBdryFaces();
+
+            size_t num_constraints = 3*(_num_faces - bdryFaces.size());
+            size_t num_dofs = view._idx["num_dofs"];
+
+            if(Dest.rows() != num_constraints || Dest.cols() != num_dofs){
+                Dest.resize(num_constraints, num_dofs);
             }
 
             Dest.setZero();
 
-            for(const auto& fh: qm._mesh.faces()){
+            std::vector<Eigen::Triplet<RealType>> triplet;
 
-                int i = fh.idx();
+            for(SkippingBdryFaceIterator it(_quadTopol); it.valid(); it++)
+            {
+
+                int i = it.idx();
+                int i_nobdry = it.id_nobdry();
+
+                // obtain the reweighted ruling vectors
+                Eigen::Vector3d reweighted_ruling_1 = view.reweighted_ruling_1(i).template head<3>();
+                Eigen::Vector3d reweighted_ruling_2 = view.reweighted_ruling_2(i).template head<3>();
 
                 // Derivatives w.r.t. the first ruling vector \Tilde{r}_{13,f}
                 Eigen::Vector3d e;
                 e.setZero();
                 e[0] = 1.0; 
-                Dest.block(i,_reweighted_rulings_1_bounds.first,3,1) = e.cross(vars._reweighted_rulings_2);
+                assignSparseBlockInplace(Dest,vectorToSparseMat(e.cross(reweighted_ruling_2)),3*i_nobdry,3*i_nobdry + view._idx["reweighted_rulings_1"],triplet);
                 e[0] = 0.0;
                 e[1] = 1.0;
-                Dest.block(i,_reweighted_rulings_1_bounds.first + 1,3,1) = e.cross(vars._reweighted_rulings_2);
+                assignSparseBlockInplace(Dest,vectorToSparseMat(e.cross(reweighted_ruling_2)),3*i_nobdry,3*i_nobdry + view._idx["reweighted_rulings_1"] + 1,triplet);
                 e[1] = 0.0;
                 e[2] = 1.0;
-                Dest.block(i,_reweighted_rulings_1_bounds.first + 2,3,1) = e.cross(vars._reweighted_rulings_2);
+                assignSparseBlockInplace(Dest,vectorToSparseMat(e.cross(reweighted_ruling_2)),3*i_nobdry,3*i_nobdry + view._idx["reweighted_rulings_1"] + 2,triplet);
             
                 // Derivatives w.r.t. the second ruling vector \Tilde{r}_{02,f}
                 e[2] = 0.0;
                 e[0] = 1.0;
-                Dest.block(i, _reweighted_rulings_2_bounds.first,3,1) = vars._reweighted_rulings_1.cross(e);
+                assignSparseBlockInplace(Dest,vectorToSparseMat(reweighted_ruling_1.cross(e)),3*i_nobdry,3*i_nobdry + view._idx["reweighted_rulings_2"],triplet);
                 e[0] = 0.0;
                 e[1] = 1.0;
-                Dest.block(i, _reweighted_rulings_2_bounds.first + 1,3,1) = vars._reweighted_rulings_1.cross(e);
+                assignSparseBlockInplace(Dest,vectorToSparseMat(reweighted_ruling_1.cross(e)),3*i_nobdry,3*i_nobdry + view._idx["reweighted_rulings_2"] + 1,triplet);
                 e[1] = 0.0;
                 e[2] = 1.0;
-                Dest.block(i, _reweighted_rulings_2_bounds.first + 2,3,1) = vars._reweighted_rulings_1.cross(e);
+                assignSparseBlockInplace(Dest,vectorToSparseMat(reweighted_ruling_1.cross(e)),3*i_nobdry,3*i_nobdry + view._idx["reweighted_rulings_2"] + 2,triplet);
+            }
+        }
+
+        void get_constraintgrad_fair_v(const VectorType &vars, MatrixType &Dest){
+            VectorView<ConfiguratorType> view(_quadTopol);
+            view.set_vector(vars);
+
+            size_t num_dofs = view._idx["num_dofs"];
+
+            auto vertex_strips = _quadTopol.getVertexStrips();
+
+            if(Dest.rows() != 3*vertex_strips.size() || Dest.cols() != num_dofs)
+            {
+                Dest.resize(3*vertex_strips.size(), num_dofs);
+            }
+
+            MatrixType Id(3,3);
+            Id.setIdentity();
+            std::vector<Eigen::Triplet<double>> triplet;
+
+            for(int i = 0; i < vertex_strips.size(); i++){
+                int node_0 = std::get<0>(vertex_strips[i]);
+                int node_1 = std::get<1>(vertex_strips[i]);
+                int node_2 = std::get<2>(vertex_strips[i]);
+                
+                assignSparseBlockInplace(Dest,Id,3*i,3*node_0 + view._idx["vertices"],triplet);
+                assignSparseBlockInplace(Dest,-2*Id,3*i,3*node_1 + view._idx["vertices"], triplet);
+                assignSparseBlockInplace(Dest, Id, 3*i,3*node_2 + view._idx["vertices"], triplet);
+            }
+        }
+
+        void get_constraintgrad_fair_n(const VectorType &vars, MatrixType &Dest){
+            VectorView<ConfiguratorType> view(_quadTopol);
+            view.set_vector(vars);
+
+            auto normal_strips = _quadTopol.getFaceStrips();
+
+            int num_strips = normal_strips.size();
+            int num_dofs = view._idx["num_dofs"];
+
+            if(Dest.rows() != 3*num_strips || Dest.cols() != num_dofs){
+                Dest.resize(3*num_strips, num_dofs);
+            }
+
+            MatrixType Id(3,3);
+            Id.setIdentity();
+
+            std::vector<Eigen::Triplet<double>> triplet;
+
+            for(int i = 0; i < num_strips; i++){
+                int normal_0 = std::get<0>(normal_strips[i]);
+                int normal_1 = std::get<1>(normal_strips[i]);
+                int normal_2 = std::get<2>(normal_strips[i]);
+
+                assignSparseBlockInplace(Dest,Id,3*i,3*normal_0 + view._idx["normals"],triplet);
+                assignSparseBlockInplace(Dest,-2*Id,3*i,3*normal_1 + view._idx["normals"],triplet);
+                assignSparseBlockInplace(Dest,Id,3*i,3*normal_2 + view._idx["normals"],triplet);
+            }
+        }
+
+        void apply(const VectorType &vars, MatrixType &Dest) const override{
+            VectorView<ConfiguratorType> view(_quadTopol);
+            view.set_vector(vars);
+
+            auto he_strips = _quadTopol.getHalfEdgeStrips();
+
+            int num_strips = he_strips.size();
+            int num_dofs = view._idx["num_dofs"];
+
+            if(Dest.rows() != 3*num_strips || Dest.cols() != num_dofs)
+            {
+                Dest.resize(3*num_strips, num_dofs);
+            }
+
+            MatrixType Id(3,3);
+            Id.setIdentity();
+
+            std::vector<Eigen::Triplet<RealType>> triplet;
+            SkippingBdryHalfEdgeIterator he_it(_quadTopol);
+
+            for(int i = 0; i < num_strips; i++)
+            {
+                int heh_0 = std::get<0>(he_strips[i]);
+                int heh_1 = std::get<1>(he_strips[i]);
+                int heh_2 = std::get<2>(he_strips[i]);
+
+                assignSparseBlockInplace(Dest,Id,3*i,3*he_it.to_nbdry(heh_0) + view._idx["rulings"],triplet);
+                assignSparseBlockInplace(Dest,-2*Id,3*i,3*he_it.to_nbdry(heh_1) + view._idx["rulings"],triplet);
+                assignSparseBlockInplace(Dest,Id,3*i,3*he_it.to_nbdry(heh_2) + view._idx["rulings"],triplet);
             }
         }
 };

@@ -25,6 +25,7 @@ add_executable(bendingSmallArcInterpolation SmallArc/bendingSmallArcInterpolatio
 add_executable(QuadMeshTest2 QuadMeshExamples/QuadMeshTest2.cpp)
 add_executable(ToyExample FoldOptimization/ToyExample.cpp)
 add_executable(ToyExampleNewton FoldOptimization/ToyExampleNewton.cpp)
+add_executable(ConstraintTest QuadMeshExamples/ConstraintTest.cpp)
 # link libraries
 target_link_libraries(ToyExampleNewton PRIVATE GOAST::GOAST)
 
@@ -75,6 +76,8 @@ target_link_libraries(bendingSmallArcInterpolation PRIVATE GOAST::GOAST)
 #target_link_libraries(SimpleFoldOptimization PRIVATE GOAST::GOAST)
 
 #target_link_libraries(SimpleFoldOptimization2 PRIVATE GOAST::GOAST)
+
+target_link_libraries(ConstraintTest PRIVATE GOAST::GOAST)
 
 # Phasefield example currently requires Ipopt
 if (GOAST_WITH_IPOPT)
