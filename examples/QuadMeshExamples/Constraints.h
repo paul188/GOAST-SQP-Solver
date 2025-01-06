@@ -58,6 +58,12 @@ class SkippingBdryHalfEdgeIterator{
         int to_nbdry(int idx){
             return _heh_idx_to_nbdry[idx];
         }
+        
+        // reset the iterator
+        void reset()
+        {
+            _it = _noBdryHalfEdges.begin();
+        }
 };
 
 class SkippingBdryFaceIterator{
@@ -115,6 +121,12 @@ class SkippingBdryFaceIterator{
 
         int to_nbdry(int idx){
             return _face_idx_to_nbdry[idx];
+        }
+
+        // reset the iterator
+        void reset()
+        {
+            _it = _noBdryFaces.begin();
         }
 };
 
@@ -295,12 +307,59 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
               _num_faces(quadTopol.getNumFaces()),
               _num_edges(quadTopol.getNumEdges()),
               _num_halfedges(2*_num_edges)
-        {}
-    
-    // How to structure the constraints Dest ?
-    // First the x, then the y and then the z components of the constraints
-    // This way, should be compatible with structure of the geometry
-    //void get_constraint_vertex_1(const VectorType &vars, VectorType &Dest){
+        {
+            VectorView<ConfiguratorType> view;
+            view.set_vector(vars);
+
+            std::vector<int> bdryHalfEdges = _quadTopol.getBdryHalfEdges();
+            std::vector<int> bdryFaces = _quadTopol.getBdryFaces();
+            size_t num_bdryHalfEdges = bdryHalfEdges.size();
+            size_t num_bdryFaces = bdryFaces.size();
+
+            std::vector<std::tuple<int,int,int>> vertex_strips = _quadTopol.getVertexStrips();
+            size_t num_vertex_strips = vertex_strips.size();
+
+            std::vector<std::tuple<int,int,int>> face_strips = _quadTopol.getFaceStrips();
+            size_t num_face_strips = face_strips.size();
+
+            // only strips of halfedges not located at the boundary
+            std::vector<std::tuple<int,int,int>> halfedge_strips = _quadTopol.getHalfEdgeStrips();
+            size_t num_halfedge_strips = halfedge_strips.size();
+
+            size_t num_constraints_vert_1 = 3*_num_vertices;
+            size_t num_constraints_vert_2 = _num_vertices;
+            size_t num_constraints_edge_vec_1 = 3*_num_faces;
+            size_t num_constraints_edge_vec_2 = 3*_num_faces;
+            size_t num_constraints_normal_1 = _num_faces;
+            size_t num_constraints_normal_2 = _num_faces;
+            size_t num_constraints_normal_3 = _num_faces;
+            size_t num_constraints_ruling_0 = 3*(_num_halfedges - num_bdryHalfEdges);
+            size_t num_constraints_ruling_1 = 3*(_num_faces - num_bdryFaces);
+            size_t num_constraints_ruling_2 = 3*(_num_faces - num_bdryFaces);
+            size_t num_constraints_dev = 3*(_num_faces - num_bdryFaces);
+            size_t num_constraints_fair_v = 3*num_vertex_strips;
+            size_t num_constraints_fair_n = 3*num_face_strips;
+            size_t num_constraints_fair_r = 3*num_halfedge_strips;
+
+            // Index handling of the constraints
+            std::map<std::string,size_t> cons_idx;
+
+            cons_idx["vertex_1"] = 0;
+            cons_idx["vertex_2"] = cons_idx["vertex_1"] + num_constraints_vert_1;
+            cons_idx["edge_vec_1"] = cons_idx["vertex_2"] + num_constraints_vert_2;
+            cons_idx["edge_vec_2"] = cons_idx["edge_vec_1"] + num_constraints_edge_vec_1;
+            cons_idx["normal_1"] = cons_idx["edge_vec_2"] + num_constraints_edge_vec_2;
+            cons_idx["normal_2"] = cond_idx["normal_1"] + num_constraints_normal_1;
+            cons_idx["normal_3"] = cons_idx["normal_2"] + num_constraints_normal_2;
+            cons_idx["ruling_0"] = cons_idx["normal_3"] + num_constraints_normal_3;
+            cons_idx["ruling_1"] = cons_idx["ruling_0"] + num_constraints_ruling_0;
+            cons_idx["ruling_2"] = cons_idx["ruling_1"] + num_constraints_ruling_1;
+            cons_idx["dev"] = cons_idx["ruling_2"] + num_constraints_ruling_2;
+            cons_idx["fair_v"] = cons_idx["dev"] + num_constraints_dev;
+            cons_idx["fair_n"] = cons_idx["fair_v"] + num_constraints_fair_v;
+            cons_idx["fair_r"] = cons_idx["fair_n"] + num_constraints_fair_n;
+            cons_idx["num_cons"] = cons_idx["fair_r"] + num_constraints_fair_r;
+        }
 
     void get_constraint_vertex_1(const VectorType &vars, VectorType &Dest){
         VectorView<ConfiguratorType> view(_quadTopol);
@@ -341,7 +400,7 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
         view.set_vector(vars);
 
         for(int i = 0; i < _num_faces; i++){
-                // First, obtain first vertex idces of the face
+            // First, obtain first vertex idces of the face
             int node_0 = _quadTopol.getNodeOfQuad(i,0);
             int node_1 = _quadTopol.getNodeOfQuad(i,1);
             int node_2 = _quadTopol.getNodeOfQuad(i,2);
@@ -609,7 +668,7 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
 
     }
 
-    void apply(const VectorType &vars, VectorType &Dest) const override
+    void get_constraint_fair_r(const VectorType &vars, VectorType &Dest)
     {
         VectorView<ConfiguratorType> view(_quadTopol);
         view.set_vector(vars);
@@ -640,6 +699,138 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
             Dest.segment(3*i,3) = ruling_0 - 2*ruling_1 + ruling_2;
         }
     }
+    
+    void get_constraints(const VectorType &vars, VectorType &Dest)
+    {
+        _view.set_vector(vars);
+
+        if(Dest.size() != cons_idx["num_cons"])
+        {
+            Dest.resize(cons_idx["num_cons"]);
+        }
+
+        Dest.setZero();
+
+        // First, iterate over all vertices
+        for(int i = 0; i < _num_vertices; i++)
+        {
+            // constraint vertex_1
+            Dest.segment(cons_idx["vertex_1"] + 3*i,3) = view.reweighted_vertex(i) - view.vertex_weight(i)*view.vertex(i); 
+            // constraint vertex_2
+            Dest[cons_idx["vertex_2"] + i] = view.vertex_weight(i) - (view.dummy_weight(i)*view.dummy_weight(i)) - 1.0;
+        }
+
+        // Next, iterate over all faces
+        for(int i = 0; i < _num_faces; i++){
+              // First, obtain first vertex idces of the face
+            int node_0 = _quadTopol.getNodeOfQuad(i,0);
+            int node_1 = _quadTopol.getNodeOfQuad(i,1);
+            int node_2 = _quadTopol.getNodeOfQuad(i,2);
+            int node_3 = _quadTopol.getNodeOfQuad(i,3);
+
+            RealType w_0 = view.vertex_weight(node_0);
+            RealType w_1 = view.vertex_weight(node_1);
+            RealType w_2 = view.vertex_weight(node_2);
+            RealType w_3 = view.vertex_weight(node_3);
+
+            // edge vec 1 constraint
+            Dest.segment(cons_idx["edge_vec_1"] + 3*i,3) = view.reweighted_edge_1(i) - (w_0 + w_1)*(view.reweighted_vertex(node_2)+view.reweighted_vertex(node_3)) + (w_2 + w_3)*(view.reweighted_vertex(node_1) + view.reweighted_vertex(node_0));
+            // edge vec 2 constraint
+            Dest.segment(cons_idx["edge_vec_2"] + 3*i,3) = view.reweighted_edge_2(i) - (w_1 + w_2)*(view.reweighted_vertex(node_3)+view.reweighted_vertex(node_0)) + (w_0 + w_3)*(view.reweighted_vertex(node_1) + view.reweighted_vertex(node_2));
+            // normal 1 constraint
+            Dest[cons_idx["normal_1"] + i] = view.face_normal(i).dot(view.reweighted_edge_1(i));
+            // normal 2 constraint
+            Dest[cons_idx["normal_2"] + i] = view.face_normal(i).dot(view.reweighted_edge_2(i));
+            // normal 3 constraint
+            Dest[cons_idx["normal_3"] + i] = view.face_normal(i).dot(view.face_normal(i)) - 1.0;
+        }
+
+        // Next, iterate over all nonboundary halfedges
+        SkippingBdryHalfEdgeIterator he_it(_quadTopol);
+        for(he_it; he_it.valid(); he_it++)
+        {
+            int i = it.idx();
+            int i_nobdry = it.idx_nobdry();
+
+            int face_1 = _quadTopol.getFaceOfHalfEdge(i,0);
+            int face_2 = _quadTopol.getFaceOfHalfEdge(i,1);
+
+            // Constraint ruling0
+            Dest.segment(cons_idx["ruling_0"]+3*i_nobdry,3) = view.ruling(i_nobdry) - (view.face_normal(face_1).template head<3>()).cross(view.face_normal(face_2).template head<3>()); 
+        }
+
+        he_it.reset();
+
+        // Next, iterate over all nonboundary faces
+        SkippingBdryFaceIterator face_it;
+        for(face_it; face_it.valid(); face_it++)
+        {
+            int i = it.idx();
+            int i_nobdry = it.id_nobdry();
+
+            int node_0 = _quadTopol.getNodeOfQuad(i,0);
+            int node_1 = _quadTopol.getNodeOfQuad(i,1);
+            int node_2 = _quadTopol.getNodeOfQuad(i,2);
+            int node_3 = _quadTopol.getNodeOfQuad(i,3);
+
+            int heh_01 = _quadTopol.getHalfEdgeOfQuad(i,0);
+            int heh_12 = _quadTopol.getHalfEdgeOfQuad(i,1);
+            int heh_23 = _quadTopol.getHalfEdgeOfQuad(i,2);
+            int heh_30 = _quadTopol.getHalfEdgeOfQuad(i,3);
+
+            RealType w0 = view.vertex_weight(node_0);
+            RealType w1 = view.vertex_weight(node_1);
+            RealType w2 = view.vertex_weight(node_2);
+            RealType w3 = view.vertex_weight(node_3);
+
+            VectorType ruling_01 = view.ruling(it_he.to_nbdry(heh_01));
+            VectorType ruling_12 = view.ruling(it_he.to_nbdry(heh_12));
+            VectorType ruling_23 = view.ruling(it_he.to_nbdry(heh_23));
+            VectorType ruling_30 = view.ruling(it_he.to_nbdry(heh_30));
+
+            // ruling 1 constraint
+            Dest.segment(cons_idx["ruling_1"] + 3*i_nobdry,3) = view.reweighted_ruling_1(i_nobdry) - (w1 + w2)*ruling_12 + (w3 + w0)*(ruling_30);
+            // ruling 2 constraint
+            Dest.segment(cons_idx["ruling_2"] + 3*i_nobdry,3) = view.reweighted_ruling_2(i_nobdry) - (w0 + w1)*ruling_01 + (w2 + w3)*(ruling_23);
+            // developability constraint
+            Dest.segment(cons_idx["dev"] + 3*i_nobdry,3) = (view.reweighted_ruling_1(i_nobdry). template head<3>()).cross(view.reweighted_ruling_2(i_nobdry). template head<3>());
+        }
+
+        for(int i = 0; i < num_vertex_strips; i++){
+            int node_0 = std::get<0>(vertex_strips[i]);
+            int node_1 = std::get<1>(vertex_strips[i]);
+            int node_2 = std::get<2>(vertex_strips[i]);
+            Dest.segment(cons_idx["fair_v"] + 3*i,3) = view.vertex(node_0) - 2*view.vertex(node_1) + view.vertex(node_2);
+        }
+
+        for(int i = 0; i < num_face_strips; i++)
+        {
+            int face_0 = std::get<0>(face_strips[i]);
+            int face_1 = std::get<1>(face_strips[i]);
+            int face_2 = std::get<2>(face_strips[i]);
+
+            VectorType normal_0 = view.face_normal(face_0);
+            VectorType normal_1 = view.face_normal(face_1);
+            VectorType normal_2 = view.face_normal(face_2);
+
+            Dest.segment(cons_idx["fair_n"] + 3*i,3) = normal_0 - 2*normal_1 + normal_2;
+        }
+
+        for(int i = 0; i < num_halfedge_strips; i++)
+        {
+            int he_0 = std::get<0>(halfedge_strips[i]);
+            int he_1 = std::get<1>(halfedge_strips[i]);
+            int he_2 = std::get<2>(halfedge_strips[i]);
+
+            VectorType ruling_0 = view.ruling(he_it.to_nbdry(he_0));
+            VectorType ruling_1 = view.ruling(he_it.to_nbdry(he_1));
+            VectorType ruling_2 = view.ruling(he_it.to_nbdry(he_2));
+
+            Dest.segment(cons_idx["fair_r"] + 3*i,3) = ruling_0 - 2*ruling_1 + ruling_2;
+        }
+
+    }
+
     };
 
 template <typename ConfiguratorType>
@@ -1212,7 +1403,7 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
             }
         }
 
-        void apply(const VectorType &vars, MatrixType &Dest) const override{
+        void get_constraintgrad_fair_r(const VectorType &vars, MatrixType &Dest){
             VectorView<ConfiguratorType> view(_quadTopol);
             view.set_vector(vars);
 

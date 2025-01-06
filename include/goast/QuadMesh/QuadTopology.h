@@ -147,6 +147,7 @@ protected:
 
   typedef std::vector<std::tuple<int,int,int>> StripType;
 
+  // this method works, tested
   StripType getFaceStrips()
   {
     StripType faceStrips;
@@ -181,6 +182,7 @@ protected:
     return faceStrips;
   }
 
+  // this method works, tested
   StripType getVertexStrips()
   {
     StripType vertexStrips;
@@ -243,6 +245,8 @@ protected:
     return vertexStrips;
   }
 
+// this method works, tested -> only returns halfedge strips that lie in the interior
+// since we dont have rulings computed at the boundary, halfedge strips at the boundary cannot contribute to fairness energy
   StripType getHalfEdgeStrips()
   {
     // First, every HalfEdge strip must also contain a vertex triple.
@@ -264,34 +268,60 @@ protected:
         int node_2_ = std::get<2>(vertexStrips[j]);
 
        if(node_0 == node_1_){
+          // Still need to check that both vertex strips point in the same direction
+          // This can be done by checking that the halfedge from node_0_ to node_0
+          // and the halfedge from node_0 to node_1 dont belong to a common face
+
           auto he_1 = _mesh.find_halfedge(_mesh.vertex_handle(node_0_),_mesh.vertex_handle(node_1_));
           auto he_2 = _mesh.find_halfedge(_mesh.vertex_handle(node_1_),_mesh.vertex_handle(node_1));
-          auto he_3 = _mesh.find_halfedge(_mesh.vertex_handle(node_1),_mesh.vertex_handle(node_2));
-          halfedgeStrips.push_back(std::make_tuple(he_1.idx(),he_2.idx(),he_3.idx()));
+
+          // adjacent faces of halfedge 1
+          int face_1_1 = getFaceOfHalfEdge(he_1.idx(),0);
+          int face_1_2 = getFaceOfHalfEdge(he_1.idx(),1);
+
+          int face_2_1 = getFaceOfHalfEdge(he_2.idx(),0);
+          int face_2_2 = getFaceOfHalfEdge(he_2.idx(),1);
+
+          // if the halfedges have a common face, they dont point in the same direction
+          // if they both lie at the boundary, i.e. both have neighbour -1, that is acceptable
+          bool common_face = 
+          (face_1_1 == face_2_1) || 
+          (face_1_1 == face_2_2) || 
+          (face_1_2 == face_2_1) || 
+          (face_1_2 == face_2_2);
+
+          if(!common_face){
+              auto he_3 = _mesh.find_halfedge(_mesh.vertex_handle(node_1),_mesh.vertex_handle(node_2));
+              halfedgeStrips.push_back(std::make_tuple(he_1.idx(),he_2.idx(),he_3.idx()));
+          }
        }
        if(node_2 == node_1_){
           auto he_1 = _mesh.find_halfedge(_mesh.vertex_handle(node_0),_mesh.vertex_handle(node_1));
           auto he_2 = _mesh.find_halfedge(_mesh.vertex_handle(node_1),_mesh.vertex_handle(node_1_));
-          auto he_3 = _mesh.find_halfedge(_mesh.vertex_handle(node_1_),_mesh.vertex_handle(node_2_));
-          halfedgeStrips.push_back(std::make_tuple(he_1.idx(),he_2.idx(),he_3.idx()));
+          
+          // adjacent faces of halfedge 1
+          int face_1_1 = getFaceOfHalfEdge(he_1.idx(),0);
+          int face_1_2 = getFaceOfHalfEdge(he_1.idx(),1);
+
+          int face_2_1 = getFaceOfHalfEdge(he_2.idx(),0);
+          int face_2_2 = getFaceOfHalfEdge(he_2.idx(),1);
+
+          // if the halfedges have a common face, they dont point in the same direction
+          // if they both lie at the boundary, i.e. both have neighbour -1, that is acceptable
+          bool common_face = 
+          (face_1_1 == face_2_1) || 
+          (face_1_1 == face_2_2) || 
+          (face_1_2 == face_2_1) || 
+          (face_1_2 == face_2_2);
+
+          if(!common_face)
+          {
+              auto he_3 = _mesh.find_halfedge(_mesh.vertex_handle(node_1_),_mesh.vertex_handle(node_2_));
+              halfedgeStrips.push_back(std::make_tuple(he_1.idx(),he_2.idx(),he_3.idx()));
+          }
        }
       }
     }
-
-    for(int i = 0; i < halfedgeStrips.size(); i++){
-            int heh_0 = std::get<0>(halfedgeStrips[i]);
-            int heh_1 = std::get<0>(halfedgeStrips[i]);
-            int heh_2 = std::get<0>(halfedgeStrips[i]);
-            HalfedgeHandle heh_0_obj(heh_0);
-            HalfedgeHandle heh_1_obj(heh_1);
-            HalfedgeHandle heh_2_obj(heh_2);
-            std::cout<<"Strip: "<<std::endl;
-            std::cout<<"("<<_mesh.point(_mesh.from_vertex_handle(heh_0_obj))[0]<<","<<_mesh.point(_mesh.from_vertex_handle(heh_0_obj))[1]<<","<<_mesh.point(_mesh.from_vertex_handle(heh_0_obj))[2]<<")"<<std::endl;
-            std::cout<<"("<<_mesh.point(_mesh.from_vertex_handle(heh_1_obj))[0]<<","<<_mesh.point(_mesh.from_vertex_handle(heh_1_obj))[1]<<","<<_mesh.point(_mesh.from_vertex_handle(heh_0_obj))[2]<<")"<<std::endl;
-            std::cout<<"("<<_mesh.point(_mesh.from_vertex_handle(heh_2_obj))[0]<<","<<_mesh.point(_mesh.from_vertex_handle(heh_2_obj))[1]<<","<<_mesh.point(_mesh.from_vertex_handle(heh_2_obj))[2]<<")"<<std::endl;
-            std::cout<<"("<<_mesh.point(_mesh.to_vertex_handle(heh_2_obj))[0]<<","<<_mesh.point(_mesh.to_vertex_handle(heh_2_obj))[1]<<","<<_mesh.point(_mesh.to_vertex_handle(heh_2_obj))[2]<<")"<<std::endl;
-      }
-
     return halfedgeStrips;
   }
 

@@ -38,6 +38,8 @@ try{
 
     QuadMeshTopologySaver quadTopol(mesh);
 
+    quadTopol.getHalfEdgeStrips();
+
     size_t num_vertices = quadTopol.getNumVertices();
 
     QuadMeshTopologySaver::getGeometry(mesh,geom);
@@ -55,10 +57,10 @@ try{
     VectorType dest;
     MatrixType Dest;
     constraint.apply(test_input,dest);
-    //constraintGrad.apply(test_input,Dest);
+    constraintGrad.apply(test_input,Dest);
 
-    //VectorValuedDerivativeTester<DefaultConfigurator> tester(constraint,constraintGrad,0.01,Dest.rows());
-    //tester.plotAllDirections(test_input,"./deriv_test/test");
+    VectorValuedDerivativeTester<DefaultConfigurator> tester(constraint,constraintGrad,0.01,Dest.rows());
+    tester.plotAllDirections(test_input,"./deriv_test/test");
 
 }catch(std::exception &e){
     std::cerr << "Exception caught: " << e.what() << std::endl;
