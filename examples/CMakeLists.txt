@@ -22,16 +22,19 @@ add_executable(bendingSmallArc SmallArc/bendingSmallArc.cpp)
 add_executable(bendingSmallArcInterpolation SmallArc/bendingSmallArcInterpolation.cpp)
 #add_executable(SimpleFoldOptimization2 FoldOptimization/SimpleFoldOptimization2.cpp)
 #add_executable(SimpleFoldOptimization FoldOptimization/SimpleFoldOptimization.cpp)
-add_executable(QuadMeshTest2 QuadMeshExamples/QuadMeshTest2.cpp)
+#add_executable(QuadMeshTest2 QuadMeshExamples/QuadMeshTest2.cpp)
 add_executable(ToyExample FoldOptimization/ToyExample.cpp)
 add_executable(ToyExampleNewton FoldOptimization/ToyExampleNewton.cpp)
-add_executable(ConstraintTest QuadMeshExamples/ConstraintTest.cpp)
+add_executable(ToyExampleFreeLine FoldOptimization/ToyExampleFreeLine.cpp)
+#add_executable(ConstraintTest QuadMeshExamples/ConstraintTest.cpp)
 # link libraries
 target_link_libraries(ToyExampleNewton PRIVATE GOAST::GOAST)
 
 target_link_libraries(ToyExample PRIVATE GOAST::GOAST)
 
-target_link_libraries(QuadMeshTest2 PRIVATE GOAST::GOAST)
+target_link_libraries(ToyExampleFreeLine PRIVATE GOAST::GOAST)
+
+#target_link_libraries(QuadMeshTest2 PRIVATE GOAST::GOAST)
 
 target_link_libraries(multires_example PRIVATE GOAST::GOAST)
 
@@ -77,7 +80,7 @@ target_link_libraries(bendingSmallArcInterpolation PRIVATE GOAST::GOAST)
 
 #target_link_libraries(SimpleFoldOptimization2 PRIVATE GOAST::GOAST)
 
-target_link_libraries(ConstraintTest PRIVATE GOAST::GOAST)
+#target_link_libraries(ConstraintTest PRIVATE GOAST::GOAST)
 
 # Phasefield example currently requires Ipopt
 if (GOAST_WITH_IPOPT)

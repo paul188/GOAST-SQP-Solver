@@ -103,12 +103,12 @@ try{
 
     extendBoundaryMask( plateTopol.getNumVertices(), bdryMaskOpt );
 
-    auto foldDofsPtr = std::make_shared<FoldDofsSimpleLine<DefaultConfigurator>>(plateTopol,plateGeomInitial, plateGeomRef, bdryMaskRef_1);
+    auto foldDofsPtr = std::make_shared<FoldDofsFreeLine<DefaultConfigurator>>(plateTopol,plateGeomInitial, plateGeomRef, bdryMaskRef_1);
 
     std::vector<int> foldVertices;
     foldDofsPtr -> getFoldVertices(foldVertices);
 
-    auto DfoldDofsPtr = std::make_shared<FoldDofsSimpleLineGradient<DefaultConfigurator>>(plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices);
+    auto DfoldDofsPtr = std::make_shared<FoldDofsFreeLineGradient<DefaultConfigurator>>(plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices);
 
     VectorType edge_weights = VectorType::Zero(plateTopol.getNumEdges());
     foldDofsPtr->getEdgeWeights(edge_weights);
@@ -138,8 +138,9 @@ try{
     MyObjectFactory<DefaultConfigurator> factory(factors, plateTopol, edge_weights);
     BoundaryDOFS<DefaultConfigurator> boundaryDOFs(bdryMaskOpt, nVertexDOFs, nFoldDOFs);
     // Create the degrees of freedom object
+    std::vector<RealType> deviations;
     ProblemDOFs<DefaultConfigurator> problemDOFs(VectorType::Zero(nFoldDOFs), plateGeomDef, foldDofsPtr, DfoldDofsPtr);
-    SQPLineSearchSolver<DefaultConfigurator> solver(pars, costFunctional, DcostFunctional, factory, boundaryDOFs, problemDOFs, 10, true);
+    SQPLineSearchSolver<DefaultConfigurator> solver(pars, costFunctional, DcostFunctional, factory, boundaryDOFs, problemDOFs, 20);
     solver.solve(plateGeomRef, def_geometries, ref_geometries, fold_DOFs);
 
     std::string filename;
@@ -152,6 +153,21 @@ try{
         filename = "reference/plate_" + std::to_string(i) + ".ply";
         OpenMesh::IO::write_mesh(plate, filename);
     }
+
+    std::ofstream outFile("output_mu_nonmonotone.txt");
+    if (!outFile) {
+        std::cerr << "Error: Could not open the file for writing.\n";
+        return 1;
+    }
+
+    // Write the vector to the file
+    for (RealType value : deviations) {
+        outFile << value << "\n"; // Write each value on a new line
+    }
+
+    // Close the file
+    outFile.close();
+    std::cout<<"File written successfully"<<std::endl;
 
   } 
   catch ( BasicException &el ){

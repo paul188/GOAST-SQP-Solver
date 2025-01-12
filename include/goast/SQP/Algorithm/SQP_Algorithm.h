@@ -72,14 +72,13 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                             _boundaryDOFs(boundaryDOFs),
                             _problemDOFs(problemDOFs),
                             _BFGS_reset(BFGS_reset),
-                            _secondOrderCorrection(secondOrderCorrection),
-                            _bigStep(bigStep){}
+                            _secondOrderCorrection(secondOrderCorrection){}
 
         // plateGeomRef_basic is the starting reference geometry of the plate
         // before we translate it with the fold dofs
         // plateGeomDef contains the initial deformed geometry. But since is also contains 
         // our degrees of freedom as the vertexDOFs, we will modify it during the run
-        void solve(const VectorType& plateGeomRef_basic, std::vector<VectorType> &def_geometries, std::vector<VectorType> &ref_geometries, std::vector<VectorType> &fold_DOFs, std::optional<std::pair<VectorType,VectorType>> foldDOF_bounds = std::nullopt)
+        void solve(const VectorType& plateGeomRef_basic, std::vector<VectorType> &def_geometries, std::vector<VectorType> &ref_geometries, std::vector<VectorType> &fold_DOFs)
         {
             size_t nAllVertexDOFs = _boundaryDOFs.getNumVertexDOFs();
             size_t nFoldDOFs = _boundaryDOFs.getNumFoldDOFs();
@@ -148,7 +147,7 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
             RealType variationFoldDOFs = 0;
 
             // Unfortunately, the convergence criterion doesnt quite work yet -> can see improvements even long after "convergence"
-            while(_pars.iter < _pars.maxIter && !convergenceCriterion(d_k, DiffGradxLagrange, DiffConstraint, Constraint, variationFoldDOFs, terminationCounter, nFoldDOFs)){
+            while(_pars.iter < _pars.maxIter){
 
                 // Solve the QP Problem and write the sol into sol_k
 
@@ -174,7 +173,7 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                 // then the derivative of the energy, i.e. the constraint
                 rhs_k.segment(nEffectiveDOFs,nEffectiveVertexDOFs) = -Constraint;
 
-                solveQP(B_k_inv, C_k, rhs_k, d_k, lambda_kplus1, true);
+                solveQP(B_k_inv, C_k, rhs_k, d_k, lambda_kplus1);
 
                 lambda_diff = lambda_kplus1 - lambda_k;
 
@@ -208,11 +207,6 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                             nEffectiveVertexDOFs,
                             nFoldDOFs,
                             lineSearchDOFs);
-
-                if(norm_l1(Constraint) < 1e-4 && _bigStep && nBigSteps < 15){
-                    std::cout<<"Big Step: "<<std::endl;
-                    makeBigStep(d_k_full, foldDOF_bounds, nFoldDOFs, nBigSteps);
-                }
 
                 // Apply the steps
                 _problemDOFs += d_k_full;
@@ -369,6 +363,7 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
 
             while(alpha > 1e-13) {
 
+                lineSearchDOFs = _problemDOFs;
                 // Update deformed and reference geometry
                 lineSearchDOFs += alpha*d_k_full;
 
@@ -386,94 +381,47 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                     return;
                 } 
                  // If increase in merit together with increase in constraint use second order correction
-                else if ((constr_l1_linesearch > constr_l1) && (alpha == 1.0) && _secondOrderCorrection)
+                 // Also since the solving of the QP is expensive, only do it after a certain number of iterations
+                else if ((constr_l1_linesearch > constr_l1) && (alpha == 1.0) && _secondOrderCorrection && _pars.iter > 200)
                 {
-                    // Compute second order correction
-                    VectorType d = Constraint_linesearch - C_k*d_k;
-                    VectorType sol_k;
+                    // Compute the right-inverse of C_k
+                    Eigen::ColPivHouseholderQR<FullMatrixType> qr(C_k);
+    
+                    // Compute the right inverse
+                    FullMatrixType C_k_inv = qr.solve(FullMatrixType::Identity(C_k.rows(), C_k.rows()));
+                    std::cout<<"Numerical accuracy: "<<(C_k*C_k_inv - FullMatrixType::Identity(C_k.rows(), C_k.rows())).norm()<<std::endl;
+                    VectorType e_k = -C_k_inv*Constraint_linesearch;
+                    _boundaryDOFs.InverseTransformWithFoldDofs(e_k);
+                    lineSearchDOFs += e_k;
+                    _costFunctional.apply(lineSearchDOFs.getVertexDOFs(),CostFunctional_val_linesearch);
+                
+                    _factory.produceDE_vertex(lineSearchDOFs,Constraint_linesearch);
+                    _boundaryDOFs.transformToReducedSpace(Constraint_linesearch);
 
-                    // Solve the new quadratic problem -> we can reuse the global quadratic problem
-                    // Just need to modify the lower segment of the rhs
-                    rhs_k.segment(nEffectiveDOFs,nEffectiveVertexDOFs) = -d;
+                    constr_l1_linesearch = norm_l1(Constraint_linesearch);
+                    phi_l1_step = CostFunctional_val_linesearch + mu * constr_l1_linesearch;
 
-                    VectorType d_k_correction = VectorType::Zero(nEffectiveDOFs);
-
-                    // lambda_k param is irrelevant, wont be changed/used
-                    solveQP(B_k_inv, C_k, rhs_k, d_k_correction, d_k_correction, false);
-
-                    // maybe still have to check the solution quality.
-
-                    _boundaryDOFs.InverseTransformWithFoldDofs(d_k_correction);
-
-                    ProblemDOFs<ConfiguratorType> lineSearchDOFs_corrected = lineSearchDOFs;
-                    lineSearchDOFs_corrected += d_k_correction;
-
-                    VectorType DE_val_corrected;
-                    _factory.produceDE_vertex(lineSearchDOFs_corrected, DE_val_corrected);
-
-                    RealType CostFunctional_val_corrected;
-                    _costFunctional.apply(lineSearchDOFs_corrected.getVertexDOFs(), CostFunctional_val_corrected);
-                    phi_l1_step = CostFunctional_val_corrected + mu * norm_l1(DE_val_corrected);
-
-                    if(phi_l1_step <= (phi_l1 + _pars.eta * Dp_phi_l1)) {
-                        d_k_full += d_k_correction;
-                        lambda_diff = sol_k.segment(nEffectiveDOFs, nEffectiveVertexDOFs) - lambda_k;
+                    // subtract 1e-6 for potential numerical inaccuracies
+                    if(phi_l1_step <= (phi_l1 + _pars.eta * Dp_phi_l1) + 1e-6) {
+                        std::cout<<"Second order correction applied"<<std::endl;
+                        d_k_full = d_k_full + e_k;
                         return;
                     }
-                    else {
-                        //undo the translation
-                        lineSearchDOFs -= alpha*d_k_full;
+                    else{
                         alpha *= _pars.tau;
+                        continue;
                     }
                 }
                 else {
-                    //undo the translation
-                    lineSearchDOFs -= alpha*d_k_full;
                     alpha *= _pars.tau;
+                    continue;
                 }
             }
             d_k_full *= alpha;
             lambda_diff *= alpha;
         }
 
-        void makeBigStep(VectorType &d_k_full, std::optional<std::pair<VectorType,VectorType>> &foldDOF_bounds, size_t nFoldDOFs, size_t &nBigSteps){
-
-            if(!foldDOF_bounds.has_value()){
-                foldDOF_bounds = std::make_pair(VectorType::Zero(nFoldDOFs), VectorType::Ones(nFoldDOFs));
-            }
-
-            assert(foldDOF_bounds.value().first.size() == foldDOF_bounds.value().second.size() == nFoldDOFs);
-
-            VectorType distToLower = _problemDOFs.getFoldDOFs() - foldDOF_bounds.value().first;
-            VectorType distToUpper = foldDOF_bounds.value().second - _problemDOFs.getFoldDOFs();
-
-            // Check if any value is outside the bounds
-            if ((distToLower.array() < 0).any() || (distToUpper.array() < 0).any()) {
-                throw std::runtime_error("Error: Vector x is outside the specified bounds.");
-            }
-
-            RealType maxAlpha = std::numeric_limits<RealType>::infinity();
-
-            for (int i = 0; i < nFoldDOFs; ++i) {
-                if (d_k_full[i] > 1e-8) {
-                    maxAlpha = std::min(maxAlpha, (distToUpper[i] / d_k_full[i]));
-                } else if (d_k_full[i] < -(1e-8)) {
-                    maxAlpha = std::min(maxAlpha, (distToLower[i] / -d_k_full[i]));
-                }
-                // If step[i] == 0, skip since it doesn't affect bounds
-            }
-
-            if(!std::isinf(maxAlpha)){
-                // Want to travel halfway to the bounds -> but scaled down exponentially with number of big steps
-                d_k_full *= 0.05*maxAlpha*std::pow(0.1, nBigSteps);
-                std::cout<<"Big Step: "<<d_k_full[0]<<std::endl;
-                nBigSteps++;
-            }else{
-                // step not really suitable for scaling, too small
-                return;
-            }
-        }
-
+    /*
         bool convergenceCriterion(const VectorType &d_k, const VectorType &DiffGradxLagrange, const VectorType &DiffConstraint, const VectorType &Constraint, RealType &variationFoldDOFs, size_t &terminationCounter, size_t nFoldDOFs) const {
             if(!((norm_l1(d_k) < _pars.eps) && (norm_l1(DiffGradxLagrange) < _pars.eps) && (norm_l1(DiffConstraint) < _pars.eps) && norm_l1(Constraint) < _pars.eps)){
                 // termination criterion is met for another iteration)
@@ -489,11 +437,13 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
             variationFoldDOFs += norm_l1(d_k.segment(0, nFoldDOFs))/nFoldDOFs;
             return false;
         }
+    */
 
         // In the second order correction, dont want to solve for multipliers
         // -> multiplier parameter optional
-        void solveQP(const FullMatrixType B_k_inverse, const FullMatrixType &C_k, const VectorType &rhs_k, VectorType &d_k, VectorType& lambda_kplus1, const bool compute_lambda = true) {
-            FullMatrixType F = -(C_k * B_k_inverse * C_k.transpose()).inverse();
+        void solveQP(const FullMatrixType B_k_inverse, const FullMatrixType &C_k, const VectorType &rhs_k, VectorType &d_k, VectorType& lambda_kplus1) {
+            FullMatrixType mult = -C_k * B_k_inverse * C_k.transpose();
+            FullMatrixType F = mult.fullPivLu().solve(FullMatrixType::Identity(mult.rows(), mult.cols()));
             FullMatrixType E = -B_k_inverse*C_k.transpose()*F;
             FullMatrixType C = B_k_inverse - E*C_k*B_k_inverse;
 
@@ -503,9 +453,7 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
             d_k = C*rhs_k.segment(0, nEffectiveDOFs) + E*rhs_k.segment(nEffectiveDOFs, nEffectiveVertexDOFs);
             
             // in second order correction dont need to recompute lambda
-            if(compute_lambda){
-                lambda_kplus1 = E.transpose()*rhs_k.segment(0, nEffectiveDOFs) + F*rhs_k.segment(nEffectiveDOFs, nEffectiveVertexDOFs);
-            }
+            lambda_kplus1 = E.transpose()*rhs_k.segment(0, nEffectiveDOFs) + F*rhs_k.segment(nEffectiveDOFs, nEffectiveVertexDOFs);
         }
 
         private:
@@ -517,7 +465,6 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
             ProblemDOFs<ConfiguratorType> _problemDOFs;
             size_t _BFGS_reset;
             bool _secondOrderCorrection;
-            bool _bigStep;
 
 };
 
