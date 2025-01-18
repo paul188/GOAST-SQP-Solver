@@ -5,13 +5,14 @@
 #include <goast/SQP/DOFHandling/BoundaryDOFS.h>
 #include <goast/SQP/DOFHandling/FoldDofs.h>
 #include <goast/SQP/Utils/ObjectFactory.h>
+
 // Basic Parameters that all SQP Solvers should contain
 template<typename ConfiguratorType>
 class SQPBaseParams{
     public:
         using RealType = typename ConfiguratorType::RealType;
         RealType eps = 1e-12; // Convergence criterion
-        size_t maxIter = 40000; // maximum number of iterations
+        size_t maxIter = 1000; // maximum number of iterations
         size_t iter = 0; // current iteration
 };
 // Specific parameters needed for SQP Line Search
@@ -41,6 +42,16 @@ class SQPBaseSolver{
 };
 template <typename ConfiguratorType>
 class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
+    private:
+        SQPLineSearchParams<ConfiguratorType> _pars;
+        CostFunctional<ConfiguratorType> _costFunctional;
+        CostFunctionalGradient<ConfiguratorType> _DcostFunctional;
+        MyObjectFactory<ConfiguratorType> _factory;
+        BoundaryDOFS<ConfiguratorType> _boundaryDOFs;
+        ProblemDOFs<ConfiguratorType> _problemDOFs;
+        size_t _BFGS_reset;
+        bool _secondOrderCorrection;
+
     public: 
         typedef typename ConfiguratorType::VectorType VectorType;
         typedef typename ConfiguratorType::RealType RealType;
@@ -58,13 +69,8 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                             const MyObjectFactory<ConfiguratorType> &factory,
                             const BoundaryDOFS<ConfiguratorType> &boundaryDOFs,
                             ProblemDOFs<ConfiguratorType> &problemDOFs,
-                            size_t BFGS_reset = 20,
-                            // dont really need second order correction here as our constraint is easy to fulfill
-                            // if other constraints added, this might become useful
-                            bool secondOrderCorrection = false,
-                            // The algorithm will make big trial steps in direction of the d_k_fold_dofs to cover a larger search space more quickly
-                            // The normal SQP algorithm is probably a little more reliable, but makes extremely small steps ~1e-8
-                            bool bigStep = true) 
+                            size_t BFGS_reset = 10,
+                            bool secondOrderCorrection = true) 
                             : SQPBaseSolver<ConfiguratorType>(pars),
                             _costFunctional(costFunctional),
                             _DcostFunctional(DcostFunctional),
@@ -96,7 +102,9 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
             B_k_inv.setIdentity();
 
             // Reserve the memory for the Jacobian of the constraint
-            FullMatrixType C_k(nEffectiveVertexDOFs, nEffectiveDOFs);
+            FullMatrixType C_k( nEffectiveVertexDOFs, nEffectiveDOFs );
+
+            FullMatrixType C_k_inv( nEffectiveDOFs, nEffectiveVertexDOFs );
 
             // Create the constraint, i.e. that derivative of the energy w.r.t. the vertex DOFs is zero
             VectorType Constraint;
@@ -142,30 +150,27 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
             // DiffConstraint as derivative w.r.t. lambda of the Lagrangian
             VectorType DiffConstraint =  VectorType::Ones(nEffectiveVertexDOFs);
 
-            size_t nBigSteps = 0;
             size_t terminationCounter = 0;
-            RealType variationFoldDOFs = 0;
 
             // Unfortunately, the convergence criterion doesnt quite work yet -> can see improvements even long after "convergence"
             while(_pars.iter < _pars.maxIter){
-
-                // Solve the QP Problem and write the sol into sol_k
-
-                //printSparseMatrix(B_k,"B_k_" + std::to_string(_pars.iter) + ".txt");
             
                 std::cout << "\rIteration: "<< std::setw(4) << _pars.iter
                 << " | CostFunctional_val: " << std::setprecision(12)<< std::setw(10) << costFunctional_val
                 << " | DE_val: " << std::setprecision(12)<<std::setw(10) << std::setprecision(4) << norm_l1(Constraint)
-                << " | CostFunctional_val: " << std::setprecision(12)<<std::setw(10) << std::setprecision(4) << costFunctional_val
-                << " | Fold Dofs: "<< std::setprecision(12) << _problemDOFs.getFoldDOFs()[0]
-                << " | D_x L: "<< std::setprecision(12) << norm_l1(DiffGradxLagrange)
+                << " | CostFunctional_val: " << std::setprecision(12)<<std::setw(10) << std::setprecision(4) << costFunctional_val;
+                for(int i = 0; i < _problemDOFs.getFoldDOFs().size(); i++){
+                    std::cout<<" | Fold DOFs " <<i<<" : "<< std::setprecision(12) << _problemDOFs.getFoldDOFs()[i];
+                }
+                std::cout << " | D_x L: "<< std::setprecision(12) << norm_l1(DiffGradxLagrange)
                 << " | D_lambda L: "<< std::setprecision(12) << norm_l1(DiffConstraint)
                 << " | d_k: "<< std::setprecision(12) << norm_l1(d_k)
                 << std::endl;  // flush to ensure immediate output
 
                 C_k.setZero();
-                C_k.block(0,0,nEffectiveVertexDOFs,nFoldDOFs) = D2E_mix.toDense();
-                C_k.block(0,nFoldDOFs,nEffectiveVertexDOFs,nEffectiveVertexDOFs) = D2E_vertex.toDense();
+                std::vector<Eigen::Triplet<RealType>> tripletList;
+                C_k.block(0,0, D2E_mix.rows(), D2E_mix.cols()) = D2E_mix;
+                C_k.block(0,nFoldDOFs, D2E_vertex.rows(), D2E_vertex.cols()) = D2E_vertex;
 
                 // Construct the r.h.s for the linear system
                 // the derivative of the cost functional
@@ -173,7 +178,9 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                 // then the derivative of the energy, i.e. the constraint
                 rhs_k.segment(nEffectiveDOFs,nEffectiveVertexDOFs) = -Constraint;
 
-                solveQP(B_k_inv, C_k, rhs_k, d_k, lambda_kplus1);
+                // Solve the quadratic subproblem, store the solution in d_k and lambda_kplus1
+                // In the process, invert C_k and store the 
+                solveQP(nFoldDOFs, nEffectiveVertexDOFs,B_k, B_k_inv, C_k, C_k_inv, D2E_vertex, rhs_k, d_k, lambda_kplus1);
 
                 lambda_diff = lambda_kplus1 - lambda_k;
 
@@ -200,8 +207,9 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                             lambda_k,
                             Constraint,
                             C_k,
+                            C_k_inv,
                             B_k,
-                            B_k_inv,
+                            D2E_vertex,
                             rhs_k,
                             nEffectiveDOFs,
                             nEffectiveVertexDOFs,
@@ -298,7 +306,6 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                 sy = s_k.dot(y_k2);
             }
 
-            // Update B_k
             B_k += ((y_k2 * y_k2.transpose()) / (sy)) - ((Bs * Bs.transpose()) / (sBs));
             
             // Now update the inverse of B_k
@@ -326,8 +333,9 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                             const VectorType &lambda_k,
                             const VectorType &Constraint,
                             const FullMatrixType &C_k,
+                            const FullMatrixType &C_k_inv,
                             const FullMatrixType &B_k,
-                            const FullMatrixType &B_k_inv,
+                            MatrixType &D2E_vertex,
                             VectorType &rhs_k,
                             size_t nEffectiveDOFs,
                             size_t nEffectiveVertexDOFs,
@@ -384,13 +392,21 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                  // Also since the solving of the QP is expensive, only do it after a certain number of iterations
                 else if ((constr_l1_linesearch > constr_l1) && (alpha == 1.0) && _secondOrderCorrection && _pars.iter > 200)
                 {
+
                     // Compute the right-inverse of C_k
                     Eigen::ColPivHouseholderQR<FullMatrixType> qr(C_k);
     
                     // Compute the right inverse
                     FullMatrixType C_k_inv = qr.solve(FullMatrixType::Identity(C_k.rows(), C_k.rows()));
-                    std::cout<<"Numerical accuracy: "<<(C_k*C_k_inv - FullMatrixType::Identity(C_k.rows(), C_k.rows())).norm()<<std::endl;
                     VectorType e_k = -C_k_inv*Constraint_linesearch;
+
+                    // OPTION B: SPARSE BUT MAYBE LESS STABLE (DOESNT WORK)
+                    /*
+                    Eigen::ConjugateGradient<MatrixType> cg;
+                    cg.compute(D2E_vertex);
+                    VectorType e_k = -cg.solve(Constraint_linesearch);
+                    */
+                    
                     _boundaryDOFs.InverseTransformWithFoldDofs(e_k);
                     lineSearchDOFs += e_k;
                     _costFunctional.apply(lineSearchDOFs.getVertexDOFs(),CostFunctional_val_linesearch);
@@ -441,30 +457,37 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
 
         // In the second order correction, dont want to solve for multipliers
         // -> multiplier parameter optional
-        void solveQP(const FullMatrixType B_k_inverse, const FullMatrixType &C_k, const VectorType &rhs_k, VectorType &d_k, VectorType& lambda_kplus1) {
-            FullMatrixType mult = -C_k * B_k_inverse * C_k.transpose();
-            FullMatrixType F = mult.fullPivLu().solve(FullMatrixType::Identity(mult.rows(), mult.cols()));
-            FullMatrixType E = -B_k_inverse*C_k.transpose()*F;
-            FullMatrixType C = B_k_inverse - E*C_k*B_k_inverse;
+        void solveQP(size_t nFoldDOFs,
+                     size_t nEffectiveVertexDOFs,
+                     const FullMatrixType &B_k,
+                     const FullMatrixType &B_k_inv,
+                     const FullMatrixType &C_k,
+                     FullMatrixType &C_k_inv,
+                     const MatrixType &D2E_vertex,
+                     const VectorType &rhs_k, 
+                     VectorType &d_k, 
+                     VectorType& lambda_kplus1) {
 
-            size_t nEffectiveDOFs = B_k_inverse.rows();
-            size_t nEffectiveVertexDOFs = C_k.rows();
+            size_t nEffectiveDOFs = nFoldDOFs + nEffectiveVertexDOFs;
 
-            d_k = C*rhs_k.segment(0, nEffectiveDOFs) + E*rhs_k.segment(nEffectiveDOFs, nEffectiveVertexDOFs);
-            
-            // in second order correction dont need to recompute lambda
-            lambda_kplus1 = E.transpose()*rhs_k.segment(0, nEffectiveDOFs) + F*rhs_k.segment(nEffectiveDOFs, nEffectiveVertexDOFs);
+            FullMatrixType mult = -C_k * B_k_inv * C_k.transpose();
+
+            std::chrono::time_point<std::chrono::system_clock> start, end;
+
+            start = std::chrono::system_clock::now();
+
+            Eigen::FullPivLU<FullMatrixType> mult_lu(mult);
+
+            VectorType Br1 = B_k_inv*rhs_k.segment(0, nEffectiveDOFs);
+            VectorType sol_1 = mult_lu.solve((C_k*Br1)) - mult_lu.solve(rhs_k.segment(nEffectiveDOFs, nEffectiveVertexDOFs));
+
+            d_k = Br1 + B_k_inv*C_k.transpose()*sol_1;
+            lambda_kplus1 = -sol_1;
+
+            end = std::chrono::system_clock::now();
+
+            std::cout<<"Time for solving QP after: "<<std::chrono::duration_cast<std::chrono::milliseconds>(end-start).count()<<std::endl;
         }
-
-        private:
-            SQPLineSearchParams<ConfiguratorType> _pars;
-            CostFunctional<ConfiguratorType> _costFunctional;
-            CostFunctionalGradient<ConfiguratorType> _DcostFunctional;
-            MyObjectFactory<ConfiguratorType> _factory;
-            BoundaryDOFS<ConfiguratorType> _boundaryDOFs;
-            ProblemDOFs<ConfiguratorType> _problemDOFs;
-            size_t _BFGS_reset;
-            bool _secondOrderCorrection;
 
 };
 

@@ -117,7 +117,7 @@ try{
         VecType coords;
         getXYZCoord<VectorType, VecType>( plateGeomDef, coords, foldVertices[i]);
         coords[1] += 0.16;
-        coords[2]-= 0.5;
+        coords[2] -= 0.5;
         setXYZCoord<VectorType, VecType>( plateGeomDef, coords, foldVertices[i]);
     }
 

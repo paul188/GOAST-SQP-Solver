@@ -274,7 +274,7 @@ class FoldDofsFreeLine : public FoldDofs<ConfiguratorType>, public BaseOp<typena
 
 template <typename ConfiguratorType>
 class FoldDofsFreeLineGradient : public FoldDofsGradient<ConfiguratorType>, public BaseOp<typename ConfiguratorType::VectorType, typename ConfiguratorType::SparseMatrixType> {
-     typedef typename ConfiguratorType::RealType RealType;
+    typedef typename ConfiguratorType::RealType RealType;
     typedef typename ConfiguratorType::VectorType VectorType;
     typedef typename ConfiguratorType::VecType VecType;
     typedef typename ConfiguratorType::SparseMatrixType MatrixType;
@@ -297,13 +297,12 @@ class FoldDofsFreeLineGradient : public FoldDofsGradient<ConfiguratorType>, publ
                                      _foldVertices( foldVertices ){}
 
         void apply(const VectorType &t, MatrixType& Dest) const override{
-            // Compute the gradient of the translation of the vertices of the fold with parameters t_i
+            // Compute the gradient of the translation of the vertices of the fold with parameters t_i       
            
+            VectorType dest;
+            dest.resize(_plateGeomInitial.size());
            
-           VectorType dest;
-           dest.resize(_plateGeomInitial.size());
-           
-           if(Dest.rows() != _plateGeomInitial.size() || Dest.cols() != _foldVertices.size()){
+            if(Dest.rows() != _plateGeomInitial.size() || Dest.cols() != _foldVertices.size()){
                 Dest.resize(_plateGeomInitial.size(), _foldVertices.size());
             }
 
@@ -317,6 +316,7 @@ class FoldDofsFreeLineGradient : public FoldDofsGradient<ConfiguratorType>, publ
             for (int i = 0; i < _foldVertices.size(); i++) {
                 triplets.push_back(Eigen::Triplet<RealType>(_plateTopol.getNumVertices() + _foldVertices[i], i, 1.0));
             }   
+
             indicator_dof.setFromTriplets(triplets.begin(), triplets.end());
 
             typename ConfiguratorType::SparseMatrixType StiffnessMatrix;
@@ -334,11 +334,6 @@ class FoldDofsFreeLineGradient : public FoldDofsGradient<ConfiguratorType>, publ
                 assignSparseBlockInplace(Dest, convertVecToSparseMat(dest), 0, i, tripletList);
                 dest.setZero();
             }
-            
-            if(!(StiffnessMatrix*Dest).isApprox(indicator_dof)){
-                std::cerr<<"Gradient in Fold Dofs Gradient is incorrect !\n";
-            }
         }
 };
-
 #endif

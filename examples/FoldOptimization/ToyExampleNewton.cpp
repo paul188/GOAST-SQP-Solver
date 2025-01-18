@@ -17,6 +17,17 @@ typedef DefaultConfigurator::RealType RealType;
 typedef DefaultConfigurator::SparseMatrixType MatrixType;
 typedef DefaultConfigurator::FullMatrixType FullMatrixType;
 
+RealType norm_l1(const VectorType &constr) {
+            // avoid division by zero
+            RealType c_l1 = std::numeric_limits<RealType>::epsilon();
+
+            // l <= c(x) <= u
+            c_l1 += (- constr).cwiseMax(0.0).sum();
+            c_l1 += constr.cwiseMax(0.0).sum();
+
+            return c_l1;
+}
+
 int main(int argc, char *argv[])
 {
 
@@ -30,7 +41,7 @@ try{
 
     // load flat plate [0,1]^2
     TriMesh plate;
-    OpenMesh::IO::read_mesh(plate, "../../data/plate/testMesh.ply");
+    OpenMesh::IO::read_mesh(plate, "../../data/plate/testMesh2.ply");
     MeshTopologySaver plateTopol( plate );
     std::cerr << "num of nodes = " << plateTopol.getNumVertices() << std::endl;
     VectorType plateGeomRef, plateGeomDef, plateGeomInitial;
@@ -89,13 +100,16 @@ try{
         if( coords[1] == 0.0 || coords[1] == 4.0 ){
             bdryMaskOpt.push_back( i );
             if(coords[1] == 0.0){
-                coords[1] += 0.2;
-                coords[2] += 0.2;
+                coords[1] += 0.5;
             }
             else{
-                coords[1] -= 0.2;
-                coords[2] += 0.2;
+                coords[1] -= 0.5;
             }
+        }
+
+        if(coords[1] == 2.0){
+            coords[1] += 0.16;
+            coords[2]-= 0.5;
         }
         
         setXYZCoord<VectorType, VecType>( plateGeomDef, coords, i);
@@ -145,7 +159,7 @@ try{
     OptimizationParameters<DefaultConfigurator> optPars;
     optPars.setGradientIterations( 1000);
     optPars.setBFGSIterations( 1000 );
-    optPars.setNewtonIterations( 1000 );
+    optPars.setNewtonIterations( 10000 );
     optPars.setQuietMode( SHOW_TERMINATION_INFO );
     VectorType initialization = plateGeomDef;
 
@@ -159,6 +173,18 @@ try{
     setGeometry( plate, plateGeomDef );
     OpenMesh::IO::write_mesh(plate, "bendingFoldSol_withNewton2.ply");
 
+    CostFunctional<DefaultConfigurator> costFunctional(foldVertices);
+    RealType cost = 0.0;
+    costFunctional.apply(plateGeomDef, cost);
+    std::cout<<"Cost Functional value: "<<std::setprecision(12)<<cost<<std::endl;
+    MyObjectFactory<DefaultConfigurator> factory(factors, plateTopol, edge_weights);
+    BoundaryDOFS<DefaultConfigurator> boundaryDOFs(bdryMaskOpt, 3*plateTopol.getNumVertices(), foldVertices.size());
+    ProblemDOFs<DefaultConfigurator> problemDOFs(VectorType::Zero(foldVertices.size()), plateGeomDef, foldDofsPtr, DfoldDofsPtr);
+    VectorType DE_val;
+    factory.produceDE_vertex(problemDOFs,DE_val);
+    boundaryDOFs.transformToReducedSpace(DE_val);
+
+    std::cout<<std::setprecision(12)<<norm_l1(DE_val)<<std::endl;
 
   } 
   catch ( BasicException &el ){

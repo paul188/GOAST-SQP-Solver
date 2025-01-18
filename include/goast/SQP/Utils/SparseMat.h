@@ -18,6 +18,49 @@ void Sparsity( const MatrixType &matrix ){
     std::cerr << "Relative number of nonzero entries: " << numEntries / ((int)(matrix.cols()*matrix.rows())) << std::endl;
 }
 
+void computeDiagonalPreconditioner(const MatrixType &A, Eigen::DiagonalMatrix<double, Eigen::Dynamic> &D, Eigen::DiagonalMatrix<double, Eigen::Dynamic> &Dinv){
+    D.resize(A.rows());
+    Dinv.resize(A.rows());
+    for(int i = 0; i < A.rows(); i++){
+        D.diagonal()[i] = 1.0/(A.row(i).norm() + 1e-6);
+        Dinv.diagonal()[i] = (A.row(i).norm() + 1e-6);
+    }
+}
+
+void calculateIdfit(size_t rows, size_t cols, FullMatrixType &Dest)
+{
+    if(Dest.rows() != rows || Dest.cols() != cols)
+    {
+        Dest.resize(rows, cols);
+    }
+
+    Dest.setZero();
+
+    if(rows > cols)
+    {
+        size_t num_submatrices = rows / cols;
+        size_t rest = rows % cols;
+        for(int i = 0; i < num_submatrices; i++){
+            Dest.block(i*cols,0, cols, cols) = FullMatrixType::Identity(cols, cols);
+        }
+        Dest.block(num_submatrices*cols, 0, rest, rest) = FullMatrixType::Identity(rest, rest);
+    }
+    else if(rows < cols)
+    {
+        size_t num_submatrices = cols / rows;
+        size_t rest = cols % rows;
+        for(int i = 0; i < num_submatrices; i++){
+            Dest.block(0,i*rows, rows, rows) = FullMatrixType::Identity(rows, rows);
+        }
+        Dest.block(0, num_submatrices*rows, rest, rest) = FullMatrixType::Identity(rest, rest);
+    }
+    else
+    {
+        // rows = cols
+        Dest.setIdentity(rows, cols);
+    }
+}
+
 MatrixType convertVecToSparseMat(const VectorType& vec){
     MatrixType sparseMatrix(vec.size(), 1); // Single column sparse matrix
     for (int i = 0; i < vec.size(); ++i) {
