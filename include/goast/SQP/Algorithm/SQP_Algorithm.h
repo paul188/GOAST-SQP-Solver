@@ -12,7 +12,7 @@ class SQPBaseParams{
     public:
         using RealType = typename ConfiguratorType::RealType;
         RealType eps = 1e-12; // Convergence criterion
-        size_t maxIter = 1000; // maximum number of iterations
+        size_t maxIter = 200; // maximum number of iterations
         size_t iter = 0; // current iteration
 };
 // Specific parameters needed for SQP Line Search
@@ -180,7 +180,7 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
 
                 // Solve the quadratic subproblem, store the solution in d_k and lambda_kplus1
                 // In the process, invert C_k and store the 
-                solveQP(nFoldDOFs, nEffectiveVertexDOFs,B_k, B_k_inv, C_k, C_k_inv, D2E_vertex, rhs_k, d_k, lambda_kplus1);
+                solveQP(nFoldDOFs, nEffectiveVertexDOFs, B_k_inv, C_k, rhs_k, d_k, lambda_kplus1);
 
                 lambda_diff = lambda_kplus1 - lambda_k;
 
@@ -459,11 +459,8 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
         // -> multiplier parameter optional
         void solveQP(size_t nFoldDOFs,
                      size_t nEffectiveVertexDOFs,
-                     const FullMatrixType &B_k,
                      const FullMatrixType &B_k_inv,
                      const FullMatrixType &C_k,
-                     FullMatrixType &C_k_inv,
-                     const MatrixType &D2E_vertex,
                      const VectorType &rhs_k, 
                      VectorType &d_k, 
                      VectorType& lambda_kplus1) {
@@ -472,21 +469,15 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
 
             FullMatrixType mult = -C_k * B_k_inv * C_k.transpose();
 
-            std::chrono::time_point<std::chrono::system_clock> start, end;
-
-            start = std::chrono::system_clock::now();
-
-            Eigen::FullPivLU<FullMatrixType> mult_lu(mult);
+            //Eigen::LLT doesnt work, not enough stability
+            Eigen::LDLT<FullMatrixType> mult_ldlt;
+            mult_ldlt.compute(mult);
 
             VectorType Br1 = B_k_inv*rhs_k.segment(0, nEffectiveDOFs);
-            VectorType sol_1 = mult_lu.solve((C_k*Br1)) - mult_lu.solve(rhs_k.segment(nEffectiveDOFs, nEffectiveVertexDOFs));
+            VectorType sol_1 = mult_ldlt.solve((C_k*Br1)) - mult_ldlt.solve(rhs_k.segment(nEffectiveDOFs, nEffectiveVertexDOFs));
 
             d_k = Br1 + B_k_inv*C_k.transpose()*sol_1;
             lambda_kplus1 = -sol_1;
-
-            end = std::chrono::system_clock::now();
-
-            std::cout<<"Time for solving QP after: "<<std::chrono::duration_cast<std::chrono::milliseconds>(end-start).count()<<std::endl;
         }
 
 };

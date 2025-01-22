@@ -23,14 +23,17 @@ add_executable(bendingSmallArcInterpolation SmallArc/bendingSmallArcInterpolatio
 #add_executable(SimpleFoldOptimization2 FoldOptimization/SimpleFoldOptimization2.cpp)
 #add_executable(SimpleFoldOptimization FoldOptimization/SimpleFoldOptimization.cpp)
 #add_executable(QuadMeshTest2 QuadMeshExamples/QuadMeshTest2.cpp)
+add_executable(Tester2 FoldOptimization/Tester2.cpp)
+add_executable(ToyExampleCross FoldOptimization/ToyExampleCross.cpp)
 add_executable(ToyExample FoldOptimization/ToyExample.cpp)
 add_executable(ToyExampleNewton FoldOptimization/ToyExampleNewton.cpp)
 add_executable(ToyExampleFreeLine FoldOptimization/ToyExampleFreeLine.cpp)
 #add_executable(ConstraintTest QuadMeshExamples/ConstraintTest.cpp)
-add_executable(Test FoldOptimization/Test.cpp)
 # link libraries
 
-target_link_libraries(Test PRIVATE GOAST::GOAST)
+target_link_libraries(Tester2 PRIVATE GOAST::GOAST)
+
+target_link_libraries(ToyExampleCross PRIVATE GOAST::GOAST)
 
 target_link_libraries(ToyExampleNewton PRIVATE GOAST::GOAST)
 

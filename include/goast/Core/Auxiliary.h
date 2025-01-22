@@ -363,11 +363,16 @@ void extendBoundaryMask(int numVertices, std::vector<int>& mask){
 void extendBoundaryMaskPartial(int numVertices, std::vector<int>& mask, std::vector<int> &activeComponents){
 
     int oldSize = mask.size();
-    mask.resize( 3*oldSize );
-    for( int j = 1; j < 3; j++ ){
-      if(activeComponents[j] == 1.0){
+    std::vector<int> maskCopy = mask;
+    mask.clear();
+    int nonzero_count = std::count_if(activeComponents.begin(), activeComponents.end(), [](int x) { return x != 0; });
+    mask.resize( nonzero_count*oldSize );
+    size_t counter_active = 0;
+    for( int j = 0; j < 3; j++ ){
+      if(activeComponents[j] == 1){
         for( int i = 0; i < oldSize; i++ )      
-          mask[j*oldSize + i ] = j*numVertices + mask[i];
+          mask[counter_active*oldSize + i ] = j*numVertices + maskCopy[i];
+        counter_active++;
       }
       else{
         continue;

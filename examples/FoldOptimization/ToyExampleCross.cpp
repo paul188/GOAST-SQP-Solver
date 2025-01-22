@@ -22,12 +22,12 @@ int main(int argc, char *argv[])
 
 try{
     std::cerr << "=================================================================================" << std::endl;
-    std::cerr << "SIMPLE FOLD OPTIMIZATION" << std::endl;
+    std::cerr << "SIMPLE FOLD OPTIMIZATION IN FORM OF A CROSS" << std::endl;
     std::cerr << "=================================================================================" << std::endl << std::endl;
 
     // load flat plate [0,1]^2
     TriMesh plate;
-    OpenMesh::IO::read_mesh(plate, "../../data/plate/testMesh2.ply");
+    OpenMesh::IO::read_mesh(plate, "../../data/plate/testMeshCrissCross.ply");
     MeshTopologySaver plateTopol( plate );
     std::cerr << "num of nodes = " << plateTopol.getNumVertices() << std::endl;
     VectorType plateGeomRef, plateGeomDef, plateGeomInitial;
@@ -36,34 +36,79 @@ try{
     getGeometry( plate, plateGeomInitial );
 
     // determine boundary mask for reference geometry and foldVertices
-    // the part of the reference boundary where everything is fixed
+    // bdryMaskRef_1 fixes x,y,z in the ref geometry
     std::vector<int> bdryMaskRef_1;
+    // bdryMaskRef_2 fixes y,z in the ref geometry
     std::vector<int> bdryMaskRef_2;
+    // bdryMaskRef_3 fixes x,z in the ref geometry
+    std::vector<int> bdryMaskRef_3;
+    RealType t_init_x = 0.07;
+    RealType t_init_y = 0.07;
     for( int i = 0; i < plateTopol.getNumVertices(); i++ ){
         VecType coords;
         getXYZCoord<VectorType, VecType>( plateGeomRef, coords, i);
-        if( std::abs(coords[1]) < 1e-6 || std::abs(coords[1] - 4.0) < 1e-10 ){
+        // first, fix the outer vertices of the square
+        if( (std::abs(coords[0] < 1e-6) || std::abs(coords[0] - 1.0) < 1e-6) && (std::abs(coords[1] < 1e-6) || std::abs(coords[1] - 1.0) < 1e-6) ){
             bdryMaskRef_1.push_back( i );
+            continue;
         }
-        if(std::abs(coords[1] - 2.0) < 1e-6){
-            coords[1]+=0.3;
+        // Now, fix the middle point of the square
+        if(std::abs(coords[0] - 0.5) < 1e-6 && std::abs(coords[1] - 0.5) < 1e-6)
+        {
             bdryMaskRef_1.push_back( i );
+            coords[0] += t_init_x;
+            coords[1] += t_init_y;
+            setXYZCoord<VectorType, VecType>( plateGeomRef, coords, i);
+            continue;
         }
-        if( std::abs(coords[0]) < 1e-6 || std::abs(coords[0] - 1.0) < 6 ){
-            bdryMaskRef_2.push_back( i );
+        // Now, fix the vertices on the fold lines that intersect the outside of the square
+        if(std::abs(coords[0] - 0.5) < 1e-6 && (std::abs(coords[1]) < 1e-6 || std::abs(coords[1] - 1.0) < 1e-6)){
+            bdryMaskRef_1.push_back( i );
+            coords[0] += t_init_x;
+            setXYZCoord<VectorType, VecType>( plateGeomRef, coords, i);
+            continue;
         }
-
+        if(std::abs(coords[1] - 0.5) < 1e-6 && (std::abs(coords[0]) < 1e-6 || std::abs(coords[0] - 1.0) < 1e-6)){
+            bdryMaskRef_1.push_back( i );
+            coords[1] += t_init_y;
+            setXYZCoord<VectorType, VecType>( plateGeomRef, coords, i);
+            continue;
+        }
+        // now, let all other fold vertices move in x-dir for y=0.5 and in y-dir for x=0.5
+        if( std::abs(coords[0] - 0.5) < 1e-6 || std::abs(coords[1] - 0.5) < 1e-6 ){
+            if(std::abs(coords[0] - 0.5) < 1e-6)
+            {
+                bdryMaskRef_3.push_back( i );
+                coords[0] += 0.07;
+                setXYZCoord<VectorType, VecType>( plateGeomRef, coords, i);
+                continue;
+            }
+            if(std::abs(coords[1] - 0.5) < 1e-6){
+                bdryMaskRef_2.push_back( i );
+                coords[1] += 0.07;
+                setXYZCoord<VectorType, VecType>( plateGeomRef, coords, i);
+                continue;
+            }
+        }
+        else{
+            // vertices at y = 1.0 and y = 0.0 are allowed to move in x-direction
+            if( std::abs(coords[1] - 1.0) < 1e-6 || std::abs(coords[1]) < 1e-6 ){
+                bdryMaskRef_2.push_back( i );
+            }
+            // vertices at x = 1.0 and x = 0.0 are allowed to move in y-direction
+            if( std::abs(coords[0] - 1.0) < 1e-6 || std::abs(coords[0]) < 1e-6 ){
+                bdryMaskRef_3.push_back( i );
+            }
+        }
         setXYZCoord<VectorType, VecType>( plateGeomRef, coords, i);
     }
 
-    setGeometry(plate,plateGeomRef);
-    OpenMesh::IO::write_mesh(plate,"reference_mesh.ply");
-
-    // extend all boundary masks to (x,y,z) coordinates
-
     extendBoundaryMask( plateTopol.getNumVertices(), bdryMaskRef_1 );
-    std::vector<int> activeRef_2 = (std::vector<int>){1,0,1};
+
+    std::vector<int> activeRef_2 = (std::vector<int>){0,1,1};
+    std::vector<int> activeRef_3 = (std::vector<int>){1,0,1};
     extendBoundaryMaskPartial( plateTopol.getNumVertices(), bdryMaskRef_2 , activeRef_2);
+    extendBoundaryMaskPartial( plateTopol.getNumVertices(), bdryMaskRef_3 , activeRef_3);
 
     std::vector<VectorType> def_geometries;
     std::vector<VectorType> ref_geometries;
@@ -72,10 +117,17 @@ try{
     // Use an unordered_set to remove duplicates
     std::unordered_set<int> uniqueEntries(bdryMaskRef_1.begin(), bdryMaskRef_1.end());
     uniqueEntries.insert(bdryMaskRef_2.begin(), bdryMaskRef_2.end());
+    uniqueEntries.insert(bdryMaskRef_3.begin(), bdryMaskRef_3.end());
 
     // Move the unique elements back to bdryMaskRef_1 in order
     bdryMaskRef_1.assign(uniqueEntries.begin(), uniqueEntries.end());
     std::sort(bdryMaskRef_1.begin(), bdryMaskRef_1.end());
+
+    DirichletSmoother<DefaultConfigurator> smoother(plateGeomInitial, bdryMaskRef_1, plateTopol);
+    smoother.apply(plateGeomRef,plateGeomRef);
+
+    setGeometry(plate,plateGeomRef);
+    OpenMesh::IO::write_mesh(plate,"reference_mesh.ply");
 
      // determine boundary mask for optimization
      // and deform part of boundary
@@ -83,53 +135,59 @@ try{
     for( int i = 0; i < plateTopol.getNumVertices(); i++ ){
         VecType coords;
         getXYZCoord<VectorType, VecType>( plateGeomDef, coords, i);
-        if( coords[1] == 0.0 || coords[1] == 4.0 ){
+        // fix all outer vertices and move them slightly towards the middle of the square
+        if(std::abs(coords[0] - 1.0) < 1e-6 && std::abs(coords[1] - 1.0) < 1e-6){
             bdryMaskOpt.push_back( i );
-            if(std::abs(coords[1] - 2.0) < 1e-6){
-                coords[1]+=0.3;
-            }
-            if(coords[1] == 0.0){
-                coords[1] += 0.5;
-                coords[2] += 0.2;
-            }
-            else{
-                coords[1] -= 0.5;
-                coords[2] += 0.2;
-            }
+            coords[0] -= 0.2;
+            coords[1] -= 0.2;
+            coords[2] += 0.2;
         }
-        
+        else if(std::abs(coords[0]) < 1e-6 && std::abs(coords[1] - 1.0) < 1e-6){
+            bdryMaskOpt.push_back( i );
+            coords[0] += 0.2;
+            coords[1] -= 0.2;
+            coords[2] += 0.2;
+        }
+        else if(std::abs(coords[0] - 1.0) < 1e-6 && std::abs(coords[1]) < 1e-6){
+            bdryMaskOpt.push_back( i );
+            coords[0] -= 0.2;
+            coords[1] += 0.2;
+            coords[2] += 0.2;
+        }
+        else if(std::abs(coords[0]) < 1e-6 && std::abs(coords[1]) < 1e-6){
+            bdryMaskOpt.push_back( i );
+            coords[0] += 0.2;
+            coords[1] += 0.2;
+            coords[2] += 0.2;
+        }
+        else if(std::abs(coords[0] - 0.5) < 1e-6 && std::abs(coords[1] - 0.5) < 1e-6)
+        {
+            coords[2] -= 0.2;
+        }
         setXYZCoord<VectorType, VecType>( plateGeomDef, coords, i);
     }
 
     extendBoundaryMask( plateTopol.getNumVertices(), bdryMaskOpt );
 
-    auto foldDofsPtr = std::make_shared<FoldDofsFreeLine<DefaultConfigurator>>(plateTopol,plateGeomInitial, plateGeomRef, bdryMaskRef_1);
+    setGeometry(plate,plateGeomDef);
+    OpenMesh::IO::write_mesh(plate,"deformed_mesh.ply");
 
+    auto foldDofsPtr = std::make_shared<FoldDofsCross<DefaultConfigurator>>(plateTopol,plateGeomInitial, plateGeomRef, bdryMaskRef_1);
+    
     std::vector<int> foldVertices;
     foldDofsPtr -> getFoldVertices(foldVertices);
-    for(int i = 0; i < foldVertices.size(); i++){
-        VecType coords;
-        getXYZCoord<VectorType, VecType>( plateGeomDef, coords, foldVertices[i]);
-        std::cout<<"("<<coords[0]<<", "<<coords[1]<<")"<<std::endl;
-    }
+    std::vector<int> line1Vertices;
+    foldDofsPtr -> getLine1Vertices(line1Vertices);
+    std::vector<int> line2Vertices;
+    foldDofsPtr -> getLine2Vertices(line2Vertices);
 
-    auto DfoldDofsPtr = std::make_shared<FoldDofsFreeLineGradient<DefaultConfigurator>>(plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices);
+    auto DfoldDofsPtr = std::make_shared<FoldDofsCrossGradient<DefaultConfigurator>>(plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices, line1Vertices, line2Vertices);
 
     VectorType edge_weights = VectorType::Zero(plateTopol.getNumEdges());
     foldDofsPtr->getEdgeWeights(edge_weights);
 
-    for(int i = 0; i < foldVertices.size(); i++){
-        VecType coords;
-        getXYZCoord<VectorType, VecType>( plateGeomDef, coords, foldVertices[i]);
-        coords[1] += 0.16;
-        coords[2]-= 0.5;
-        setXYZCoord<VectorType, VecType>( plateGeomDef, coords, foldVertices[i]);
-    }
-
     size_t nFoldDOFs = foldDofsPtr->getNumDofs();
     size_t nVertexDOFs = 3*plateTopol.getNumVertices();
-
-    std::cout<<"Number of fold DOFs: "<<nFoldDOFs<<std::endl;
     
     SQPLineSearchParams<DefaultConfigurator> pars;
     CostFunctional<DefaultConfigurator> costFunctional(foldVertices);

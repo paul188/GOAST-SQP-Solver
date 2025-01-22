@@ -83,11 +83,11 @@ try{
     for( int i = 0; i < plateTopol.getNumVertices(); i++ ){
         VecType coords;
         getXYZCoord<VectorType, VecType>( plateGeomDef, coords, i);
+        /*
+        if( coords[1] <= 0.25 + 1e-6 || coords[1] >= 3.75 - 1e-6 ){ clamped
+        */
         if( coords[1] == 0.0 || coords[1] == 4.0 ){
             bdryMaskOpt.push_back( i );
-            if(std::abs(coords[1] - 2.0) < 1e-6){
-                coords[1]+=0.3;
-            }
             if(coords[1] == 0.0){
                 coords[1] += 0.5;
                 coords[2] += 0.2;
