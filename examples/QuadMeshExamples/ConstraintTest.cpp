@@ -38,16 +38,30 @@ try{
 
     QuadMeshTopologySaver quadTopol(mesh);
 
-    quadTopol.getHalfEdgeStrips();
-
     size_t num_vertices = quadTopol.getNumVertices();
+
+    auto faceStrips = quadTopol.getFaceStrips();
+    auto halfedgeStrips = quadTopol.getHalfEdgeStrips();
+    auto vertexStrips = quadTopol.getVertexStrips();
+
+    std::cout<<"Number of face strips: "<<faceStrips.size()<<std::endl;
+    std::cout<<"Number of halfedge strips: "<<halfedgeStrips.size()<<std::endl;
+    std::cout<<"Number of vertex strips: "<<vertexStrips.size()<<std::endl;
+    std::cout<<"unicorn"<<std::endl;
 
     QuadMeshTopologySaver::getGeometry(mesh,geom);
 
     VectorView<DefaultConfigurator> view(quadTopol);
 
-    Constraint<DefaultConfigurator> constraint(quadTopol);
-    ConstraintGrad<DefaultConfigurator> constraintGrad(quadTopol);
+    StripHandler<DefaultConfigurator> stripHandle(quadTopol);
+    std::cout<<"Test1"<<std::endl;
+    std::cout<<stripHandle._num_vertexStrips<<std::endl;
+    std::cout<<stripHandle._num_halfedgeStrips<<std::endl;
+    std::cout<<stripHandle._num_faceStrips<<std::endl;
+    std::cout<<"Test2"<<std::endl;
+
+    Constraint<DefaultConfigurator> constraint(quadTopol,stripHandle);
+    ConstraintGrad<DefaultConfigurator> constraintGrad(quadTopol,stripHandle);
 
     VectorType test_input = VectorType::Ones(view._idx["num_dofs"]);
 
@@ -60,7 +74,7 @@ try{
     constraintGrad.apply(test_input,Dest);
 
     VectorValuedDerivativeTester<DefaultConfigurator> tester(constraint,constraintGrad,0.01,Dest.rows());
-    tester.plotAllDirections(test_input,"./deriv_test/test");
+    tester.plotAllDirections(test_input,"deriv_test_2/");
 
 }catch(std::exception &e){
     std::cerr << "Exception caught: " << e.what() << std::endl;

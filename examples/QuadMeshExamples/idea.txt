@@ -194,6 +194,21 @@ class VectorView{
             _idx["reweighted_rulings_2"] = 8*_num_vertices + 12*_num_faces - 3*_num_bdryFaces + 3*(_num_halfedges - _num_bdryHalfEdges);
             _idx["num_dofs"] = 8*_num_vertices + 15*_num_faces - 6*_num_bdryFaces + 3*(_num_halfedges - _num_bdryHalfEdges);
         
+            /*
+            std::cout<<"Test"<<std::endl;
+            std::cout<<_idx["dummy_weights"]<<std::endl;
+            std::cout<<_idx["vertices"]<<std::endl;
+            std::cout<<_idx["weights"]<<std::endl;
+            std::cout<<_idx["reweighted_vertices"]<<std::endl;
+            std::cout<<_idx["reweighted_edges_1"]<<std::endl;
+            std::cout<<_idx["reweighted_edges_2"]<<std::endl;
+            std::cout<<_idx["normals"]<<std::endl;
+            std::cout<<_idx["rulings"]<<std::endl;
+            std::cout<<_idx["reweighted_rulings_1"]<<std::endl;
+            std::cout<<_idx["reweighted_rulings_2"]<<std::endl;
+            std::cout<<_idx["num_dofs"]<<std::endl;
+            */
+
             if(vec.has_value()){
                 if(vec.value().size() != _idx["num_dofs"]){
                     std::cerr << "Vector size does not match the number of dofs"<<std::endl;
@@ -292,23 +307,22 @@ class StripHandler{
         typedef typename ConfiguratorType::VectorType VectorType;
         typedef typename ConfiguratorType::SparseMatrixType MatrixType;
     
-        size_t _num_vertexStrips;
-        size_t _num_faceStrips;
-        size_t _num_halfedgeStrips;
-        std::vector<std::tuple<int,int,int>> _vertex_strips;
-        std::vector<std::tuple<int,int,int>> _face_strips;
-        std::vector<std::tuple<int,int,int>> _halfedge_strips;
+        const size_t _num_vertexStrips;
+        const size_t _num_faceStrips;
+        const size_t _num_halfedgeStrips;
+        const std::vector<std::tuple<int,int,int>> _vertex_strips;
+        const std::vector<std::tuple<int,int,int>> _face_strips;
+        const std::vector<std::tuple<int,int,int>> _halfedge_strips;
 
     public:
-        StripHandler(QuadMeshTopologySaver &quadTopol)
-        {
-            _vertex_strips = quadTopol.getVertexStrips();
-            _num_vertexStrips = _vertex_strips.size();
-            _halfedge_strips = quadTopol.getHalfEdgeStrips();
-            _num_halfedgeStrips = _halfedge_strips.size();
-            _face_strips = quadTopol.getFaceStrips();
-            _num_faceStrips = _face_strips.size();
-        }
+        StripHandler(QuadMeshTopologySaver &quadTopol):
+            _vertex_strips(quadTopol.getVertexStrips()),
+            _num_vertexStrips(_vertex_strips.size()),
+            _halfedge_strips(quadTopol.getHalfEdgeStrips()),
+            _num_halfedgeStrips(_halfedge_strips.size()),
+            _face_strips(quadTopol.getFaceStrips()),
+            _num_faceStrips(_face_strips.size())
+        {}
 
         std::tuple<int,int,int> vertex_strip(size_t i){
             if(i >= _num_vertexStrips){
@@ -331,15 +345,15 @@ class StripHandler{
             return _halfedge_strips[i];
         }
 
-        size_t num_vertexStrips() const{
+        size_t num_vertexStrips(){
             return _num_vertexStrips;
         }
 
-        size_t num_faceStrips() const{
+        size_t num_faceStrips(){
             return _num_faceStrips;
         }
 
-        size_t num_halfedgeStrips() const{
+        size_t num_halfedgeStrips(){
             return _num_halfedgeStrips;
         }
 
@@ -354,6 +368,14 @@ class ConstraintView{
         typedef typename ConfiguratorType::SparseMatrixType MatrixType;
 
         std::map<std::string,size_t> _cons_idx;
+
+    private:
+        // Vector of constraints
+        std::optional<std::reference_wrapper<VectorType>> _cons_vec;
+        // Matrix of gradients of constraints
+        std::optional<std::reference_wrapper<MatrixType>> _cons_grad_mat;
+        // triplet for the matrix of gradient constraints
+        std::vector<Eigen::Triplet<RealType>> triplet;
     public:
         ConstraintView(StripHandler<ConfiguratorType> &stripHandle, QuadMeshTopologySaver &quadTopol)
         {
@@ -416,6 +438,232 @@ class ConstraintView{
             std::cout<<_cons_idx["fair_r"]<<std::endl;
             std::cout<<_cons_idx["num_cons"]<<std::endl;
         }
+
+        bool vec_has_value()
+        {
+            return _cons_vec.has_value();
+        }
+        
+        bool mat_has_value()
+        {
+            return _cons_grad_mat.has_value();
+        }
+
+        auto get_cons_grad_mat()
+        {
+            return _cons_grad_mat;
+        }
+
+        void set_constraint_vector(VectorType &vec)
+        {
+            _cons_vec = std::ref(vec);
+        }
+
+        void set_constraintgrad_matrix(MatrixType &mat)
+        {
+            _cons_grad_mat = std::ref(mat);
+        }
+
+        void reset_constraintgrad_matrix()
+        {
+            _cons_grad_mat.reset();
+        }
+
+        void reset_constraint_vector()
+        {
+            _cons_vec.reset();
+        }
+
+        // ------------------- Virtual Vector Member -------------------
+
+        // Called when a segment is assigned
+        void on_assigned_segment(const std::string& key, int start, int size, const VectorType& value) {
+            if(!_cons_vec.has_value())
+            {
+                std::cerr<<"Constraint vector reference not initialized"<<std::endl;
+                abort();
+            }
+            _cons_vec.value().get().segment(_cons_idx[key] + start, size) = value;
+        }
+
+        // Called when a single vector value is assigned
+        void on_assigned_index(const std::string& key, int index, const RealType& value) {
+            if(!_cons_vec.has_value())
+            {
+                std::cerr<<"Constraint vector pointer not initialized"<<std::endl;
+                abort();
+            }
+            
+            (_cons_vec.value().get())[_cons_idx[key] + index] = value;
+        }
+
+        void print_dest_vec()
+        {
+            for(int i = 0; i < _cons_vec.value().get().size(); i++)
+            {
+                std::cout<<(_cons_vec.value().get())[i]<<std::endl;
+            }
+        }
+
+        void print_dest_mat(int i, int j)
+        {
+            std::cout<<(_cons_grad_mat.value().get()).coeffRef(i,j)<<std::endl;
+        }
+
+        private:
+            class VirtualVectorMember {
+                private:
+                    ConstraintView* _parent; // Pointer to parent ConstraintView
+                    std::string _key;        // Unique key for the member
+                    std::optional<int> _index;  // Optional single index
+                    std::optional<std::pair<int, int>> _segment;  // Optional segment (start, size)
+
+                public:
+                    VirtualVectorMember(ConstraintView* parent, const std::string& key)
+                        : _parent(parent), _key(key), _index(std::nullopt), _segment(std::nullopt) {}
+
+                    // Subscript operator for single index
+                    VirtualVectorMember& operator[](int index) {
+                        _index = index;
+                        _segment.reset();  // Ensure segment is not active
+                        return *this;
+                    }
+
+                    // Method to specify a segment
+                    VirtualVectorMember& segment(int start, int size) {
+                        _segment = std::make_pair(start, size);
+                        _index.reset();  // Ensure single index is not active
+                        return *this;
+                    }
+
+                    // Overload assignment operator for single value or vector
+                    VirtualVectorMember& operator=(const VectorType& value) {
+                        if (_segment) {
+                            // Call parent function for a segment
+                            _parent->on_assigned_segment(_key, _segment->first, _segment->second, value);
+                        } 
+                        else {
+                            throw std::runtime_error("Segment must be specified before assignment.");
+                        }
+                        return *this;
+                    }
+
+                    VirtualVectorMember& operator=(const RealType& value) {
+                        if(_index){
+                            // Call parent function for an index
+                            _parent->on_assigned_index(_key, _index.value(), value);
+                        }
+                        else{
+                            throw std::runtime_error("Index must be specified before assignment.");
+                        }
+                        return *this;
+                    }
+        };
+
+        public:
+            VirtualVectorMember vertex_1 = VirtualVectorMember(this, "vertex_1");
+            VirtualVectorMember vertex_2 = VirtualVectorMember(this, "vertex_2");
+            VirtualVectorMember edge_vec_1 = VirtualVectorMember(this, "edge_vec_1");
+            VirtualVectorMember edge_vec_2 = VirtualVectorMember(this, "edge_vec_2");
+            VirtualVectorMember normal_1 = VirtualVectorMember(this, "normal_1");
+            VirtualVectorMember normal_2 = VirtualVectorMember(this, "normal_2");
+            VirtualVectorMember normal_3 = VirtualVectorMember(this, "normal_3");
+            VirtualVectorMember ruling_0 = VirtualVectorMember(this, "ruling_0");
+            VirtualVectorMember ruling_1 = VirtualVectorMember(this, "ruling_1");
+            VirtualVectorMember ruling_2 = VirtualVectorMember(this, "ruling_2");
+            VirtualVectorMember dev = VirtualVectorMember(this, "dev");
+            VirtualVectorMember fair_v = VirtualVectorMember(this, "fair_v");
+            VirtualVectorMember fair_n = VirtualVectorMember(this, "fair_n");
+            VirtualVectorMember fair_r = VirtualVectorMember(this, "fair_r");
+
+    // ------------------- Virtual Matrix Member -------------------
+
+    // Called when a row is assigned
+    void on_assigned_mat_block(const std::string &key, int ibegin, int jbegin, const MatrixType &value) {
+        if(!_cons_grad_mat.has_value())
+        {
+            std::cerr<<"Constraint gradient matrix not initialized"<<std::endl;
+            abort();
+        }
+        assignSparseBlockInplace(_cons_grad_mat.value().get(), value, _cons_idx[key] + ibegin, jbegin, triplet);
+    }
+
+    // Called when a single matrix value is assigned
+    void on_assigned_mat_index(const std::string &key, int i, int j, const RealType& value) {
+        if(!_cons_grad_mat.has_value())
+        {
+            std::cerr<<"Constraint gradient matrix not initialized"<<std::endl;
+            abort();
+        }
+        _cons_grad_mat.value().get().coeffRef(_cons_idx[key] + i, j) = value;
+    }
+
+    private:
+        class VirtualMatrixMember{
+            private:
+                ConstraintView* _parent; // Pointer to parent ConstraintView
+                std::string _key;        // Unique key for the member
+                std::optional<std::pair<int, int>> _indices;  // Optional single index
+                std::optional<std::pair<int, int>> _block;  // Optional segment (start, size)
+
+            public:
+                VirtualMatrixMember(ConstraintView* parent, const std::string& key)
+                    : _parent(parent), _key(key), _indices(std::nullopt), _block(std::nullopt) {}
+
+                // Subscript operator for two indices
+                VirtualMatrixMember& operator()(int i, int j) {
+                    _indices = std::make_pair(i, j);
+                    _block.reset();  // Ensure block is not active
+                    return *this;
+                }
+
+                // Method to specify a segment
+                VirtualMatrixMember& block(int ibegin, int jbegin) {
+                    _block = std::make_pair(ibegin, jbegin);
+                    _indices.reset();  // Ensure single index is not active
+                    return *this;
+                }
+
+                // Overload assignment operator for single value or vector
+                VirtualMatrixMember& operator=(const MatrixType& value) {
+                    if (_block) {
+                        // Call parent function for a segment
+                        _parent->on_assigned_mat_block(_key, _block->first, _block->second, value);
+                    } 
+                    else {
+                        throw std::runtime_error("Segment must be specified before assignment.");
+                    }
+                    return *this;
+                }
+
+                VirtualVectorMember& operator=(const RealType& value) {
+                    if(_indices){
+                        // Call parent function for an index
+                        _parent->on_assigned_mat_index(_key, _indices->first, _indices->second, value);
+                    }
+                    else{
+                        throw std::runtime_error("Index must be specified before assignment.");
+                    }
+                    return *this;
+                }
+        };
+
+    public:
+        VirtualMatrixMember grad_vertex_1 = VirtualMatrixMember(this, "vertex_1");
+        VirtualMatrixMember grad_vertex_2 = VirtualMatrixMember(this, "vertex_2");
+        VirtualMatrixMember grad_edge_vec_1 = VirtualMatrixMember(this, "edge_vec_1");
+        VirtualMatrixMember grad_edge_vec_2 = VirtualMatrixMember(this, "edge_vec_2");
+        VirtualMatrixMember grad_normal_1 = VirtualMatrixMember(this, "normal_1");
+        VirtualMatrixMember grad_normal_2 = VirtualMatrixMember(this, "normal_2");
+        VirtualMatrixMember grad_normal_3 = VirtualMatrixMember(this, "normal_3");
+        VirtualMatrixMember grad_ruling_0 = VirtualMatrixMember(this, "ruling_0");
+        VirtualMatrixMember grad_ruling_1 = VirtualMatrixMember(this, "ruling_1");
+        VirtualMatrixMember grad_ruling_2 = VirtualMatrixMember(this, "ruling_2");
+        VirtualMatrixMember grad_dev = VirtualMatrixMember(this, "dev");
+        VirtualMatrixMember grad_fair_v = VirtualMatrixMember(this, "fair_v");
+        VirtualMatrixMember grad_fair_n = VirtualMatrixMember(this, "fair_n");
+        VirtualMatrixMember grad_fair_r = VirtualMatrixMember(this, "fair_r");
+        
 };
 
 template <typename ConfiguratorType>
@@ -432,11 +680,11 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
         size_t _num_faces;
         size_t _num_edges;
         size_t _num_halfedges;
-        mutable SkippingBdryFaceIterator _it_face;
-        mutable SkippingBdryHalfEdgeIterator _it_he;
-        mutable StripHandler<ConfiguratorType> _stripHandle;
+        SkippingBdryFaceIterator _it_face;
+        SkippingBdryHalfEdgeIterator _it_he;
+        StripHandler<ConfiguratorType> &_stripHandle;
 
-        mutable std::map<std::string,size_t> _cons_idx;
+        std::map<std::string,size_t> &_cons_idx;
 
         // Serves to access the current vector of input variables at the right positions
         mutable VectorView<ConfiguratorType> _view;
@@ -446,20 +694,21 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
 
     public:
         Constraint(QuadMeshTopologySaver &quadTopol, 
-                   StripHandler<ConfiguratorType> &stripHandle):
+                   StripHandler<ConfiguratorType> &stripHandle,
+                   ConstraintView<ConfiguratorType> &cons_view,
+                   VectorView<ConfiguratorType> &view):
               _quadTopol(quadTopol),
               _num_vertices(quadTopol.getNumVertices()),
               _num_faces(quadTopol.getNumFaces()),
               _num_edges(quadTopol.getNumEdges()),
               _num_halfedges(2*_num_edges),
-              _stripHandle(stripHandle),
-              _cons_view(_stripHandle, _quadTopol),
-              _view(_quadTopol),
+              _cons_view(cons_view),
+              _view(view),
               _it_face(_quadTopol),
-              _it_he(_quadTopol)
-        {
-            _cons_idx = _cons_view._cons_idx;
-        }
+              _it_he(_quadTopol),
+              _stripHandle(stripHandle),
+              _cons_idx(_cons_view._cons_idx)
+        {}
 
 
     void get_constraint_vertex_1(const VectorType &vars, VectorType &Dest){
@@ -474,11 +723,11 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
         _cons_view.set_constraint_vector(Dest);
 
         for(int i = 0; i < _num_vertices; i++){
-            Dest[_cons_idx["vertex_1"] + i] = _view.vertex_weight(i) - (_view.dummy_weight(i)*_view.dummy_weight(i)) - 1.0;
+            _cons_view.vertex_1[i] = _view.vertex_weight(i) - (_view.dummy_weight(i)*_view.dummy_weight(i)) - 1.0;
         }
     }
 
-    void get_constraint_vertex_2(const VectorType &vars, VectorType &Dest){
+    void apply(const VectorType &vars, VectorType &Dest) const override{
 
         _view.set_vector(vars);
 
@@ -490,9 +739,14 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
 
         Dest.setZero();
 
+        _cons_view.set_constraint_vector(Dest);
+        std::cout<<_cons_view.vec_has_value()<<std::endl;
+
         for(int i = 0; i < _num_vertices; i++){
-            Dest.segment(_cons_idx["vertex_2"] + 3*i, 3) = _view.reweighted_vertex(i) - _view.vertex_weight(i)*_view.vertex(i); 
+            _cons_view.vertex_2.segment(3*i,3) = _view.reweighted_vertex(i) - _view.vertex_weight(i)*_view.vertex(i); 
         }
+
+        _cons_view.reset_constraint_vector();
 
     }
 
@@ -795,7 +1049,7 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
         }
     }
     
-    void apply(const VectorType &vars, VectorType &Dest) const override
+    void get_constraints(const VectorType &vars, VectorType &Dest)
     {
         _view.set_vector(vars);
 
@@ -891,19 +1145,17 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
         }
 
         for(int i = 0; i < _stripHandle.num_vertexStrips(); i++){
-            auto triple = _stripHandle.vertex_strip(i);
-            int node_0 = std::get<0>(triple);
-            int node_1 = std::get<1>(triple);
-            int node_2 = std::get<2>(triple);
+            int node_0 = _stripHandle.vertex_strip(i).first;
+            int node_1 = _stripHandle.vertex_strip(i).second;
+            int node_2 = _stripHandle.vertex_strip(i).third;
             Dest.segment(_cons_idx["fair_v"] + 3*i,3) = _view.vertex(node_0) - 2*_view.vertex(node_1) + _view.vertex(node_2);
         }
 
         for(int i = 0; i < _stripHandle.num_faceStrips(); i++)
         {
-            auto triple = _stripHandle.face_strip(i);
-            int face_0 = std::get<0>(triple);
-            int face_1 = std::get<1>(triple);
-            int face_2 = std::get<2>(triple);
+            int face_0 = _stripHandle.face_strip(i).first;
+            int face_1 = _stripHandle.face_strip(i).second;
+            int face_2 = _stripHandle.face_strip(i).third;
 
             VectorType normal_0 = _view.face_normal(face_0);
             VectorType normal_1 = _view.face_normal(face_1);
@@ -914,10 +1166,9 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
 
         for(int i = 0; i < _stripHandle.num_halfedgeStrips(); i++)
         {
-            auto triple = _stripHandle.halfedge_strip(i);
-            int he_0 = std::get<0>(triple);
-            int he_1 = std::get<1>(triple);
-            int he_2 = std::get<2>(triple);
+            int he_0 = _stripHandle.halfedge_strip(i).first;
+            int he_1 = _stripHandle.halfedge_strip(i).second;
+            int he_2 = _stripHandle.halfedge_strip(i).third;
 
             VectorType ruling_0 = _view.ruling(_it_he.to_nbdry(he_0));
             VectorType ruling_1 = _view.ruling(_it_he.to_nbdry(he_1));
@@ -944,11 +1195,11 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
         size_t _num_faces;
         size_t _num_edges;
         size_t _num_halfedges;
-        mutable SkippingBdryFaceIterator _it_face;
-        mutable SkippingBdryHalfEdgeIterator _it_he;
-        mutable StripHandler<ConfiguratorType> _stripHandle;
+        SkippingBdryFaceIterator _it_face;
+        SkippingBdryHalfEdgeIterator _it_he;
+        StripHandler<ConfiguratorType> &_stripHandle;
 
-        mutable std::map<std::string,size_t> _cons_idx;
+        std::map<std::string,size_t> &_cons_idx;
 
         // Serves to access the current vector of input variables at the right positions
         mutable VectorView<ConfiguratorType> _view;
@@ -960,19 +1211,23 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
 
     public:
         ConstraintGrad(QuadMeshTopologySaver &quadTopol, 
-                   StripHandler<ConfiguratorType> &stripHandle):
+                   StripHandler<ConfiguratorType> &stripHandle,
+                   ConstraintView<ConfiguratorType> &cons_view,
+                   VectorView<ConfiguratorType> &view):
           _quadTopol(quadTopol),
           _num_vertices(quadTopol.getNumVertices()),
           _num_faces(quadTopol.getNumFaces()),
           _num_edges(quadTopol.getNumEdges()),
           _num_halfedges(quadTopol.getNumHalfEdges()),
           _view(quadTopol),
-          _stripHandle(stripHandle),
           _cons_view(stripHandle, quadTopol),
           _it_face(quadTopol),
-          _it_he(quadTopol)
+          _it_he(quadTopol),
+          _stripHandle(stripHandle),
+          _cons_idx(_cons_view._cons_idx)
         {
-            _cons_idx = _cons_view._cons_idx;
+
+
         }
 
         void get_constraintgrad_vertex_1(const VectorType &vars, MatrixType &Dest){
@@ -993,7 +1248,7 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
             }
         }
 
-        void get_constraintgrad_vertex_2(const VectorType &vars, MatrixType &Dest){
+        void apply1(const VectorType &vars, MatrixType &Dest){
                     
             _view.set_vector(vars);
 
@@ -1020,6 +1275,40 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
 
         }
 
+        void apply(const VectorType &vars, MatrixType &Dest) const override{
+            
+            _view.set_vector(vars);
+            _cons_view.set_constraintgrad_matrix(Dest);
+
+            size_t num_dofs = _view._idx["num_dofs"];
+            size_t num_constraints = _cons_idx["num_cons"];
+
+            if(Dest.rows() != num_constraints || Dest.cols() != num_dofs){
+                Dest.resize(num_constraints, num_dofs);
+            }
+
+            Dest.setZero();
+            auto Id = MatrixType(3,3);
+            Id.setIdentity();
+
+            for(int i = 0; i < _num_vertices; i++){
+                RealType w_i = _view.vertex_weight(i);
+                VectorType vec = -_view.vertex(i);
+                MatrixType vec_mat = vectorToSparseMat(vec);
+                _cons_view.grad_vertex_2.block(3*i, 3*i + _view._idx["vertices"]) = -w_i*Id;
+                _cons_view.grad_vertex_2.block(3*i, _view._idx["weights"] + i) = vec_mat;
+                _cons_view.grad_vertex_2.block(3*i, 3*i + _view._idx["reweighted_vertices"]) = Id;
+                if(_view._idx["weights"] + i == 64)
+                {
+                    std::cout<<vec[0]<<"; "<<vec[1]<<"; "<<vec[2]<<std::endl;
+                    std::cout<<w_i<<std::endl;
+                }
+            }
+
+            _cons_view.reset_constraintgrad_matrix();
+
+        }
+
         void get_constraintgrad_edge_vec_1(const VectorType &vars, MatrixType &Dest){
 
             _view.set_vector(vars);
@@ -1036,6 +1325,7 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
             auto Id = MatrixType(3,3);
             Id.setIdentity();
             std::vector<Eigen::Triplet<RealType>> triplet;
+            assignSparseBlockInplace(Dest,Id,0,_view._idx["reweighted_edges_1"],triplet);
 
             for(int i = 0; i < _num_faces; i++){
 
@@ -1054,8 +1344,6 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
                 VectorType v1_tilde = _view.reweighted_vertex(node_1);
                 VectorType v2_tilde = _view.reweighted_vertex(node_2);
                 VectorType v3_tilde = _view.reweighted_vertex(node_3);
-
-                assignSparseBlockInplace(Dest,Id,3*i,3*i+_view._idx["reweighted_edges_1"],triplet);
 
                 // Derivatives w.r.t. the weights w0, w1, w2, w3
                 MatrixType sum_1 = vectorToSparseMat((v2_tilde + v3_tilde));
@@ -1090,6 +1378,7 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
             // From average edge vector 1
             auto Id = MatrixType(3,3);
             Id.setIdentity();
+            assignSparseBlockInplace(Dest,Id,0,_view._idx["reweighted_edges_2"],triplet);
 
             for(int i = 0; i < _num_faces; i++){
 
@@ -1108,8 +1397,6 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
                 VectorType v1_tilde = _view.reweighted_vertex(node_1);
                 VectorType v2_tilde = _view.reweighted_vertex(node_2);
                 VectorType v3_tilde = _view.reweighted_vertex(node_3);
-
-                assignSparseBlockInplace(Dest,Id,3*i,3*i+_view._idx["reweighted_edges_2"],triplet);
 
                 // Derivatives w.r.t. the weights w0, w1, w2, w3
                 MatrixType sum_1 = vectorToSparseMat((v2_tilde + v1_tilde));
@@ -1147,8 +1434,8 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
                 // Set the derivatives w.r.t. the normals
                 MatrixType vec_1 = vectorToSparseMat(_view.reweighted_edge_1(i),true);
                 MatrixType vec_2 = vectorToSparseMat(_view.face_normal(i),true);
-                assignSparseBlockInplace(Dest,vec_1,_cons_idx["normal_1"] + i,_view._idx["normals"] + 3*i,triplet);
-                assignSparseBlockInplace(Dest,vec_2,_cons_idx["normal_1"] + i,_view._idx["reweighted_edges_1"] + 3*i,triplet);
+                assignSparseBlockInplace(Dest,vec_1,i,_view._idx["normals"] + 3*i,triplet);
+                assignSparseBlockInplace(Dest,vec_2,i,_view._idx["reweighted_edges_1"] + 3*i,triplet);
             }
         }
 
@@ -1168,8 +1455,8 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
                 // Set the derivatives w.r.t. the normals
                 MatrixType vec_1 = vectorToSparseMat(_view.reweighted_edge_2(i),true);
                 MatrixType vec_2 = vectorToSparseMat(_view.face_normal(i),true);
-                assignSparseBlockInplace(Dest,vec_1,_cons_idx["normal_2"] + i,_view._idx["normals"] + 3*i,triplet);
-                assignSparseBlockInplace(Dest,vec_2,_cons_idx["normal_2"] + i,_view._idx["reweighted_edges_2"] + 3*i,triplet);
+                assignSparseBlockInplace(Dest,vec_1,i,_view._idx["normals"] + 3*i,triplet);
+                assignSparseBlockInplace(Dest,vec_2,i,_view._idx["reweighted_edges_2"] + 3*i,triplet);
             }
         }
 
@@ -1521,6 +1808,7 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
             Id.setIdentity();
 
             std::vector<Eigen::Triplet<RealType>> triplet;
+            SkippingBdryHalfEdgeIterator he_it(_quadTopol);
 
             for(int i = 0; i < num_strips; i++)
             {
@@ -1528,302 +1816,9 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
                 int heh_1 = std::get<1>(he_strips[i]);
                 int heh_2 = std::get<2>(he_strips[i]);
 
-                assignSparseBlockInplace(Dest,Id,3*i,3*_it_he.to_nbdry(heh_0) + _view._idx["rulings"],triplet);
-                assignSparseBlockInplace(Dest,-2*Id,3*i,3*_it_he.to_nbdry(heh_1) + _view._idx["rulings"],triplet);
-                assignSparseBlockInplace(Dest,Id,3*i,3*_it_he.to_nbdry(heh_2) + _view._idx["rulings"],triplet);
-            }
-        }
-
-        /*
-        What has been achieved here ?
-        1. vertex_1 done
-        2. vertex_2 done
-        3. edge_vec_1 done
-        4. edge_vec_2 done
-        5. normal_1 done
-        6. normal_2 done
-        7. normal_3 done
-        8. ruling_0 done
-        9. ruling_1 done
-        10. ruling_2 done
-        11. dev done
-        12. fair_v done
-        13. fair_n
-        14. fair_r
-        */
-        void apply(const VectorType &vars, MatrixType &Dest) const override{
-            _view.set_vector(vars);
-
-            size_t num_dofs = _view._idx["num_dofs"];
-            size_t num_constraints = _cons_idx["num_cons"];
-
-            if(Dest.rows() != num_constraints || Dest.cols() != num_dofs){
-                Dest.resize(num_constraints, num_dofs);
-            }
-
-            Dest.setZero();
-
-            std::vector<Eigen::Triplet<RealType>> triplet;
-            auto Id = MatrixType(3,3);
-            Id.setIdentity();
-
-            // All vertices constraints (vertex_1, vertex_2)
-            for(int i = 0; i < _num_vertices; i++){
-                RealType dummy_i = _view.dummy_weight(i);
-                RealType w_i = _view.vertex_weight(i);
-                VectorType vec = -_view.vertex(i);
-                MatrixType vec_mat = vectorToSparseMat(vec);
-
-                // Assign values directly
-                Dest.coeffRef(i + _cons_idx["vertex_1"], i + _view._idx["dummy_weights"]) = -2.0 * dummy_i;
-                Dest.coeffRef(i + _cons_idx["vertex_1"], i + _view._idx["weights"]) = 1.0;
-                assignSparseBlockInplace(Dest,-w_i*Id,_cons_idx["vertex_2"] + 3*i,3*i + _view._idx["vertices"],triplet);
-                assignSparseBlockInplace(Dest,vec_mat,_cons_idx["vertex_2"] + 3*i,i + _view._idx["weights"],triplet);
-                assignSparseBlockInplace(Dest,Id,_cons_idx["vertex_2"] +3*i,3*i + _view._idx["reweighted_vertices"],triplet);
-            }
-
-            // All face constraints (edge_vec_1, edge_vec_2, normal_1, normal_2, normal_3)
-            for(int i = 0; i < _num_faces; i++){
-
-                // First, obtain first vertex idces of the face
-                int node_0 = _quadTopol.getNodeOfQuad(i,0);
-                int node_1 = _quadTopol.getNodeOfQuad(i,1);
-                int node_2 = _quadTopol.getNodeOfQuad(i,2);
-                int node_3 = _quadTopol.getNodeOfQuad(i,3);
-
-                RealType w0 = _view.vertex_weight(node_0);
-                RealType w1 = _view.vertex_weight(node_1);
-                RealType w2 = _view.vertex_weight(node_2);
-                RealType w3 = _view.vertex_weight(node_3);
-
-                VectorType v0_tilde = _view.reweighted_vertex(node_0);
-                VectorType v1_tilde = _view.reweighted_vertex(node_1);
-                VectorType v2_tilde = _view.reweighted_vertex(node_2);
-                VectorType v3_tilde = _view.reweighted_vertex(node_3);
-
-                assignSparseBlockInplace(Dest,Id,_cons_idx["edge_vec_1"] + 3*i,3*i+_view._idx["reweighted_edges_1"],triplet);
-
-                // Derivatives w.r.t. the weights w0, w1, w2, w3
-                MatrixType sum_1 = vectorToSparseMat((v2_tilde + v3_tilde));
-                MatrixType sum_2 = vectorToSparseMat((v1_tilde + v0_tilde));
-                assignSparseBlockInplace(Dest, -sum_1,_cons_idx["edge_vec_1"] + 3*i,_view._idx["weights"] + node_0,triplet);
-                assignSparseBlockInplace(Dest, -sum_1, _cons_idx["edge_vec_1"]+ 3*i,_view._idx["weights"] + node_1,triplet);
-                assignSparseBlockInplace(Dest, sum_2,_cons_idx["edge_vec_1"] + 3*i,_view._idx["weights"] + node_2,triplet);
-                assignSparseBlockInplace(Dest, sum_2,_cons_idx["edge_vec_1"] + 3*i,_view._idx["weights"] + node_3,triplet);
-
-                //Derivatives w.r.t. the vertex dofs of reweighted vertices Tilde{v}_0, ..., Tilde{v}_3
-                assignSparseBlockInplace(Dest, (w2+w3)*Id,_cons_idx["edge_vec_1"] + 3*i,_view._idx["reweighted_vertices"] + 3*node_0,triplet);
-                assignSparseBlockInplace(Dest, (w2+w3)*Id,_cons_idx["edge_vec_1"] + 3*i,_view._idx["reweighted_vertices"] + 3*node_1,triplet);
-                assignSparseBlockInplace(Dest, -(w0+w1)*Id,_cons_idx["edge_vec_1"] + 3*i,_view._idx["reweighted_vertices"] + 3*node_2,triplet);
-                assignSparseBlockInplace(Dest, -(w0+w1)*Id,_cons_idx["edge_vec_1"] + 3*i,_view._idx["reweighted_vertices"] + 3*node_3,triplet);
-
-                assignSparseBlockInplace(Dest,Id,_cons_idx["edge_vec_2"] + 3*i,3*i+_view._idx["reweighted_edges_2"],triplet);
-
-                // Derivatives w.r.t. the weights w0, w1, w2, w3
-                MatrixType sum_3 = vectorToSparseMat((v2_tilde + v1_tilde));
-                MatrixType sum_4 = vectorToSparseMat((v0_tilde + v3_tilde));
-    
-                assignSparseBlockInplace(Dest, sum_3,_cons_idx["edge_vec_2"] + 3*i,_view._idx["weights"] + node_0,triplet);
-                assignSparseBlockInplace(Dest, -sum_4,_cons_idx["edge_vec_2"] + 3*i,_view._idx["weights"] + node_1,triplet);
-                assignSparseBlockInplace(Dest, -sum_4,_cons_idx["edge_vec_2"] + 3*i,_view._idx["weights"] + node_2,triplet);
-                assignSparseBlockInplace(Dest, sum_3,_cons_idx["edge_vec_2"] + 3*i,_view._idx["weights"] + node_3,triplet);
-
-                //Derivatives w.r.t. the vertex dofs of reweighted vertices Tilde{v}_0, ..., Tilde{v}_3
-                assignSparseBlockInplace(Dest,-(w1+w2)*Id,_cons_idx["edge_vec_2"] + 3*i,_view._idx["reweighted_vertices"] + 3*node_0,triplet);
-                assignSparseBlockInplace(Dest,(w0+w3)*Id,_cons_idx["edge_vec_2"] + 3*i,_view._idx["reweighted_vertices"] + 3*node_1,triplet);
-                assignSparseBlockInplace(Dest,(w0+w3)*Id,_cons_idx["edge_vec_2"] + 3*i,_view._idx["reweighted_vertices"] + 3*node_2,triplet);
-                assignSparseBlockInplace(Dest,-(w1+w2)*Id,_cons_idx["edge_vec_2"] + 3*i,_view._idx["reweighted_vertices"] + 3*node_3,triplet);
-            
-                 // Set the derivatives w.r.t. the normals
-                MatrixType rw_edge_1_mat = vectorToSparseMat(_view.reweighted_edge_1(i),true);
-                MatrixType normal_mat = vectorToSparseMat(_view.face_normal(i),true);
-                assignSparseBlockInplace(Dest,rw_edge_1_mat,_cons_idx["normal_1"] + i,_view._idx["normals"] + 3*i,triplet);
-                assignSparseBlockInplace(Dest,normal_mat,_cons_idx["normal_1"] + i,_view._idx["reweighted_edges_1"] + 3*i,triplet);
-            
-                MatrixType rw_edge_2_mat = vectorToSparseMat(_view.reweighted_edge_2(i),true);
-                assignSparseBlockInplace(Dest,rw_edge_2_mat,_cons_idx["normal_2"] + i,_view._idx["normals"] + 3*i,triplet);
-                assignSparseBlockInplace(Dest,normal_mat,_cons_idx["normal_2"] + i,_view._idx["reweighted_edges_2"] + 3*i,triplet);
-            
-                assignSparseBlockInplace(Dest,2.0*normal_mat,_cons_idx["normal_3"] + i,_view._idx["normals"] + i,triplet);
-            }
-
-            _it_he.reset();
-
-            // ruling_0 constraint
-            for(_it_he; _it_he.valid();_it_he++)
-            {
-                int i = _it_he.idx();
-                int i_nobdry = _it_he.idx_nobdry();
-
-                size_t faceIdx_1 = _quadTopol.getFaceOfHalfEdge(i,0);
-                size_t faceIdx_2 = _quadTopol.getFaceOfHalfEdge(i,1);
-                Eigen::Vector3d normal_1 = _view.face_normal(faceIdx_1).template head<3>();
-                Eigen::Vector3d normal_2 = _view.face_normal(faceIdx_2).template head<3>();
-
-                // First, set the derivative w.r.t. the ruling vector
-                auto Id = MatrixType(3,3);
-                Id.setIdentity();
-
-                assignSparseBlockInplace(Dest,Id,_cons_idx["ruling_0"] + 3*(i_nobdry),_view._idx["rulings"] + 3*i_nobdry,triplet);
-
-                // Now, set the derivatives w.r.t. the cross product
-                // First, differentiate w.r.t. normal_1
-                Eigen::Vector3d e;
-                MatrixType vec_prod;
-                e.setZero();
-                e[0] = 1.0;
-                vec_prod = convertVecToSparseMat(-e.cross(normal_2));
-                assignSparseBlockInplace(Dest,vec_prod,_cons_idx["ruling_0"] + 3*(i_nobdry),_view._idx["normals"] + 3*faceIdx_1,triplet);
-                e[0] = 0.0;
-                e[1] = 1.0;
-                vec_prod = convertVecToSparseMat(-e.cross(normal_2));
-                assignSparseBlockInplace(Dest,vec_prod,_cons_idx["ruling_0"] + 3*(i_nobdry),_view._idx["normals"] + 3*faceIdx_1 + 1,triplet);
-                e[1] = 0.0;
-                e[2] = 1.0;
-                vec_prod = convertVecToSparseMat(-e.cross(normal_2));
-                assignSparseBlockInplace(Dest,vec_prod,_cons_idx["ruling_0"] + 3*(i_nobdry),_view._idx["normals"] + 3*faceIdx_1 + 2,triplet);
-
-                // Now, differentiate w.r.t. normal_2
-                e[2] = 0.0;
-                e[0] = 1.0;
-                vec_prod = convertVecToSparseMat(e.cross(normal_1));
-                assignSparseBlockInplace(Dest,vec_prod,_cons_idx["ruling_0"] + 3*(i_nobdry),_view._idx["normals"] + 3*faceIdx_2,triplet);
-                e[0] = 0.0;
-                e[1] = 1.0;
-                vec_prod = convertVecToSparseMat(e.cross(normal_1));
-                assignSparseBlockInplace(Dest,vec_prod,_cons_idx["ruling_0"] + 3*(i_nobdry),_view._idx["normals"] + 3*faceIdx_2 + 1,triplet);
-                e[1] = 0.0;
-                e[2] = 1.0;
-                vec_prod = convertVecToSparseMat(e.cross(normal_1));
-                assignSparseBlockInplace(Dest,vec_prod,_cons_idx["ruling_0"] + 3*(i_nobdry),_view._idx["normals"] + 3*faceIdx_2 + 2,triplet);
-            }
-
-            _it_face.reset();
-
-            // constraints ruling_1, ruling_2
-            for(_it_face; _it_face.valid(); _it_face++){
-
-                int i = _it_face.idx();
-                int i_nobdry = _it_face.idx_nobdry();
-
-                int node_0 = _quadTopol.getNodeOfQuad(i,0);
-                int node_1 = _quadTopol.getNodeOfQuad(i,1);
-                int node_2 = _quadTopol.getNodeOfQuad(i,2);
-                int node_3 = _quadTopol.getNodeOfQuad(i,3);
-
-                auto node_0_vert = _view.vertex(node_0);
-                auto node_1_vert = _view.vertex(node_1);
-                auto node_2_vert = _view.vertex(node_2);
-                auto node_3_vert = _view.vertex(node_3);
-
-                int heh_01 = _quadTopol.getHalfEdgeOfQuad(i,0);
-                int heh_12 = _quadTopol.getHalfEdgeOfQuad(i,1);
-                int heh_23 = _quadTopol.getHalfEdgeOfQuad(i,2);
-                int heh_30 = _quadTopol.getHalfEdgeOfQuad(i,3);
-
-                RealType w0 = _view.vertex_weight(node_0);
-                RealType w1 = _view.vertex_weight(node_1);
-                RealType w2 = _view.vertex_weight(node_2);
-                RealType w3 = _view.vertex_weight(node_3);
-
-                VectorType ruling_01 = _view.ruling(_it_he.to_nbdry(heh_01));
-                VectorType ruling_12 = _view.ruling(_it_he.to_nbdry(heh_12));
-                VectorType ruling_23 = _view.ruling(_it_he.to_nbdry(heh_23));
-                VectorType ruling_30 = _view.ruling(_it_he.to_nbdry(heh_30));
-
-                // obtain the reweighted ruling vectors
-                Eigen::Vector3d reweighted_ruling_1 = _view.reweighted_ruling_1(i).template head<3>();
-                Eigen::Vector3d reweighted_ruling_2 = _view.reweighted_ruling_2(i).template head<3>();
-
-                // Differentiate w.r.t. the reweighted ruling r_{1,3,f}
-
-                assignSparseBlockInplace(Dest,Id,_cons_idx["ruling_1"] + 3*i_nobdry,_view._idx["reweighted_rulings_1"] + 3*i_nobdry,triplet);
-
-                MatrixType ruling_30_mat = vectorToSparseMat(ruling_30);
-                MatrixType ruling_12_mat = vectorToSparseMat(ruling_12);
-
-                // Derivatives w.r.t. the weights w0, w1, w2, w3
-                assignSparseBlockInplace(Dest, ruling_30_mat,_cons_idx["ruling_1"] + 3*i_nobdry,_view._idx["weights"] + node_0,triplet);
-                assignSparseBlockInplace(Dest, -ruling_12_mat,_cons_idx["ruling_1"] + 3*i_nobdry,_view._idx["weights"] + node_1,triplet);
-                assignSparseBlockInplace(Dest, -ruling_12_mat,_cons_idx["ruling_1"] + 3*i_nobdry,_view._idx["weights"] + node_2,triplet);
-                assignSparseBlockInplace(Dest, ruling_30_mat,_cons_idx["ruling_1"] + 3*i_nobdry,_view._idx["weights"] + node_3,triplet);
-
-                //Derivatives w.r.t. the rulings
-                assignSparseBlockInplace(Dest,-(w1 + w2)*Id,_cons_idx["ruling_1"] + 3*i_nobdry,_view._idx["rulings"] + 3*_it_he.to_nbdry(heh_12),triplet);
-                assignSparseBlockInplace(Dest,(w3 + w0)*Id,_cons_idx["ruling_1"] + 3*i_nobdry,_view._idx["rulings"] + 3*_it_he.to_nbdry(heh_30),triplet);
-
-                MatrixType ruling_01_mat = vectorToSparseMat(ruling_01);
-                MatrixType ruling_23_mat = vectorToSparseMat(ruling_23);
-
-                // Differentiate w.r.t. the reweighted ruling r_{1,3,f}
-                assignSparseBlockInplace(Dest,Id,_cons_idx["ruling_2"] + 3*i_nobdry,_view._idx["reweighted_rulings_2"] + 3*i_nobdry,triplet);
-
-                // Derivatives w.r.t. the weights w0, w1, w2, w3
-                assignSparseBlockInplace(Dest, -ruling_01_mat,_cons_idx["ruling_2"] + 3*i_nobdry,_view._idx["weights"] + node_0,triplet);
-                assignSparseBlockInplace(Dest, -ruling_01_mat,_cons_idx["ruling_2"] + 3*i_nobdry,_view._idx["weights"] + node_1,triplet);
-                assignSparseBlockInplace(Dest, ruling_23_mat,_cons_idx["ruling_2"] + 3*i_nobdry,_view._idx["weights"] + node_2,triplet);
-                assignSparseBlockInplace(Dest, ruling_23_mat,_cons_idx["ruling_2"] + 3*i_nobdry,_view._idx["weights"] + node_3,triplet);
-
-                //Derivatives w.r.t. the rulings
-                assignSparseBlockInplace(Dest,-(w0 + w1)*Id,_cons_idx["ruling_2"] + 3*i_nobdry,_view._idx["rulings"] + 3*_it_he.to_nbdry(heh_01),triplet);
-                assignSparseBlockInplace(Dest,(w2 + w3)*Id,_cons_idx["ruling_2"]+ 3*i_nobdry,_view._idx["rulings"] + 3*_it_he.to_nbdry(heh_23),triplet);
-            
-                // Derivatives w.r.t. the first ruling vector \Tilde{r}_{13,f}
-                Eigen::Vector3d e;
-                e.setZero();
-                e[0] = 1.0; 
-                assignSparseBlockInplace(Dest,vectorToSparseMat(e.cross(reweighted_ruling_2)),_cons_idx["dev"] + 3*i_nobdry,3*i_nobdry + _view._idx["reweighted_rulings_1"],triplet);
-                e[0] = 0.0;
-                e[1] = 1.0;
-                assignSparseBlockInplace(Dest,vectorToSparseMat(e.cross(reweighted_ruling_2)),_cons_idx["dev"] + 3*i_nobdry,3*i_nobdry + _view._idx["reweighted_rulings_1"] + 1,triplet);
-                e[1] = 0.0;
-                e[2] = 1.0;
-                assignSparseBlockInplace(Dest,vectorToSparseMat(e.cross(reweighted_ruling_2)),_cons_idx["dev"] + 3*i_nobdry,3*i_nobdry + _view._idx["reweighted_rulings_1"] + 2,triplet); 
-            
-                // Derivatives w.r.t. the second ruling vector \Tilde{r}_{02,f}
-                e[2] = 0.0;
-                e[0] = 1.0;
-                assignSparseBlockInplace(Dest,vectorToSparseMat(reweighted_ruling_1.cross(e)),_cons_idx["dev"] + 3*i_nobdry,3*i_nobdry + _view._idx["reweighted_rulings_2"],triplet);
-                e[0] = 0.0;
-                e[1] = 1.0;
-                assignSparseBlockInplace(Dest,vectorToSparseMat(reweighted_ruling_1.cross(e)),_cons_idx["dev"] + 3*i_nobdry,3*i_nobdry + _view._idx["reweighted_rulings_2"] + 1,triplet);
-                e[1] = 0.0;
-                e[2] = 1.0;
-                assignSparseBlockInplace(Dest,vectorToSparseMat(reweighted_ruling_1.cross(e)),_cons_idx["dev"] + 3*i_nobdry,3*i_nobdry + _view._idx["reweighted_rulings_2"] + 2,triplet);   
-            }
-
-            for(int i = 0; i < _stripHandle.num_vertexStrips(); i++){
-                auto triple = _stripHandle.vertex_strip(i);
-                int node_0 = std::get<0>(triple);
-                int node_1 = std::get<1>(triple);
-                int node_2 = std::get<2>(triple);
-                
-                assignSparseBlockInplace(Dest,Id,_cons_idx["fair_v"] + 3*i,3*node_0 + _view._idx["vertices"],triplet);
-                assignSparseBlockInplace(Dest,-2*Id,_cons_idx["fair_v"] + 3*i,3*node_1 + _view._idx["vertices"], triplet);
-                assignSparseBlockInplace(Dest, Id, _cons_idx["fair_v"] + 3*i,3*node_2 + _view._idx["vertices"], triplet);
-            }
-
-            for(int i = 0; i < _stripHandle.num_faceStrips(); i++){
-                auto triple = _stripHandle.face_strip(i);
-                int normal_0 = std::get<0>(triple);
-                int normal_1 = std::get<1>(triple);
-                int normal_2 = std::get<2>(triple);
-
-                assignSparseBlockInplace(Dest,Id,_cons_idx["fair_n"] + 3*i,3*normal_0 + _view._idx["normals"],triplet);
-                assignSparseBlockInplace(Dest,-2*Id,_cons_idx["fair_n"] + 3*i,3*normal_1 + _view._idx["normals"],triplet);
-                assignSparseBlockInplace(Dest,Id,_cons_idx["fair_n"] + 3*i,3*normal_2 + _view._idx["normals"],triplet);
-            }
-
-            for(int i = 0; i < _stripHandle.num_halfedgeStrips(); i++)
-            {
-                auto triple = _stripHandle.halfedge_strip(i);
-                int heh_0 = std::get<0>(triple);
-                int heh_1 = std::get<1>(triple);
-                int heh_2 = std::get<2>(triple);
-
-                assignSparseBlockInplace(Dest,Id,_cons_idx["fair_r"] + 3*i,3*_it_he.to_nbdry(heh_0) + _view._idx["rulings"],triplet);
-                assignSparseBlockInplace(Dest,-2*Id,_cons_idx["fair_r"] + 3*i,3*_it_he.to_nbdry(heh_1) + _view._idx["rulings"],triplet);
-                assignSparseBlockInplace(Dest,Id,_cons_idx["fair_r"] + 3*i,3*_it_he.to_nbdry(heh_2) + _view._idx["rulings"],triplet);
+                assignSparseBlockInplace(Dest,Id,3*i,3*he_it.to_nbdry(heh_0) + _view._idx["rulings"],triplet);
+                assignSparseBlockInplace(Dest,-2*Id,3*i,3*he_it.to_nbdry(heh_1) + _view._idx["rulings"],triplet);
+                assignSparseBlockInplace(Dest,Id,3*i,3*he_it.to_nbdry(heh_2) + _view._idx["rulings"],triplet);
             }
         }
 };

@@ -148,7 +148,7 @@ protected:
   typedef std::vector<std::tuple<int,int,int>> StripType;
 
   // this method works, tested
-  StripType getFaceStrips()
+  StripType getFaceStrips() const
   {
     StripType faceStrips;
     
@@ -183,7 +183,7 @@ protected:
   }
 
   // this method works, tested
-  StripType getVertexStrips()
+  StripType getVertexStrips() const
   {
     StripType vertexStrips;
 
@@ -247,7 +247,7 @@ protected:
 
 // this method works, tested -> only returns halfedge strips that lie in the interior
 // since we dont have rulings computed at the boundary, halfedge strips at the boundary cannot contribute to fairness energy
-  StripType getHalfEdgeStrips()
+  StripType getHalfEdgeStrips() const
   {
     // First, every HalfEdge strip must also contain a vertex triple.
     // so we can iterate over all vertex triples and check if we can extend them in one of two directions
