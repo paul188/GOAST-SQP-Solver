@@ -354,7 +354,7 @@ public:
     VectorType timeSteps( _numSteps ), energies( _numSteps ), derivs( _numSteps );
     VectorType outerDirection( dimRange ), innerDirection( numDofs ), gradientWRTOuterDirection( numDofs );
 
-    for ( int k = 16; k < dimRange; k++ ) {
+    for ( int k = 0; k < dimRange; k++ ) {
 
       outerDirection.setZero();
       outerDirection[k] = 1.;

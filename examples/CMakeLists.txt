@@ -29,7 +29,13 @@ add_executable(ToyExample FoldOptimization/ToyExample.cpp)
 add_executable(ToyExampleNewton FoldOptimization/ToyExampleNewton.cpp)
 add_executable(ToyExampleFreeLine FoldOptimization/ToyExampleFreeLine.cpp)
 add_executable(ConstraintTest QuadMeshExamples/ConstraintTest.cpp)
+add_executable(LMTest QuadMeshExamples/LMTest.cpp)
+add_executable(ToyExampleDevelopability QuadMeshExamples/ToyExampleDevelopability.cpp)
 # link libraries
+
+target_link_libraries(ToyExampleDevelopability PRIVATE GOAST::GOAST)
+
+target_link_libraries(LMTest PRIVATE GOAST::GOAST)
 
 target_link_libraries(Tester2 PRIVATE GOAST::GOAST)
 

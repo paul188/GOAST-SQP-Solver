@@ -292,7 +292,14 @@ protected:
 
           if(!common_face){
               auto he_3 = _mesh.find_halfedge(_mesh.vertex_handle(node_1),_mesh.vertex_handle(node_2));
-              halfedgeStrips.push_back(std::make_tuple(he_1.idx(),he_2.idx(),he_3.idx()));
+              int face_3_1 = getFaceOfHalfEdge(he_3.idx(),0);
+              int face_3_2 = getFaceOfHalfEdge(he_3.idx(),1);
+
+              // None of the halfedges adjacent to boundary
+              if((face_1_1 != -1) && (face_1_2 != -1) && (face_2_1 != -1) && (face_2_2 != -1) && (face_3_1 != -1) && (face_3_2 != -1))
+              {
+                halfedgeStrips.push_back(std::make_tuple(he_1.idx(),he_2.idx(),he_3.idx()));
+              }
           }
        }
        if(node_2 == node_1_){
@@ -317,7 +324,14 @@ protected:
           if(!common_face)
           {
               auto he_3 = _mesh.find_halfedge(_mesh.vertex_handle(node_1_),_mesh.vertex_handle(node_2_));
-              halfedgeStrips.push_back(std::make_tuple(he_1.idx(),he_2.idx(),he_3.idx()));
+              int face_3_1 = getFaceOfHalfEdge(he_3.idx(),0);
+              int face_3_2 = getFaceOfHalfEdge(he_3.idx(),1);
+
+              // None of the halfedges adjacent to boundary
+              if((face_1_1 != -1) && (face_1_2 != -1) && (face_2_1 != -1) && (face_2_2 != -1) && (face_3_1 != -1) && (face_3_2 != -1))
+              {
+                halfedgeStrips.push_back(std::make_tuple(he_1.idx(),he_2.idx(),he_3.idx()));
+              }
           }
        }
       }
@@ -329,8 +343,16 @@ protected:
     return _bdryHalfEdges;
   }
 
+  size_t getNumBdryHalfEdges() const{
+    return _bdryHalfEdges.size();
+  }
+
   std::vector<int> getBdryFaces() const{
     return _bdryFaces;
+  }
+
+  size_t getNumBdryFaces() const{
+    return _bdryFaces.size();
   }
 
   const QuadMeshType& getGrid() const {

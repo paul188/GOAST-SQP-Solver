@@ -40,25 +40,11 @@ try{
 
     size_t num_vertices = quadTopol.getNumVertices();
 
-    auto faceStrips = quadTopol.getFaceStrips();
-    auto halfedgeStrips = quadTopol.getHalfEdgeStrips();
-    auto vertexStrips = quadTopol.getVertexStrips();
-
-    std::cout<<"Number of face strips: "<<faceStrips.size()<<std::endl;
-    std::cout<<"Number of halfedge strips: "<<halfedgeStrips.size()<<std::endl;
-    std::cout<<"Number of vertex strips: "<<vertexStrips.size()<<std::endl;
-    std::cout<<"unicorn"<<std::endl;
-
     QuadMeshTopologySaver::getGeometry(mesh,geom);
 
     VectorView<DefaultConfigurator> view(quadTopol);
 
     StripHandler<DefaultConfigurator> stripHandle(quadTopol);
-    std::cout<<"Test1"<<std::endl;
-    std::cout<<stripHandle._num_vertexStrips<<std::endl;
-    std::cout<<stripHandle._num_halfedgeStrips<<std::endl;
-    std::cout<<stripHandle._num_faceStrips<<std::endl;
-    std::cout<<"Test2"<<std::endl;
 
     Constraint<DefaultConfigurator> constraint(quadTopol,stripHandle);
     ConstraintGrad<DefaultConfigurator> constraintGrad(quadTopol,stripHandle);
@@ -70,8 +56,14 @@ try{
     //printVectorToFile(test_input,"./deriv_test/test_input.txt");
     VectorType dest;
     MatrixType Dest;
+    //std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
     constraint.apply(test_input,dest);
+    //std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+    //std::cout << "Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
+    //begin = std::chrono::steady_clock::now();
     constraintGrad.apply(test_input,Dest);
+    //end = std::chrono::steady_clock::now();
+    //std::cout << "Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
 
     VectorValuedDerivativeTester<DefaultConfigurator> tester(constraint,constraintGrad,0.01,Dest.rows());
     tester.plotAllDirections(test_input,"deriv_test_2/");

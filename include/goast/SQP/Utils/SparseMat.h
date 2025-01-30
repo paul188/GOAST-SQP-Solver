@@ -397,9 +397,38 @@ void assignSparseBlockWithTriplet(std::vector<Tri> &tripletList, const MatrixTyp
 
 }
 
-void assignSparseBlockInplace(MatrixType &Base, const MatrixType &Block, int ibegin, int jbegin,
-                            std::vector<Tri> &BaseTriplet)
+void assignSparseVecBlockTriplet(const VectorType &Block, int ibegin, int jbegin, std::vector<Tri> &BaseTriplet, bool asRowVector = false)
 {
+    for (int i = 0; i < Block.size(); i++) {
+        if (Block[i] != 0) {
+            if(asRowVector){
+                BaseTriplet.emplace_back(Tri(ibegin, jbegin + i, Block[i]));
+            }
+            else{
+                BaseTriplet.emplace_back(Tri(ibegin + i, jbegin, Block[i]));
+            }
+        }
+    }
+}
+
+void assignSparseMatBlockTriplet(const MatrixType &Block, int ibegin, int jbegin, std::vector<Tri> &BaseTriplet)
+{
+    for (int k = 0; k < Block.outerSize(); ++k) {
+        for (typename MatrixType::InnerIterator it(Block, k); it; ++it) {
+            // Each element can be accessed by (it.row(), it.col(), it.value())
+            BaseTriplet.emplace_back(Eigen::Triplet<double>(it.row() + ibegin, it.col() + jbegin, it.value()));
+        }
+    }
+}
+
+void assignSparseBlockInplace(MatrixType &Base, const MatrixType &Block, int ibegin, int jbegin,
+                            std::vector<Tri> &BaseTriplet)                           
+{
+
+    if(ibegin + Block.rows() > Base.rows() || jbegin + Block.cols() > Base.cols())
+    {
+        std::cout<<ibegin + Block.rows()<<"; "<<Base.rows()<<"; "<<jbegin + Block.cols()<<"; "<<Base.cols()<<std::endl;
+    }
 
     assert(ibegin + Block.rows() <= Base.rows() && jbegin + Block.cols() <= Base.cols());
 
