@@ -46,7 +46,7 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
         SQPLineSearchParams<ConfiguratorType> _pars;
         CostFunctional<ConfiguratorType> _costFunctional;
         CostFunctionalGradient<ConfiguratorType> _DcostFunctional;
-        MyObjectFactory<ConfiguratorType> _factory;
+        std::shared_ptr<EnergyFactory<ConfiguratorType>> _factory;
         BoundaryDOFS<ConfiguratorType> _boundaryDOFs;
         ProblemDOFs<ConfiguratorType> _problemDOFs;
         size_t _BFGS_reset;
@@ -66,7 +66,7 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
         SQPLineSearchSolver(const SQPLineSearchParams<ConfiguratorType> &pars,
                             const CostFunctional<ConfiguratorType> &costFunctional,
                             const CostFunctionalGradient<ConfiguratorType> &DcostFunctional,
-                            const MyObjectFactory<ConfiguratorType> &factory,
+                            const std::shared_ptr<EnergyFactory<ConfiguratorType>> factory,
                             const BoundaryDOFS<ConfiguratorType> &boundaryDOFs,
                             ProblemDOFs<ConfiguratorType> &problemDOFs,
                             size_t BFGS_reset = 10,
@@ -74,7 +74,7 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                             : SQPBaseSolver<ConfiguratorType>(pars),
                             _costFunctional(costFunctional),
                             _DcostFunctional(DcostFunctional),
-                            _factory(factory),
+                            _factory(std::move(factory)),
                             _boundaryDOFs(boundaryDOFs),
                             _problemDOFs(problemDOFs),
                             _BFGS_reset(BFGS_reset),
@@ -108,15 +108,15 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
 
             // Create the constraint, i.e. that derivative of the energy w.r.t. the vertex DOFs is zero
             VectorType Constraint;
-            _factory.produceDE_vertex(_problemDOFs, Constraint);
+            _factory->produceDE_vertex(_problemDOFs, Constraint);
 
             // Create Hessian only w.r.t. the vertex DOFs
             MatrixType D2E_vertex;
-            _factory.produceD2E_vertex(_problemDOFs, D2E_vertex);
+            _factory->produceD2E_vertex(_problemDOFs, D2E_vertex);
 
             // Create Hessian w.r.t. the vertex and fold DOFs
             MatrixType D2E_mix;
-            _factory.produceD2E_mix(_problemDOFs, D2E_mix);
+            _factory->produceD2E_mix(_problemDOFs, D2E_mix);
 
             VectorType DCostFunctional_val;
             _DcostFunctional.apply(_problemDOFs.getVertexDOFs(), DCostFunctional_val);
@@ -232,7 +232,7 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                 _boundaryDOFs.transformWithFoldDofsToReducedSpace(DCostFunctional_kplus1_val);
 
                 VectorType Constraint_kplus1;
-                _factory.produceDE_vertex(_problemDOFs, Constraint_kplus1);
+                _factory->produceDE_vertex(_problemDOFs, Constraint_kplus1);
                 _boundaryDOFs.transformToReducedSpace(Constraint_kplus1);
 
                 // Want to calculate \grad_{x} L(x_{k+1}) - \grad_{x} L(x_{k})
@@ -244,12 +244,12 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                 // Recalculate D2E_val
 
                 MatrixType D2E_vertex_kplus1;
-                _factory.produceD2E_vertex(_problemDOFs, D2E_vertex_kplus1);
+                _factory->produceD2E_vertex(_problemDOFs, D2E_vertex_kplus1);
                 _boundaryDOFs.transformRowColToReducedSpace(D2E_vertex_kplus1);
 
                 // Recalculate DE/dt:
                 MatrixType D2E_mix_kplus1;
-                _factory.produceD2E_mix(_problemDOFs, D2E_mix_kplus1);
+                _factory->produceD2E_mix(_problemDOFs, D2E_mix_kplus1);
                
                 _boundaryDOFs.transformRowToReducedSpace(D2E_mix_kplus1);
                 
@@ -377,7 +377,7 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
 
                 _costFunctional.apply(lineSearchDOFs.getVertexDOFs(),CostFunctional_val_linesearch);
                 
-                _factory.produceDE_vertex(lineSearchDOFs,Constraint_linesearch);
+                _factory->produceDE_vertex(lineSearchDOFs,Constraint_linesearch);
                 _boundaryDOFs.transformToReducedSpace(Constraint_linesearch);
 
                 constr_l1_linesearch = norm_l1(Constraint_linesearch);
@@ -411,7 +411,7 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                     lineSearchDOFs += e_k;
                     _costFunctional.apply(lineSearchDOFs.getVertexDOFs(),CostFunctional_val_linesearch);
                 
-                    _factory.produceDE_vertex(lineSearchDOFs,Constraint_linesearch);
+                    _factory->produceDE_vertex(lineSearchDOFs,Constraint_linesearch);
                     _boundaryDOFs.transformToReducedSpace(Constraint_linesearch);
 
                     constr_l1_linesearch = norm_l1(Constraint_linesearch);

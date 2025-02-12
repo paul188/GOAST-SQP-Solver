@@ -37,7 +37,7 @@ try{
     
 // load flat plate and prepare the arc crease
     TriMesh plate;
-    OpenMesh::IO::read_mesh(plate, "../../data/plate/paperCrissCross_coarse_coarse.ply");
+    OpenMesh::IO::read_mesh(plate, "../../data/plate/paperCrissCross.ply");
     MeshTopologySaver plateTopol( plate );
     std::cout<<"num vertices: "<<plateTopol.getNumVertices()<<std::endl;
     VectorType plateGeomRef, plateGeomDef, plateGeomInitial; // plateGeomRef is the geometry without the arc crease in the mesh
@@ -176,30 +176,96 @@ try{
     bdryMaskOpt.assign(uniqueEntries.begin(), uniqueEntries.end());
     std::sort(bdryMaskOpt.begin(), bdryMaskOpt.end());
 
-    auto foldDofs = FoldDofsArcLine<DefaultConfigurator>(plateTopol,plateGeomInitial, plateGeomRef, bdryMaskRef_1);
+    auto foldDofsPtr = std::make_shared<FoldDofsArcLine<DefaultConfigurator>>(plateTopol,plateGeomInitial, plateGeomRef, bdryMaskRef_1);
 
     std::vector<int> foldVertices;
-    foldDofs.getFoldVertices(foldVertices);
+    foldDofsPtr -> getFoldVertices(foldVertices);
 
-    auto DfoldDofs = FoldDofsArcLineGradient<DefaultConfigurator>(plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices);
-
-     // Test just applying it:
-    MatrixType Dest;
-    VectorType Dest_vec;
-    foldDofs.apply(VectorType::Zero(foldDofs.getNumDofs()), Dest_vec);
-    DfoldDofs.apply(VectorType::Zero(foldDofs.getNumDofs()), Dest);
-    MatrixType Dest_test(Dest.rows(),Dest.cols());
-    Dest_test.setZero();
-    if(Dest.isApprox(Dest_test)){
-        std::cout<<"FoldDofsGradient is just zero"<<std::endl;
+    std::cout<<"Boundary opt test 1: "<<std::endl;
+    for(int i = 0; i < bdryMaskOpt.size(); i++)
+    {
+        VecType coords;
+        if(bdryMaskOpt[i] < plateTopol.getNumVertices())
+        {
+            getXYZCoord<VectorType, VecType>(plateGeomInitial, coords,bdryMaskOpt[i]);
+            std::cout<<"x fixed: "<<i<<": "<<coords[0]<<", "<<coords[1]<<", "<<coords[2]<<std::endl;
+        }
+        else if(bdryMaskOpt[i] >= plateTopol.getNumVertices() && bdryMaskOpt[i] < 2*plateTopol.getNumVertices())
+        {
+            getXYZCoord<VectorType, VecType>(plateGeomRef, coords, bdryMaskOpt[i] - plateTopol.getNumVertices());
+            std::cout<<"y fixed: "<<i<<": "<<coords[0]<<", "<<coords[1]<<", "<<coords[2]<<std::endl;
+        }
+        else if(bdryMaskOpt[i] >= 2*plateTopol.getNumVertices())
+        {
+            getXYZCoord<VectorType, VecType>(plateGeomRef, coords, bdryMaskOpt[i] - 2*plateTopol.getNumVertices());
+            std::cout<<"z fixed: "<<i<<": "<<coords[0]<<", "<<coords[1]<<", "<<coords[2]<<std::endl;
+        }
     }
 
-    VectorValuedDerivativeTester<DefaultConfigurator> tester3(foldDofs, DfoldDofs, 0.005, Dest.rows());
-    VectorType translationDof2 = VectorType::Zero(foldDofs.getNumDofs());
-    translationDof2[0] = 0.5;
-    tester3.plotAllDirections(translationDof2, "deriv_test/foldDofsGradient");
+    std::cout<<"End boundary vertex test 1"<<std::endl;
 
-    }catch ( BasicException &el ){
+
+    auto DfoldDofsPtr = std::make_shared<FoldDofsArcLineGradient<DefaultConfigurator>>(plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices);
+
+    VectorType edge_weights = VectorType::Zero(plateTopol.getNumEdges());
+    foldDofsPtr->getEdgeWeights(edge_weights);
+
+    size_t nFoldDOFs = foldDofsPtr->getNumDofs();
+    size_t nVertexDOFs = 3*plateTopol.getNumVertices();
+
+    std::cout<<"Number of fold DOFs: "<<nFoldDOFs<<std::endl;
+    
+    SQPLineSearchParams<DefaultConfigurator> pars;
+    CostFunctional<DefaultConfigurator> costFunctional(foldVertices);
+    CostFunctionalGradient<DefaultConfigurator> DcostFunctional(plateTopol,foldVertices);
+    
+    RealType factor_membrane = 10000.0;
+    RealType factor_bending = 1.0;
+    RealType factor_gravity = 1.0;
+
+    VectorType factors(3);
+    factors[0] = factor_membrane;
+    factors[1] = factor_bending;
+    factors[2] = factor_gravity;
+
+    VectorType mass_distribution = VectorType::Zero(plateTopol.getNumVertices());
+
+    for(int i = 0; i < plateTopol.getNumVertices(); i++)
+    {
+        VecType coords;
+        getXYZCoord<VectorType, VecType>(plateGeomRef, coords, i);
+        if(std::abs(coords[1] - 1.0) < 1e-4)
+        {
+            mass_distribution[i] = 1.0;
+        }
+    }
+
+    VectorType gravity_dir(3);
+    gravity_dir << 0.0, 0.0, -1.0;
+
+    std::vector<VectorType> def_geometries, ref_geometries, fold_DOFs;
+    auto factory = std::make_shared<ElasticGravitationalFactory<DefaultConfigurator>>(factors, plateTopol, edge_weights, gravity_dir, mass_distribution);
+    BoundaryDOFS<DefaultConfigurator> boundaryDOFs(bdryMaskOpt, nVertexDOFs, nFoldDOFs);
+    // Create the degrees of freedom object
+    std::vector<RealType> deviations;
+    ProblemDOFs<DefaultConfigurator> problemDOFs(VectorType::Ones(1)*t_0, plateGeomDef, foldDofsPtr, DfoldDofsPtr);
+    SQPLineSearchSolver<DefaultConfigurator> solver(pars, costFunctional, DcostFunctional, std::move(factory), boundaryDOFs, problemDOFs, 20);
+    solver.solve(plateGeomRef, def_geometries, ref_geometries, fold_DOFs);
+
+    std::string filename;
+
+    for(int i = 0; i < def_geometries.size(); i++){
+        filename = "deformed/plate_" + std::to_string(i) + ".ply";
+        setGeometry(plate, def_geometries[i]);
+        OpenMesh::IO::write_mesh(plate,filename);
+        setGeometry(plate, ref_geometries[i]);
+        filename = "reference/plate_" + std::to_string(i) + ".ply";
+        OpenMesh::IO::write_mesh(plate, filename);
+    }
+
+  }catch ( BasicException &el ){
         std::cerr << std::endl << "ERROR!! CAUGHT FOLLOWING EXECEPTION: " << std::endl << el.getMessage() << std::endl << std::flush;
   }
+
+    return 0;
 }

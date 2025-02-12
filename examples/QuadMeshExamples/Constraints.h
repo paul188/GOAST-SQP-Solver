@@ -3,6 +3,47 @@
 #include <cmath>
 #include <goast/SQP/Utils/SparseMat.h>
 
+template<typename ConfiguratorType>
+struct constraint_weights{
+    typedef typename ConfiguratorType::RealType RealType;
+
+    RealType vertex_1 = 1.0;
+    RealType vertex_2 = 1.0;
+    RealType bdry_opt = 1.0;
+    RealType edge_vec_1 = 1.0;
+    RealType edge_vec_2 = 1.0;
+    RealType normal_1 = 1.0;
+    RealType normal_2 = 1.0;
+    RealType normal_3 = 1.0;
+    RealType ruling_0 = 1.0;
+    RealType ruling_1 = 1.0;
+    RealType ruling_2 = 1.0;
+    RealType dev = 1.0;
+    RealType fair_v = 1.0;
+    RealType fair_n = 1.0;
+    RealType fair_r = 1.0;
+
+    RealType operator[](const std::string& key) const {
+        if (key == "vertex_1") return vertex_1;
+        else if (key == "vertex_2") return vertex_2;
+        else if (key == "bdry_opt") return bdry_opt;
+        else if (key == "edge_vec_1") return edge_vec_1;
+        else if (key == "edge_vec_2") return edge_vec_2;
+        else if (key == "normal_1") return normal_1;
+        else if (key == "normal_2") return normal_2;
+        else if (key == "normal_3") return normal_3;
+        else if (key == "ruling_0") return ruling_0;
+        else if (key == "ruling_1") return ruling_1;
+        else if (key == "ruling_2") return ruling_2;
+        else if (key == "dev") return dev;
+        else if (key == "fair_v") return fair_v;
+        else if (key == "fair_n") return fair_n;
+        else if (key == "fair_r") return fair_r;
+        
+        throw std::runtime_error("Unknown constraint key: " + key);
+    }
+};
+
 class SkippingBdryHalfEdgeIterator{
     private:
         const QuadMeshTopologySaver &_quadTopol;
@@ -172,7 +213,7 @@ class VectorView{
        // and they are not determined by the constraints and further do not play a role in the fairness energy
 
         // VectorView with uninitialized vector
-        VectorView(QuadMeshTopologySaver &quadTopol, std::optional<const VectorType> vec = std::nullopt)
+        VectorView(const QuadMeshTopologySaver &quadTopol, std::optional<const VectorType> vec = std::nullopt)
             : _num_vertices(quadTopol.getNumVertices()),
               _num_faces(quadTopol.getNumFaces()),
               _num_edges(quadTopol.getNumEdges()),
@@ -180,8 +221,8 @@ class VectorView{
               _num_bdryHalfEdges(quadTopol.getBdryHalfEdges().size()),
               _num_bdryFaces(quadTopol.getBdryFaces().size()),                  
               _quadTopol(quadTopol)
-        {
 
+        {
             _idx["dummy_weights"] = 0;
             _idx["vertices"] = _num_vertices;
             _idx["weights"] = 4*_num_vertices;
@@ -193,16 +234,6 @@ class VectorView{
             _idx["reweighted_rulings_1"] = 8*_num_vertices + 9*_num_faces + 3*(_num_halfedges - _num_bdryHalfEdges);
             _idx["reweighted_rulings_2"] = 8*_num_vertices + 12*_num_faces - 3*_num_bdryFaces + 3*(_num_halfedges - _num_bdryHalfEdges);
             _idx["num_dofs"] = 8*_num_vertices + 15*_num_faces - 6*_num_bdryFaces + 3*(_num_halfedges - _num_bdryHalfEdges);
-        
-            if(vec.has_value()){
-                if(vec.value().size() != _idx["num_dofs"]){
-                    std::cerr << "Vector size does not match the number of dofs"<<std::endl;
-                }
-                _vec = vec.value();
-            }
-            else{
-                _vec = VectorType::Zero(_idx["num_dofs"]);
-            }
         }
 
 
@@ -352,11 +383,15 @@ class ConstraintView{
         typedef typename ConfiguratorType::RealType RealType;
         typedef typename ConfiguratorType::VectorType VectorType;
         typedef typename ConfiguratorType::SparseMatrixType MatrixType;
+        // used to store the boundary indices and corresponding values
+        typedef typename std::optional<std::pair<std::vector<int>, VectorType>> OptionalBoundaryData;
 
         std::map<std::string,size_t> _cons_idx;
     public:
-        ConstraintView(StripHandler<ConfiguratorType> &stripHandle, QuadMeshTopologySaver &quadTopol)
+        ConstraintView(StripHandler<ConfiguratorType> &stripHandle, const QuadMeshTopologySaver &quadTopol, OptionalBoundaryData bdryData = std::nullopt)
         {
+            
+            size_t num_bdryOpt = bdryData.has_value() ? bdryData.value().first.size() : 0;
 
             // index handling
             size_t num_vertices = quadTopol.getNumVertices();
@@ -385,7 +420,8 @@ class ConstraintView{
 
             _cons_idx["vertex_1"] = 0;
             _cons_idx["vertex_2"] = _cons_idx["vertex_1"] + num_constraints_vert_1;
-            _cons_idx["edge_vec_1"] = _cons_idx["vertex_2"] + num_constraints_vert_2;
+            _cons_idx["bdry_opt"] = _cons_idx["vertex_2"] + num_constraints_vert_2;
+            _cons_idx["edge_vec_1"] = _cons_idx["bdry_opt"] + num_bdryOpt;
             _cons_idx["edge_vec_2"] = _cons_idx["edge_vec_1"] + num_constraints_edge_vec_1;
             _cons_idx["normal_1"] = _cons_idx["edge_vec_2"] + num_constraints_edge_vec_2;
             _cons_idx["normal_2"] = _cons_idx["normal_1"] + num_constraints_normal_1;
@@ -399,6 +435,34 @@ class ConstraintView{
             _cons_idx["fair_r"] = _cons_idx["fair_n"] + num_constraints_fair_n;
             _cons_idx["num_cons"] = _cons_idx["fair_r"] + num_constraints_fair_r;
         }
+
+        void extend_weights(const constraint_weights<ConfiguratorType> &weights, MatrixType &Dest)
+        {
+            size_t num_constraints = _cons_idx["num_cons"];
+            if(Dest.rows() != num_constraints || Dest.cols() != num_constraints)
+            {
+                Dest.resize(num_constraints,num_constraints);
+            }
+
+            std::vector<Eigen::Triplet<RealType>> triplets;
+            triplets.reserve(num_constraints);
+
+            std::vector<std::pair<std::string, std::string>> constraints = {
+                {"vertex_1", "vertex_2"}, {"vertex_2", "bdry_opt"}, {"bdry_opt", "edge_vec_1"},
+                {"edge_vec_1", "edge_vec_2"}, {"edge_vec_2", "normal_1"}, {"normal_1", "normal_2"},
+                {"normal_2", "normal_3"}, {"normal_3", "ruling_0"}, {"ruling_0", "ruling_1"},
+                {"ruling_1", "ruling_2"}, {"ruling_2", "dev"}, {"dev", "fair_v"},
+                {"fair_v", "fair_n"}, {"fair_n", "fair_r"}, {"fair_r", "num_cons"}
+            };
+
+            for (const auto& [start, end] : constraints) {
+                for (int i = _cons_idx[start]; i < _cons_idx[end]; i++) {
+                    triplets.emplace_back(i, i, weights[start]);  
+                }
+            }
+
+            Dest.setFromTriplets(triplets.begin(), triplets.end());
+        }
 };
 
 template <typename ConfiguratorType>
@@ -408,9 +472,11 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
     typedef typename ConfiguratorType::VecType VecType;
     typedef typename ConfiguratorType::SparseMatrixType MatrixType;
     typedef typename ConfiguratorType::FullMatrixType FullMatrixType;
+    // used to store the boundary indices and corresponding values
+    typedef typename std::optional<std::pair<std::vector<int>, VectorType>> OptionalBoundaryData;
 
     private:
-        QuadMeshTopologySaver &_quadTopol;
+        const QuadMeshTopologySaver &_quadTopol;
         size_t _num_vertices;
         size_t _num_faces;
         size_t _num_edges;
@@ -427,23 +493,36 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
         // as well as the constraint gradients into the matrix
         mutable ConstraintView<ConfiguratorType> _cons_view;
 
-        const std::vector<int> &_bdryMask;
+        // boundary data, i.e. boundary indices in _bdryMask
+        // and the prescribed point vectors in _bdryVals
+        // the boundary mask is ordered as: first x, then y, then z. All x indices ordered according to point indices.
+        OptionalBoundaryData _bdryData;
 
     public:
-        Constraint(QuadMeshTopologySaver &quadTopol, 
-                   StripHandler<ConfiguratorType> &stripHandle):
+        Constraint(const QuadMeshTopologySaver &quadTopol, 
+                   StripHandler<ConfiguratorType> &stripHandle,
+                   OptionalBoundaryData bdryData = std::nullopt):
               _quadTopol(quadTopol),
               _num_vertices(quadTopol.getNumVertices()),
               _num_faces(quadTopol.getNumFaces()),
               _num_edges(quadTopol.getNumEdges()),
               _num_halfedges(2*_num_edges),
               _stripHandle(stripHandle),
-              _cons_view(_stripHandle, _quadTopol),
+              _cons_view(_stripHandle, _quadTopol, bdryData),
               _view(_quadTopol),
               _it_face(_quadTopol),
-              _it_he(_quadTopol)
+              _it_he(_quadTopol),
+              _bdryData(bdryData)
         {
             _cons_idx = _cons_view._cons_idx;
+
+            if(_bdryData.has_value())
+            {
+                if(3*_bdryData.value().first.size() != _bdryData.value().second.size())
+                {
+                    std::cerr << "Boundary data does not match in size"<<std::endl;
+                }
+            }
         }
     
     void get_constraint_vertex_1(const VectorType &vars, VectorType &Dest)const {
@@ -475,6 +554,30 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
             Dest.segment(_cons_idx["vertex_2"] + 3*i, 3) = _view.reweighted_vertex(i) - _view.vertex_weight(i)*_view.vertex(i); 
         }
 
+    }
+
+    void get_constraint_bdry_opt(const VectorType &vars, VectorType &Dest) const{
+        
+        size_t num_constraints = _cons_idx["num_cons"];
+
+        if(Dest.size() != num_constraints){
+            Dest.resize(num_constraints);
+        }
+
+        if(!_bdryData.has_value())
+        {
+            // boundary mask is not set, so just return
+            return; 
+        }
+
+        _view.set_vector(vars);
+
+        for(int i = 0; i < _bdryData.value().first.size(); i++){
+            auto vertex_now = _view.vertex(_bdryData.value().first[i]);
+            auto vertex_pos = _bdryData.value().second.segment(3*i,3);
+            auto vec = vertex_now - vertex_pos;
+            Dest[_cons_idx["bdry_opt"] + i] = vec.dot(vec);
+        }
     }
 
     void get_constraint_edge_vec_1(const VectorType &vars, VectorType &Dest)const {
@@ -797,6 +900,7 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
         Dest.setZero();
         get_constraint_vertex_1(vars, Dest);
         get_constraint_vertex_2(vars, Dest);
+        get_constraint_bdry_opt(vars, Dest);
         get_constraint_edge_vec_1(vars, Dest);
         get_constraint_edge_vec_2(vars, Dest);
         get_constraint_normal_1(vars, Dest);
@@ -819,6 +923,8 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
     typedef typename ConfiguratorType::VecType VecType;
     typedef typename ConfiguratorType::SparseMatrixType MatrixType;
     typedef typename ConfiguratorType::FullMatrixType FullMatrixType;
+     // used to store the boundary indices and corresponding values
+    typedef typename std::optional<std::pair<std::vector<int>, VectorType>> OptionalBoundaryData;
 
     private:
         typedef typename std::vector<Eigen::Triplet<RealType>> TripletVectorType;
@@ -833,6 +939,8 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
         mutable SkippingBdryHalfEdgeIterator _it_he;
         mutable StripHandler<ConfiguratorType> _stripHandle;
 
+        OptionalBoundaryData _bdryData;
+
         mutable std::map<std::string,size_t> _cons_idx;
 
         // Serves to access the current vector of input variables at the right positions
@@ -845,7 +953,8 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
 
     public:
         ConstraintGrad(QuadMeshTopologySaver &quadTopol, 
-                   StripHandler<ConfiguratorType> &stripHandle):
+                   StripHandler<ConfiguratorType> &stripHandle,
+                   OptionalBoundaryData bdryData = std::nullopt):
           _quadTopol(quadTopol),
           _num_vertices(quadTopol.getNumVertices()),
           _num_faces(quadTopol.getNumFaces()),
@@ -855,11 +964,20 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
           _num_bdry_halfedges(quadTopol.getNumBdryHalfEdges()),
           _view(quadTopol),
           _stripHandle(stripHandle),
-          _cons_view(stripHandle, quadTopol),
+          _cons_view(stripHandle, quadTopol, bdryData),
           _it_face(quadTopol),
-          _it_he(quadTopol)
+          _it_he(quadTopol),
+          _bdryData(bdryData)
         {
             _cons_idx = _cons_view._cons_idx;
+
+            if(_bdryData.has_value())
+            {
+                if(3*_bdryData.value().first.size() != _bdryData.value().second.size())
+                {
+                    std::cerr << "Boundary data does not match in size"<<std::endl;
+                }
+            }
         }
 
         void get_constraintgrad_vertex_1(const VectorType &vars, MatrixType &Dest) const {
@@ -931,6 +1049,52 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
                 assignSparseMatBlockTriplet(Id,_cons_idx["vertex_2"] +3*i,3*i + _view._idx["reweighted_vertices"],triplet);
             }
 
+        }
+
+        void get_constraintgrad_bdry_opt(const VectorType &vars, MatrixType &Dest) const{
+            
+            size_t num_dofs = _view._idx["num_dofs"];
+            size_t num_constraints = _cons_idx["num_cons"];
+
+            if(Dest.rows() != num_constraints || Dest.cols() != num_dofs){
+                Dest.resize(num_constraints, num_dofs);
+            }
+
+            if(!_bdryData.has_value())
+            {
+                // boundary mask is not set, so just return
+                return; 
+            }
+
+            _view.set_vector(vars);
+
+            std::vector<Eigen::Triplet<RealType>> triplet;
+
+            for(int i = 0; i < _bdryData.value().first.size(); i++){
+                // Set the derivatives w.r.t. the normals
+                auto vertex_now = _view.vertex(_bdryData.value().first[i]);
+                auto vertex_pos = _bdryData.value().second.segment(3*i,3);
+                VectorType vec = vertex_now - vertex_pos;
+                MatrixType vec_1 = vectorToSparseMat(vec,true);
+                assignSparseBlockInplace(Dest,2.0*vec_1, _cons_idx["bdry_opt"] + i,_view._idx["vertex"] + 3*_bdryData.value().first[i],triplet);
+            }
+        }
+
+        void get_constraintgrad_bdry_opt_triplet(TripletVectorType &triplet) const{
+            
+            if(!_bdryData.has_value())
+            {
+                // boundary mask is not set, so just return
+                return; 
+            }
+
+            for(int i = 0; i < _bdryData.value().first.size(); i++){
+                // Set the derivatives w.r.t. the normals
+                auto vertex_now = _view.vertex(_bdryData.value().first[i]);
+                auto vertex_pos = _bdryData.value().second.segment(3*i,3);
+                VectorType vec = vertex_now - vertex_pos;
+                assignSparseVecBlockTriplet(2.0*vec, _cons_idx["bdry_opt"] + i,_view._idx["vertex"] + 3*_bdryData.value().first[i],triplet);
+            }
         }
 
         void get_constraintgrad_edge_vec_1(const VectorType &vars, MatrixType &Dest)const {
@@ -1798,8 +1962,12 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
 
         void apply(const VectorType &vars, MatrixType &Dest) const override
         {
-            if(Dest.rows() != _cons_idx["num_cons"] || Dest.cols() != _view._idx["num_dofs"]){
-                Dest.resize(_cons_idx["num_cons"], _view._idx["num_dofs"]);
+            size_t num_dofs = _view._idx["num_dofs"];
+            // Change num_constraints back later !
+            size_t num_constraints = _cons_idx["num_cons"];
+
+            if(Dest.rows() != num_constraints || Dest.cols() != num_dofs){
+                Dest.resize(num_constraints, num_dofs);
             }
 
             Dest.setZero();
@@ -1808,6 +1976,7 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
             TripletVectorType triplet;
             size_t num_vertex_1_triplets = 2*_num_vertices;
             size_t num_vertex_2_triplets = 21*_num_vertices;
+            size_t num_bdry_opt_triplets = _bdryData.has_value() ? 3*_bdryData.value().first.size() : 0;
             size_t num_edge_vec_1_triplets = 57*_num_faces;
             size_t num_edge_vec_2_triplets = 57*_num_faces;
             size_t num_normal_1_triplets = 6*_num_faces;
@@ -1818,11 +1987,12 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
             size_t num_ruling_2_triplets = 39*(_num_faces - _num_bdry_faces);
             size_t num_dev_triplets = 18*(_num_faces - _num_bdry_faces);
             size_t num_fair_v_triplets = 27*_stripHandle.num_vertexStrips();
-            size_t num_fair_n_tripletr = 27*_stripHandle.num_faceStrips();
+            size_t num_fair_n_triplets = 27*_stripHandle.num_faceStrips();
             size_t num_fair_r_triplets = 27*_stripHandle.num_halfedgeStrips();
 
             triplet.reserve(num_vertex_1_triplets +
                             num_vertex_2_triplets +
+                            num_bdry_opt_triplets +
                             num_edge_vec_1_triplets +
                             num_edge_vec_2_triplets +
                             num_normal_1_triplets +
@@ -1833,12 +2003,13 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
                             num_ruling_2_triplets +
                             num_dev_triplets +
                             num_fair_v_triplets +
-                            num_fair_n_tripletr +
+                            num_fair_n_triplets +
                             num_fair_r_triplets);
 
             // 2*num_vertices for vertex_2 constraint
             get_constraintgrad_vertex_1_triplet(triplet);
             get_constraintgrad_vertex_2_triplet(triplet);
+            get_constraintgrad_bdry_opt_triplet(triplet);
             get_constraintgrad_edge_vec_1_triplet(triplet);
             get_constraintgrad_edge_vec_2_triplet(triplet);
             get_constraintgrad_normal_1_triplet(triplet);
@@ -1871,7 +2042,6 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
         12. fair_v done
         13. fair_n
         14. fair_r
-        */
         void get_constraintgrads(const VectorType &vars, MatrixType &Dest){
             _view.set_vector(vars);
 
@@ -2147,4 +2317,5 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
                 assignSparseBlockInplace(Dest,Id,_cons_idx["fair_r"] + 3*i,3*_it_he.to_nbdry(heh_2) + _view._idx["rulings"],triplet);
             }
         }
+*/
 };

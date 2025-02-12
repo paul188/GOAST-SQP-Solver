@@ -135,7 +135,7 @@ try{
     factors[0] = factor_membrane;
     factors[1] = factor_bending;
 
-    MyObjectFactory<DefaultConfigurator> factory(factors, plateTopol, edge_weights);
+    auto factory = std::make_shared<ElasticEnergyFactory<DefaultConfigurator>>(factors, plateTopol, edge_weights);
     BoundaryDOFS<DefaultConfigurator> boundaryDOFs(bdryMaskOpt, nVertexDOFs, nFoldDOFs);
     // Create the degrees of freedom object
     ProblemDOFs<DefaultConfigurator> problemDOFs(VectorType::Zero(nFoldDOFs), plateGeomDef, foldDofsPtr, DfoldDofsPtr);

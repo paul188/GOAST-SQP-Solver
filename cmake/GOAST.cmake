@@ -72,7 +72,7 @@ endif (GOAST_WITH_OPENMP)
 ################################################################################
 # Optional libraries
 ################################################################################
-option(GOAST_WITH_TINYSPLINE "Enable TinySpline interface within GOAST" ON)
+option(GOAST_WITH_TINYSPLINE "Enable TinySpline interface within GOAST" OFF)
 option(GOAST_WITH_IPOPT "Enable Ipopt interface withing GOAST" OFF)
 option(GOAST_WITH_ADOLC "Use the ADOL-C autodiff package" OFF)
 option(GOAST_WITH_VTK "Use the VTK library within GOAST" OFF)

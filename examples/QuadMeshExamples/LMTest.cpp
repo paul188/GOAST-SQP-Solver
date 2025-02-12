@@ -1,4 +1,5 @@
 #include "Levenberg_Marquardt.h"
+#include "Constraints.h"
 #include <goast/Core.h>
 #include <random>
 #include <iostream>
@@ -86,7 +87,9 @@ int main()
     VectorType Dest;
     Dest.resize(2);
     VectorType init = VectorType::Ones(2);
-    lm.solve(init, Dest);
+    MatrixType W(points.size()/2, points.size()/2);
+    W.setIdentity();
+    lm.solve(init, Dest, W);
 
     std::cout<<"Line parameters: "<<Dest[0]<<" "<<Dest[1]<<std::endl;
     return 0;

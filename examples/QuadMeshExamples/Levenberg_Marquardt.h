@@ -45,15 +45,15 @@ class LMAlgorithm{
                     _num_constraints(num_constraints),
                     _num_dofs(num_dofs){}
 
-        void solve(const VectorType &plateGeomInit, VectorType &plateGeomDest){
+        void solve(const VectorType &plateGeomInit, VectorType &plateGeomDest, MatrixType &W){
             VectorType x_k = plateGeomInit;
             VectorType f_k;
             _f.apply(x_k, f_k);
-            RealType F_k = 0.5*f_k.dot(f_k);
+            RealType F_k = 0.5*f_k.dot(W*f_k);
             MatrixType Df_k;
             _Df.apply(x_k, Df_k);
-            VectorType g_k = Df_k.transpose()*f_k;
-            MatrixType Hf_k = Df_k.transpose()*Df_k;
+            VectorType g_k = Df_k.transpose()*W*f_k;
+            MatrixType Hf_k = Df_k.transpose()*W*Df_k;
 
             VectorType x_kplus1 = VectorType::Zero(_num_dofs);
             VectorType f_kplus1 = VectorType::Zero(_num_constraints);
@@ -81,9 +81,9 @@ class LMAlgorithm{
                 << " | F_k: " << std::setprecision(12)<< std::setw(10) << 0.5*f_k.dot(f_k)
                 << " | g_k: " << std::setprecision(12)<<std::setw(10)<<g_k.template lpNorm<Eigen::Infinity>()<<std::endl;
 
-                F_k = 0.5*f_k.dot(f_k);
-                g_k = Df_k.transpose()*f_k;
-                Hf_k = Df_k.transpose()*Df_k;
+                F_k = 0.5*f_k.dot(W*f_k);
+                g_k = Df_k.transpose()*W*f_k;
+                Hf_k = Df_k.transpose()*W*Df_k;
 
                 LinearSolver<ConfiguratorType> directSolver;
                 directSolver.prepareSolver(Hf_k + _pars.mu*Id);
@@ -97,7 +97,7 @@ class LMAlgorithm{
 
                 x_kplus1 = x_k + step;
                 _f.apply(x_kplus1, f_kplus1);
-                F_kplus1 = 0.5*f_kplus1.dot(f_kplus1);
+                F_kplus1 = 0.5*f_kplus1.dot(W*f_kplus1);
 
                 RealType DeltaL = 0.5*step.transpose().dot(_pars.mu*step - g_k);
                 _pars.rho = (F_k - F_kplus1)/DeltaL;
@@ -109,7 +109,7 @@ class LMAlgorithm{
                     _pars.nu = 2.0;
                     _f.apply(x_k, f_k);
                     _Df.apply(x_k, Df_k);
-                    g_k = Df_k.transpose()*f_k;
+                    g_k = Df_k.transpose()*W*f_k;
 
                     if(g_k.template lpNorm<Eigen::Infinity>() <= _pars.eps_1)
                     {
@@ -118,8 +118,8 @@ class LMAlgorithm{
                         return;
                     }
 
-                    F_k = 0.5*f_k.dot(f_k);
-                    Hf_k = Df_k.transpose()*Df_k;
+                    F_k = 0.5*f_k.dot(W*f_k);
+                    Hf_k = Df_k.transpose()*W*Df_k;
                     _pars.iter++;
                 }
                 else{

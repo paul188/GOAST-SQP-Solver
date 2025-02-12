@@ -20,9 +20,11 @@ add_executable(bendingFoldParamDirichlet SingleArcCrease/bendingFoldParamDirichl
 add_executable(bendingSkewedCompression SkewedCompression/bendingSkewedCompression.cpp)
 add_executable(bendingSmallArc SmallArc/bendingSmallArc.cpp)
 add_executable(bendingSmallArcInterpolation SmallArc/bendingSmallArcInterpolation.cpp)
+add_executable(FoldDofsCrossTest FoldOptimization/FoldDofsCrossTest.cpp)
 #add_executable(SimpleFoldOptimization2 FoldOptimization/SimpleFoldOptimization2.cpp)
 #add_executable(SimpleFoldOptimization FoldOptimization/SimpleFoldOptimization.cpp)
 #add_executable(QuadMeshTest2 QuadMeshExamples/QuadMeshTest2.cpp)
+add_executable(ArcFoldOptimization FoldOptimization/ArcFoldOptimization.cpp)
 add_executable(Tester2 FoldOptimization/Tester2.cpp)
 add_executable(ToyExampleCross FoldOptimization/ToyExampleCross.cpp)
 add_executable(ToyExample FoldOptimization/ToyExample.cpp)
@@ -32,6 +34,9 @@ add_executable(ConstraintTest QuadMeshExamples/ConstraintTest.cpp)
 add_executable(LMTest QuadMeshExamples/LMTest.cpp)
 add_executable(ToyExampleDevelopability QuadMeshExamples/ToyExampleDevelopability.cpp)
 # link libraries
+target_link_libraries(FoldDofsCrossTest PRIVATE GOAST::GOAST)
+
+target_link_libraries(ArcFoldOptimization PRIVATE GOAST::GOAST)
 
 target_link_libraries(ToyExampleDevelopability PRIVATE GOAST::GOAST)
 

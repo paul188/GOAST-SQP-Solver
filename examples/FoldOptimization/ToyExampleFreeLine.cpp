@@ -142,7 +142,7 @@ try{
     factors[0] = factor_membrane;
     factors[1] = factor_bending;
 
-    MyObjectFactory<DefaultConfigurator> factory(factors, plateTopol, edge_weights);
+    auto factory = std::make_shared<ElasticEnergyFactory<DefaultConfigurator>>(factors, plateTopol, edge_weights);
     BoundaryDOFS<DefaultConfigurator> boundaryDOFs(bdryMaskOpt, nVertexDOFs, nFoldDOFs);
     // Create the degrees of freedom object
     std::vector<RealType> deviations;
@@ -160,21 +160,6 @@ try{
         filename = "reference/plate_" + std::to_string(i) + ".ply";
         OpenMesh::IO::write_mesh(plate, filename);
     }
-
-    std::ofstream outFile("output_mu_nonmonotone.txt");
-    if (!outFile) {
-        std::cerr << "Error: Could not open the file for writing.\n";
-        return 1;
-    }
-
-    // Write the vector to the file
-    for (RealType value : deviations) {
-        outFile << value << "\n"; // Write each value on a new line
-    }
-
-    // Close the file
-    outFile.close();
-    std::cout<<"File written successfully"<<std::endl;
 
   } 
   catch ( BasicException &el ){
