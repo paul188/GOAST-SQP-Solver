@@ -176,7 +176,7 @@ try{
     bdryMaskOpt.assign(uniqueEntries.begin(), uniqueEntries.end());
     std::sort(bdryMaskOpt.begin(), bdryMaskOpt.end());
 
-    auto foldDofsPtr = std::make_shared<FoldDofsArcLine<DefaultConfigurator>>(plateTopol,plateGeomInitial, plateGeomRef, bdryMaskRef_1);
+    auto foldDofsPtr = std::make_shared<FoldDofsArcLine<DefaultConfigurator>>(plateTopol,plateGeomInitial, plateGeomRef, bdryMaskRef);
 
     std::vector<int> foldVertices;
     foldDofsPtr -> getFoldVertices(foldVertices);
@@ -205,7 +205,7 @@ try{
     std::cout<<"End boundary vertex test 1"<<std::endl;
 
 
-    auto DfoldDofsPtr = std::make_shared<FoldDofsArcLineGradient<DefaultConfigurator>>(plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices);
+    auto DfoldDofsPtr = std::make_shared<FoldDofsArcLineGradient<DefaultConfigurator>>(plateTopol, bdryMaskRef, plateGeomInitial, foldVertices);
 
     VectorType edge_weights = VectorType::Zero(plateTopol.getNumEdges());
     foldDofsPtr->getEdgeWeights(edge_weights);

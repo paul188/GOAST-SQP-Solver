@@ -176,12 +176,12 @@ try{
     bdryMaskOpt.assign(uniqueEntries.begin(), uniqueEntries.end());
     std::sort(bdryMaskOpt.begin(), bdryMaskOpt.end());
 
-    auto foldDofs = FoldDofsArcLine<DefaultConfigurator>(plateTopol,plateGeomInitial, plateGeomRef, bdryMaskRef_1);
+    auto foldDofs = FoldDofsArcLine<DefaultConfigurator>(plateTopol,plateGeomInitial, plateGeomRef, bdryMaskRef);
 
     std::vector<int> foldVertices;
     foldDofs.getFoldVertices(foldVertices);
 
-    auto DfoldDofs = FoldDofsArcLineGradient<DefaultConfigurator>(plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices);
+    auto DfoldDofs = FoldDofsArcLineGradient<DefaultConfigurator>(plateTopol, bdryMaskRef, plateGeomInitial, foldVertices);
 
      // Test just applying it:
     MatrixType Dest;
@@ -194,10 +194,20 @@ try{
         std::cout<<"FoldDofsGradient is just zero"<<std::endl;
     }
 
-    VectorValuedDerivativeTester<DefaultConfigurator> tester3(foldDofs, DfoldDofs, 0.005, Dest.rows());
+    setGeometry(plate,Dest_vec);
+    OpenMesh::IO::write_mesh(plate, "plate0.ply");
+
+    Dest_vec.setZero();
     VectorType translationDof2 = VectorType::Zero(foldDofs.getNumDofs());
     translationDof2[0] = 0.5;
-    tester3.plotAllDirections(translationDof2, "deriv_test/foldDofsGradient");
+    foldDofs.apply(translationDof2, Dest_vec);
+
+    setGeometry(plate,Dest_vec);
+    OpenMesh::IO::write_mesh(plate, "plate1.ply");
+
+
+    //VectorValuedDerivativeTester<DefaultConfigurator> tester3(foldDofs, DfoldDofs, 0.005, Dest.rows());
+    //tester3.plotAllDirections(translationDof2, "deriv_test/foldDofsGradient");
 
     }catch ( BasicException &el ){
         std::cerr << std::endl << "ERROR!! CAUGHT FOLLOWING EXECEPTION: " << std::endl << el.getMessage() << std::endl << std::flush;
