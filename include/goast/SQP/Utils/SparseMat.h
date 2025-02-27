@@ -383,6 +383,45 @@ void printMatrixToFile(const Eigen::MatrixXd& matrix, const std::string& filenam
     std::cout << "Matrix written to " << filename << std::endl;
 }
 
+void saveEigenVectorNpy(const Eigen::VectorXd& vec, const std::string& filename) {
+    std::ofstream file(filename, std::ios::binary);
+    if (!file) {
+        std::cerr << "Error: Cannot open file for writing\n";
+        return;
+    }
+
+    int32_t rows = vec.size();
+    int32_t cols = 1;  // Since it's a vector, we store it as a column matrix
+
+    // Write rows and cols as 32-bit integers
+    file.write(reinterpret_cast<char*>(&rows), sizeof(int32_t));
+    file.write(reinterpret_cast<char*>(&cols), sizeof(int32_t));
+
+    // Write the vector data (double values)
+    file.write(reinterpret_cast<const char*>(vec.data()), rows * sizeof(double));
+
+    file.close();
+    std::cout << "Saved vector to " << filename << "\n";
+}
+
+
+void saveDenseEigenMatrixToNpy(const Eigen::MatrixXd &matrix, const std::string &filename) {
+    std::ofstream file(filename, std::ios::binary);
+    if (!file) {
+        throw std::runtime_error("Cannot open file for writing.");
+    }
+    
+    // Write dimensions
+    int rows = matrix.rows();
+    int cols = matrix.cols();
+    file.write(reinterpret_cast<const char*>(&rows), sizeof(int));
+    file.write(reinterpret_cast<const char*>(&cols), sizeof(int));
+
+    // Write data
+    file.write(reinterpret_cast<const char*>(matrix.data()), rows * cols * sizeof(double));
+    file.close();
+}
+
 void assignSparseBlockWithTriplet(std::vector<Tri> &tripletList, const MatrixType &Block, int ibegin, int jbegin)
 {
     // First, assemble Triplet List of the Block

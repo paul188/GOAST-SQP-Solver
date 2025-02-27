@@ -7,9 +7,6 @@
 
 int main()
 {
-
-
-
     using VectorType = typename DefaultConfigurator::VectorType;
     using MatrixType = typename DefaultConfigurator::SparseMatrixType;
     using VecType = typename DefaultConfigurator::VecType;
@@ -70,10 +67,13 @@ int main()
         ConstraintView<DefaultConfigurator> cons_view(stripHandle, quadTopol, bdryData);
 
         LMAlgorithm<DefaultConfigurator> lm(pars, constraint, constraintGrad, view._idx["num_dofs"], cons_view._cons_idx["num_cons"]);
+        
+        // CHOOSE GOOD INITIAL GUESS
         VectorType init = VectorType::Zero(view._idx["num_dofs"]);
         init.segment(view._idx["vertices"],3*num_vertices) = geom;
+        init.segment(view._idx["reweighted_vertices"],3*num_vertices) = geom;
         init.segment(view._idx["weights"],num_vertices) = VectorType::Ones(num_vertices);
-        init.segment(view._idx["normals"], 3*num_faces) = VectorType::Ones(3*num_faces);
+        
         VectorType Dest;
         MatrixType Weights;
         cons_view.extend_weights(weights, Weights);

@@ -1,3 +1,8 @@
+#define EIGEN_USE_BLAS
+#define EIGEN_USE_LAPACK
+
+#define OPENBLAS_VERBOSE 1
+
 #include <iostream>
 #include <chrono>
 #include <ctime>
@@ -10,6 +15,7 @@
 #include <goast/Core.h>
 #include <goast/DiscreteShells.h>
 #include <typeinfo>
+#include <math.h>
 
 //==============================================================================================================
 typedef DefaultConfigurator::VectorType VectorType;
@@ -26,15 +32,17 @@ typedef DefaultConfigurator::RealType RealType;
  *
  */
 
-
 int main(int argc, char *argv[])
 {
+
 try{
 
     std::cerr << "=================================================================================" << std::endl;
     std::cerr << "ARC FOLD OPTIMIZATION" << std::endl;
     std::cerr << "=================================================================================" << std::endl << std::endl;
-    
+
+    Eigen::setNbThreads(8);
+
 // load flat plate and prepare the arc crease
     TriMesh plate;
     OpenMesh::IO::read_mesh(plate, "../../data/plate/paperCrissCross.ply");
@@ -127,13 +135,31 @@ try{
     setGeometry(plate,plateGeomRef);
     OpenMesh::IO::write_mesh(plate,"reference_mesh.ply");
 
-    // initialize deformed geometry
-    plateGeomDef = plateGeomRef;
+    //getGeometry(plate, plateGeomDef);
+
+    // Next, enforce Dirichlet boundary conditions on the boundary
+    // First, calculate the gridsize
+
+    RealType grid_width_size = 0;
+    RealType width_number = 0;
+    for(int i = 0; i < plateTopol.getNumVertices(); i++)
+    {
+        VecType coords;
+        getXYZCoord<VectorType, VecType>(plateGeomInitial, coords, i);
+        if(std::abs(coords[1]) < 1e-6)
+        {
+            width_number += 1;
+        }
+    }
+
+    grid_width_size = 1.0/(width_number-1);
+
     for(int i = 0; i < plateTopol.getNumVertices(); i++){
         VecType coords;
         getXYZCoord<VectorType, VecType>(plateGeomInitial, coords, i);
-        if((std::abs(coords[0]) < 1e-6) && (std::abs(coords[1]) <= 0.25))
+        if((std::abs(coords[0]) < grid_width_size + 1e-6) && (std::abs(coords[1]) <= 0.25))
         {
+            coords[2] += 0.1;
             if(std::abs(coords[1] - 0.25) < 1e-6 || std::abs(coords[1]) < 1e-6)
             {
                 bdryMaskOpt_1.push_back(i);
@@ -141,13 +167,17 @@ try{
             else{
                 bdryMaskOpt_2.push_back(i);
             }
-            coords[0] += 1.0/(2*M_PI);
-            coords[2] += 0.1;
+            if(coords[0] < 1e-6)
+            {
+                coords[2] += grid_width_size;
+            }
+            coords[0] = 1.0/(2*M_PI);
             setXYZCoord<VectorType, VecType>(plateGeomDef, coords, i);
             continue;
         }
-        if((std::abs(coords[0] - 1.0) < 1e-6) && (std::abs(coords[1]) <= 0.25))
+        if((std::abs(coords[0] - 1.0) < grid_width_size + 1e-6) && (std::abs(coords[1]) <= 0.25))
         {
+            coords[2] += 0.1;
             if(std::abs(coords[1] - 0.25) < 1e-6 || std::abs(coords[1]) < 1e-6)
             {
                 bdryMaskOpt_1.push_back(i);
@@ -155,12 +185,33 @@ try{
             else{
                 bdryMaskOpt_2.push_back(i);
             }
-            coords[0] -= 1.0/(2*M_PI);
-            coords[2] += 0.1;
+            if(coords[0] > 1.0 - 1e-6)
+            {
+                coords[2] += grid_width_size;
+            }
+            coords[0] = 1.0 - 1.0/(2*M_PI);
             setXYZCoord<VectorType, VecType>(plateGeomDef, coords, i);
             continue;
         }
     }
+
+    /*
+    for(int i = 0; i < plateTopol.getNumVertices(); i++)
+    {
+        VecType coords;
+        getXYZCoord<VectorType, VecType>(plateGeomDef,coords,i);
+        if(true)//coords[1] <= 0.25 +1e-6)
+        {
+            coords[2] = -1.0/(2.0*M_PI)*sin(coords[0]*M_PI);
+            coords[0] = 0.5 - 1.0/(2.0*M_PI)*cos(coords[0]*M_PI);
+            setXYZCoord<VectorType, VecType>(plateGeomDef,coords,i);
+        }
+    }*/
+
+    setGeometry(plate, plateGeomDef);
+    OpenMesh::IO::write_mesh(plate, "deformed_mesh_before_smoothing.ply");
+
+    smoother.apply(plateGeomDef,plateGeomDef);
 
     setGeometry(plate,plateGeomDef);
     OpenMesh::IO::write_mesh(plate,"deformed_mesh.ply");
@@ -181,30 +232,6 @@ try{
     std::vector<int> foldVertices;
     foldDofsPtr -> getFoldVertices(foldVertices);
 
-    std::cout<<"Boundary opt test 1: "<<std::endl;
-    for(int i = 0; i < bdryMaskOpt.size(); i++)
-    {
-        VecType coords;
-        if(bdryMaskOpt[i] < plateTopol.getNumVertices())
-        {
-            getXYZCoord<VectorType, VecType>(plateGeomInitial, coords,bdryMaskOpt[i]);
-            std::cout<<"x fixed: "<<i<<": "<<coords[0]<<", "<<coords[1]<<", "<<coords[2]<<std::endl;
-        }
-        else if(bdryMaskOpt[i] >= plateTopol.getNumVertices() && bdryMaskOpt[i] < 2*plateTopol.getNumVertices())
-        {
-            getXYZCoord<VectorType, VecType>(plateGeomRef, coords, bdryMaskOpt[i] - plateTopol.getNumVertices());
-            std::cout<<"y fixed: "<<i<<": "<<coords[0]<<", "<<coords[1]<<", "<<coords[2]<<std::endl;
-        }
-        else if(bdryMaskOpt[i] >= 2*plateTopol.getNumVertices())
-        {
-            getXYZCoord<VectorType, VecType>(plateGeomRef, coords, bdryMaskOpt[i] - 2*plateTopol.getNumVertices());
-            std::cout<<"z fixed: "<<i<<": "<<coords[0]<<", "<<coords[1]<<", "<<coords[2]<<std::endl;
-        }
-    }
-
-    std::cout<<"End boundary vertex test 1"<<std::endl;
-
-
     auto DfoldDofsPtr = std::make_shared<FoldDofsArcLineGradient<DefaultConfigurator>>(plateTopol, bdryMaskRef, plateGeomInitial, foldVertices);
 
     VectorType edge_weights = VectorType::Zero(plateTopol.getNumEdges());
@@ -221,7 +248,7 @@ try{
     
     RealType factor_membrane = 10000.0;
     RealType factor_bending = 1.0;
-    RealType factor_gravity = 1.0;
+    RealType factor_gravity = 250.0;
 
     VectorType factors(3);
     factors[0] = factor_membrane;
@@ -234,7 +261,7 @@ try{
     {
         VecType coords;
         getXYZCoord<VectorType, VecType>(plateGeomRef, coords, i);
-        if(std::abs(coords[1] - 1.0) < 1e-4)
+        if(std::abs(coords[1]) > (0.25 + 1e-4))
         {
             mass_distribution[i] = 1.0;
         }

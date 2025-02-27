@@ -1,3 +1,6 @@
+#define EIGEN_USE_BLAS
+#define EIGEN_USE_LAPACK
+
 #include <cmath>
 #include <iostream>
 #include <chrono>
@@ -19,6 +22,12 @@ typedef DefaultConfigurator::FullMatrixType FullMatrixType;
 
 int main(int argc, char *argv[])
 {
+
+    Py_Initialize();
+    if (!Py_IsInitialized()) {
+        std::cerr << "Python initialization failed!" << std::endl;
+        return 1;
+    }
 
 try{
     std::cerr << "=================================================================================" << std::endl;

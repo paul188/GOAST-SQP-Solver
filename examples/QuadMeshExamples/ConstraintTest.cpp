@@ -39,7 +39,6 @@ try{
     for(const auto & vertex: mesh.vertices()){
         VertexHandle vh = mesh.vertex_handle(vertex.idx());
         MyMesh::Point p = mesh.point(vh);
-        std::cout<<p[0]<<" "<<p[1]<<" "<<p[2]<<std::endl;
     }
 
     VectorType geom;
@@ -48,18 +47,7 @@ try{
 
     size_t num_vertices = quadTopol.getNumVertices();
 
-    std::cout<<"Number of vertices: "<<num_vertices<<std::endl;
-
     QuadMeshTopologySaver::getGeometry(mesh,geom);
-
-    std::cout<<"Test2"<<std::endl;
-
-    for(int i = 0; i < geom.size(); i++)
-    {
-        std::cout<<geom[i]<<std::endl;
-    }
-
-    std::cout<<"Test2 end"<<std::endl;
 
     VectorView<DefaultConfigurator> view(quadTopol);
     StripHandler<DefaultConfigurator> stripHandle(quadTopol);
@@ -73,10 +61,8 @@ try{
         coords[0] = geom[3*i];
         coords[1] = geom[3*i+1];
         coords[2] = geom[3*i+2];
-        std::cout<<"Coordinates: "<<geom[3*i]<<" "<<geom[3*i+1]<<" "<<geom[3*i+2]<<std::endl;
         if(coords[0] == 0.0)
         {
-            std::cout<<"Boundary vertex found"<<std::endl;
             bdryCoords[3*bdryMask.size()] = coords[0];
             bdryCoords[3*bdryMask.size() +1] = coords[1];
             bdryCoords[3*bdryMask.size() + 2] = coords[2];
@@ -105,7 +91,7 @@ try{
     //printVectorToFile(dest,"boundary_constraint_vector.txt");
 
     VectorValuedDerivativeTester<DefaultConfigurator> tester(constraint,constraintGrad,0.01,Dest.rows());
-    tester.plotAllDirections(test_input,"deriv_test_2/");
+    tester.plotAllDirections(test_input,"deriv_test_only_consgrad_vert_2/");
 
 }catch(std::exception &e){
     std::cerr << "Exception caught: " << e.what() << std::endl;

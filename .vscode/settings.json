@@ -74,6 +74,7 @@
         "specialfunctions": "cpp",
         "*.inc": "cpp",
         "*.def": "cpp",
-        "iterativelinearsolvers": "cpp"
+        "iterativelinearsolvers": "cpp",
+        "dense": "cpp"
     }
 }

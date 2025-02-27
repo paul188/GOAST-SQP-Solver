@@ -7,7 +7,7 @@
                 "/usr/include/eigen3",
                 "/usr/include/suitesparse",
                 "/usr/include/",
-                "/home/paul_johannssen/Desktop/masterarbeit/goast/include"
+                "/home/paul_johannssen/Desktop/masterarbeit/goast_new/include"
             ],
             "defines": [],
             //"compilerPath": "/usr/bin/clang",

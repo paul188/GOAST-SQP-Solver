@@ -1,3 +1,6 @@
+//#define EIGEN_USE_BLAS
+//#define EIGEN_USE_LAPACK
+
 #include <cmath>
 #include <iostream>
 #include <chrono>
@@ -25,9 +28,11 @@ try{
     std::cerr << "SIMPLE FOLD OPTIMIZATION" << std::endl;
     std::cerr << "=================================================================================" << std::endl << std::endl;
 
+    Eigen::setNbThreads(8);  // Adjust based on CPU cores
+
     // load flat plate [0,1]^2
     TriMesh plate;
-    OpenMesh::IO::read_mesh(plate, "../../data/plate/testMesh2.ply");
+    OpenMesh::IO::read_mesh(plate, "../../data/plate/testMesh2_fine.ply");
     MeshTopologySaver plateTopol( plate );
     std::cerr << "num of nodes = " << plateTopol.getNumVertices() << std::endl;
     VectorType plateGeomRef, plateGeomDef, plateGeomInitial;

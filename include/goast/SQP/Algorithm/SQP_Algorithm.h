@@ -5,6 +5,8 @@
 #include <goast/SQP/DOFHandling/BoundaryDOFS.h>
 #include <goast/SQP/DOFHandling/FoldDofs.h>
 #include <goast/SQP/Utils/ObjectFactory.h>
+#include <goast/SQP/Utils/SparseMat.h>
+#include <goast/SQP/Utils/ScipySolver.h>
 
 // Basic Parameters that all SQP Solvers should contain
 template<typename ConfiguratorType>
@@ -12,7 +14,7 @@ class SQPBaseParams{
     public:
         using RealType = typename ConfiguratorType::RealType;
         RealType eps = 1e-12; // Convergence criterion
-        size_t maxIter = 200; // maximum number of iterations
+        size_t maxIter = 500; // maximum number of iterations
         size_t iter = 0; // current iteration
 };
 // Specific parameters needed for SQP Line Search
@@ -42,6 +44,12 @@ class SQPBaseSolver{
 };
 template <typename ConfiguratorType>
 class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
+    public: 
+        typedef typename ConfiguratorType::VectorType VectorType;
+        typedef typename ConfiguratorType::RealType RealType;
+        typedef typename ConfiguratorType::SparseMatrixType MatrixType;
+        typedef typename ConfiguratorType::FullMatrixType FullMatrixType;
+        typedef typename ConfiguratorType::VecType VecType;
     private:
         SQPLineSearchParams<ConfiguratorType> _pars;
         CostFunctional<ConfiguratorType> _costFunctional;
@@ -51,13 +59,9 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
         ProblemDOFs<ConfiguratorType> _problemDOFs;
         size_t _BFGS_reset;
         bool _secondOrderCorrection;
+        ScipySolver _scipy_solver;
 
-    public: 
-        typedef typename ConfiguratorType::VectorType VectorType;
-        typedef typename ConfiguratorType::RealType RealType;
-        typedef typename ConfiguratorType::SparseMatrixType MatrixType;
-        typedef typename ConfiguratorType::FullMatrixType FullMatrixType;
-        typedef typename ConfiguratorType::VecType VecType;
+    public:
         // pars: Parameters for the SQP Solver
         // costFunctional: Cost functional
         // DcostFunctional: Derivative of the cost functional
@@ -78,6 +82,7 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                             _boundaryDOFs(boundaryDOFs),
                             _problemDOFs(problemDOFs),
                             _BFGS_reset(BFGS_reset),
+                            _scipy_solver(boundaryDOFs.getNumVertexDOFs() - boundaryDOFs.getNumFoldDOFs()),
                             _secondOrderCorrection(secondOrderCorrection){}
 
         // plateGeomRef_basic is the starting reference geometry of the plate
@@ -100,6 +105,8 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
             // Approximation for the inverse of the Hessian
             FullMatrixType B_k_inv(nEffectiveDOFs, nEffectiveDOFs);
             B_k_inv.setIdentity();
+
+            //FullMatrixType A_k(nEffectiveDOFs + nEffectiveVertexDOFs, nEffectiveDOFs + nEffectiveVertexDOFs);
 
             // Reserve the memory for the Jacobian of the constraint
             FullMatrixType C_k( nEffectiveVertexDOFs, nEffectiveDOFs );
@@ -150,15 +157,19 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
             // DiffConstraint as derivative w.r.t. lambda of the Lagrangian
             VectorType DiffConstraint =  VectorType::Ones(nEffectiveVertexDOFs);
 
+            FullMatrixType mult(nEffectiveVertexDOFs, nEffectiveVertexDOFs);
+            FullMatrixType B_invC(nEffectiveDOFs, nEffectiveVertexDOFs);
+
             size_t terminationCounter = 0;
 
             // Unfortunately, the convergence criterion doesnt quite work yet -> can see improvements even long after "convergence"
             while(_pars.iter < _pars.maxIter){
+
+                std::chrono::high_resolution_clock::time_point t0 = std::chrono::high_resolution_clock::now();
             
                 std::cout << "\rIteration: "<< std::setw(4) << _pars.iter
                 << " | CostFunctional_val: " << std::setprecision(12)<< std::setw(10) << costFunctional_val
-                << " | DE_val: " << std::setprecision(12)<<std::setw(10) << std::setprecision(4) << norm_l1(Constraint)
-                << " | CostFunctional_val: " << std::setprecision(12)<<std::setw(10) << std::setprecision(4) << costFunctional_val;
+                << " | DE_val: " << std::setprecision(12)<<std::setw(10) << std::setprecision(4) << norm_l1(Constraint);
                 for(int i = 0; i < _problemDOFs.getFoldDOFs().size(); i++){
                     std::cout<<" | Fold DOFs " <<i<<" : "<< std::setprecision(12) << _problemDOFs.getFoldDOFs()[i];
                 }
@@ -168,9 +179,8 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                 << std::endl;  // flush to ensure immediate output
 
                 C_k.setZero();
-                std::vector<Eigen::Triplet<RealType>> tripletList;
                 C_k.block(0,0, D2E_mix.rows(), D2E_mix.cols()) = D2E_mix;
-                C_k.block(0,nFoldDOFs, D2E_vertex.rows(), D2E_vertex.cols()) = D2E_vertex;
+                C_k.block(0,nFoldDOFs, D2E_vertex.rows(), D2E_vertex.cols()) = D2E_vertex;          
 
                 // Construct the r.h.s for the linear system
                 // the derivative of the cost functional
@@ -180,7 +190,7 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
 
                 // Solve the quadratic subproblem, store the solution in d_k and lambda_kplus1
                 // In the process, invert C_k and store the 
-                solveQP(nFoldDOFs, nEffectiveVertexDOFs, B_k_inv, C_k, rhs_k, d_k, lambda_kplus1);
+                solveQP(nFoldDOFs, nEffectiveVertexDOFs, B_k_inv,C_k,mult,B_invC, rhs_k, d_k, lambda_kplus1);
 
                 lambda_diff = lambda_kplus1 - lambda_k;
 
@@ -276,13 +286,16 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                 D2E_vertex = D2E_vertex_kplus1;
                 D2E_mix = D2E_mix_kplus1;
                 lambda_k = lambda_kplus1;
-                
-                if(_pars.iter %100 == 0){
+
+                if(_pars.iter %10 == 0){
                     def_geometries.push_back(_problemDOFs.getVertexDOFs());
                     ref_geometries.push_back(_problemDOFs.getReferenceGeometry());
                     fold_DOFs.push_back(_problemDOFs.getFoldDOFs());
                 }
                 _pars.iter++;
+                std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
+                std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t1 - t0);
+                std::cout<<"Time for iteration: "<<time_span.count()<<std::endl;
             }
         }
 
@@ -390,22 +403,10 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                 } 
                  // If increase in merit together with increase in constraint use second order correction
                  // Also since the solving of the QP is expensive, only do it after a certain number of iterations
-                else if ((constr_l1_linesearch > constr_l1) && (alpha == 1.0) && _secondOrderCorrection && _pars.iter > 200)
+                else if ((constr_l1_linesearch > constr_l1) && (alpha == 1.0) && _secondOrderCorrection)
                 {
-
-                    // Compute the right-inverse of C_k
-                    Eigen::ColPivHouseholderQR<FullMatrixType> qr(C_k);
-    
-                    // Compute the right inverse
-                    FullMatrixType C_k_inv = qr.solve(FullMatrixType::Identity(C_k.rows(), C_k.rows()));
-                    VectorType e_k = -C_k_inv*Constraint_linesearch;
-
-                    // OPTION B: SPARSE BUT MAYBE LESS STABLE (DOESNT WORK)
-                    /*
-                    Eigen::ConjugateGradient<MatrixType> cg;
-                    cg.compute(D2E_vertex);
-                    VectorType e_k = -cg.solve(Constraint_linesearch);
-                    */
+                    VectorType e_k = C_k.transpose() * (C_k * C_k.transpose()).ldlt().solve(-Constraint_linesearch);
+                    
                     
                     _boundaryDOFs.InverseTransformWithFoldDofs(e_k);
                     lineSearchDOFs += e_k;
@@ -461,24 +462,68 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                      size_t nEffectiveVertexDOFs,
                      const FullMatrixType &B_k_inv,
                      const FullMatrixType &C_k,
+                     FullMatrixType &mult,
+                     FullMatrixType &B_invC,
                      const VectorType &rhs_k, 
                      VectorType &d_k, 
                      VectorType& lambda_kplus1) {
 
             size_t nEffectiveDOFs = nFoldDOFs + nEffectiveVertexDOFs;
 
-            FullMatrixType mult = -C_k * B_k_inv * C_k.transpose();
-
-            //Eigen::LLT doesnt work, not enough stability
-            Eigen::LDLT<FullMatrixType> mult_ldlt;
-            mult_ldlt.compute(mult);
-
+            B_invC = B_k_inv*C_k.transpose();
+            mult = -C_k * B_invC;
             VectorType Br1 = B_k_inv*rhs_k.segment(0, nEffectiveDOFs);
-            VectorType sol_1 = mult_ldlt.solve((C_k*Br1)) - mult_ldlt.solve(rhs_k.segment(nEffectiveDOFs, nEffectiveVertexDOFs));
-
-            d_k = Br1 + B_k_inv*C_k.transpose()*sol_1;
-            lambda_kplus1 = -sol_1;
+            VectorType rhs = C_k*Br1 - rhs_k.segment(nEffectiveDOFs, nEffectiveVertexDOFs);
+            VectorType sol(rhs.size());
+            sol = _scipy_solver.solve_with_scipy(mult, rhs);
+            d_k = Br1 + B_invC*sol;
+            lambda_kplus1 = -sol;
         }
+
+        /*
+        void solveWithScipy(FullMatrixType &A, Eigen::VectorXd &b, Eigen::VectorXd &sol)
+        {
+            Py_Initialize();
+            if (!Py_IsInitialized()) {
+                std::cerr << "Python initialization failed!" << std::endl;
+            return;
+            }
+            npy_intp dims_A[2] = {A.rows(), A.cols()};
+            npy_intp dims_b[1] = {b.size()};
+               // Prepare dimensions for the NumPy array
+
+            // Create the NumPy array with the same size and data type
+            PyObject* A_py = PyArray_SimpleNew(2, dims_A, NPY_DOUBLE);
+            if (A_py == NULL) {
+                std::cerr << "Error creating NumPy array!" << std::endl;
+                Py_Finalize();
+                return;
+            }
+
+            // Copy the Eigen matrix data into the NumPy array
+            std::memcpy(PyArray_DATA((PyArrayObject*)A_py), A.data(), A.size() * sizeof(double));
+
+            PyObject* b_py = PyArray_SimpleNewFromData(1, dims_b, NPY_DOUBLE, b.data());
+
+            // Call scipy.linalg.solve
+            PyObject* result = PyObject_CallMethod(_scipy_linalg, "solve", "OO", A_py, b_py);
+            if (result == nullptr) {
+                PyErr_Print();
+                std::cerr << "Error: Could not solve the system." << std::endl;
+                Py_Finalize();
+                return;
+            }
+
+            // Convert result (numpy array) back to a C++ array or Eigen vector
+            double* result_data = (double*) PyArray_DATA((PyArrayObject*)result);
+            for (int i = 0; i < b.size(); ++i) {
+                sol(i) = result_data[i];
+            }
+
+            std::cout<<"Error: "<<(A*sol - b).norm()<<std::endl;
+            Py_Finalize();
+        }
+            */
 
 };
 

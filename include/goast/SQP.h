@@ -2,6 +2,7 @@
 
 #include "SQP/Utils/ObjectFactory.h"
 #include "SQP/Utils/SparseMat.h"
+#include "SQP/Utils/ScipySolver.h"
 
 #include "SQP/DOFHandling/BoundaryDOFS.h"
 #include "SQP/DOFHandling/FoldDofs.h"

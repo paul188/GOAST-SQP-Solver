@@ -20,6 +20,35 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules)
 ################################################################################
 include(cmake/GOAST.cmake)
 
+# Find Python package
+find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+target_link_libraries(GOAST INTERFACE Python3::Python)
+find_package(pybind11 REQUIRED)
+target_link_libraries(GOAST INTERFACE pybind11::module)
+# Including Python3 headers and NumPy headers
+target_include_directories(GOAST INTERFACE 
+    ${Python3_INCLUDE_DIRS} 
+    ${Python3_NumPy_INCLUDE_DIRS}
+)
+
+
+include_directories(/usr/include)
+
+set(BLA_VENDOR OpenBLAS)
+set(BLAS_LIBRARIES "/usr/lib/x86_64-linux-gnu/libopenblas.so")
+set(LAPACK_LIBRARIES "/usr/lib/x86_64-linux-gnu/libopenblas.so")  # OpenBLAS includes LAPACK
+find_package(BLAS REQUIRED)
+find_package(LAPACK REQUIRED)
+if(BLAS_FOUND AND LAPACK_FOUND)
+    message("OpenBLAS and Lapack found.")
+    target_link_libraries(GOAST INTERFACE ${BLAS_LIBRARIES})
+    target_link_libraries(GOAST INTERFACE ${LAPACK_LIBRARIES})
+endif(BLAS_FOUND AND LAPACK_FOUND)
+
+if(MSVC)
+    add_compile_options("/fp:strict" "/arch:AVX2" "/openmp")
+endif()
+
 ###########################################
 # Use MKL (via Eigen) in the examples etc
 ###########################################
@@ -91,7 +120,6 @@ install(FILES
         "cmake/Modules/FindMOSEK.cmake"
         "cmake/Modules/FindOpenMesh.cmake"
         "cmake/Modules/Findtrlib.cmake"
-        #"cmake/Modules/FindTinySpline.cmake"
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/GOAST)
 
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/goast DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})

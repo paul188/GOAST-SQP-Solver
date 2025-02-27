@@ -301,7 +301,7 @@ try{
     RealType factor_membrane = 10000.0;
     RealType factor_bending = 1.0;
     // 1000 looks good, but has self intersections. Maybe 300 is better
-    RealType factor_gravity = 250.0;
+    RealType factor_gravity = 100.0;
 
     VectorType factors(3);
     factors[0] = factor_membrane;
