@@ -36,11 +36,6 @@ try{
     
     OpenMesh::IO::read_mesh(mesh, "../../data/plate/quadMesh.ply");
 
-    for(const auto & vertex: mesh.vertices()){
-        VertexHandle vh = mesh.vertex_handle(vertex.idx());
-        MyMesh::Point p = mesh.point(vh);
-    }
-
     VectorType geom;
 
     QuadMeshTopologySaver quadTopol(mesh);
@@ -54,23 +49,32 @@ try{
 
     // set the boundary
     std::vector<int> bdryMask;
-    VectorType bdryCoords(3*num_vertices);
+    VectorType bdryCoords;
 
     for(int i = 0; i < num_vertices; i++){
         VecType coords;
         coords[0] = geom[3*i];
-        coords[1] = geom[3*i+1];
-        coords[2] = geom[3*i+2];
         if(coords[0] == 0.0)
         {
-            bdryCoords[3*bdryMask.size()] = coords[0];
-            bdryCoords[3*bdryMask.size() +1] = coords[1];
-            bdryCoords[3*bdryMask.size() + 2] = coords[2];
             bdryMask.push_back(i);
         }
     }
 
-    bdryCoords.conservativeResize(3*bdryMask.size());
+    bdryCoords.resize(3*bdryMask.size());
+    size_t counter = 0;
+    for(int i = 0; i < bdryMask.size(); i++){
+        VecType coords;
+        coords[0] = geom[3*bdryMask[i]];
+        coords[1] = geom[3*bdryMask[i]+1];
+        coords[2] = geom[3*bdryMask[i]+2];
+        if(coords[0] == 0.0)
+        {
+            bdryCoords[3*counter] = coords[0];
+            bdryCoords[3*counter + 1] = coords[1];
+            bdryCoords[3*counter + 2] = coords[2];
+            counter++;
+        }
+    }
 
     std::pair<std::vector<int>, VectorType> bdryData = std::make_pair(bdryMask,bdryCoords);
 
@@ -80,18 +84,17 @@ try{
     VectorType test_input = VectorType::Ones(view._idx["num_dofs"]);
 
     test_input.segment(view._idx["vertices"],3*num_vertices) = geom;
+    
+    VectorType test_input_2;
+    constraint.initialize_vars(geom,test_input_2);
 
-    //printVectorToFile(test_input,"./deriv_test/test_input.txt");
     VectorType dest;
     MatrixType Dest;
-    //std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
-    constraint.apply(test_input,dest);
-    constraintGrad.apply(test_input,Dest);
-    //printSparseMatrix(Dest, "boundary_constraint_matrix.txt");
-    //printVectorToFile(dest,"boundary_constraint_vector.txt");
+    constraint.apply(test_input_2,dest);
+    constraintGrad.apply(test_input_2,Dest);
 
     VectorValuedDerivativeTester<DefaultConfigurator> tester(constraint,constraintGrad,0.01,Dest.rows());
-    tester.plotAllDirections(test_input,"deriv_test_only_consgrad_vert_2/");
+    tester.plotAllDirections(test_input_2,"deriv_test/");
 
 }catch(std::exception &e){
     std::cerr << "Exception caught: " << e.what() << std::endl;

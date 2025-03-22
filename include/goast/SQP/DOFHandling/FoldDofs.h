@@ -386,13 +386,13 @@ class FoldDofsCross : public FoldDofs<ConfiguratorType>, public BaseOp<typename 
         bool isLine1(const RealType coord_x, const RealType coord_y) const
         {
             const RealType tolerance = 1e-5;  // Adjust as necessary
-            return std::abs(coord_x - 0.5) < tolerance;
+            return std::abs(coord_x - 0.625) < tolerance;
         }
 
         bool isLine2(const RealType coord_x, const RealType coord_y) const
         {
             const RealType tolerance = 1e-5;  // Adjust as necessary
-            return std::abs(coord_y - 0.5) < tolerance;
+            return std::abs(coord_y - 0.625) < tolerance;
         }
 
         bool isFoldVertex(const RealType coord_x, const RealType coord_y) const
@@ -606,6 +606,7 @@ class FoldDofsArcLineGradient : public FoldDofsGradient<ConfiguratorType>, publi
                 Dest.resize(this->_plateGeomInitial.size(), 1);
             }
 
+            rhs.setZero();
             dest.setZero();
             Dest.setZero();
 
@@ -623,6 +624,9 @@ class FoldDofsArcLineGradient : public FoldDofsGradient<ConfiguratorType>, publi
             LinearSolver<DefaultConfigurator> directSolver;
             directSolver.prepareSolver( StiffnessMatrix );
             directSolver.backSubstitute( rhs, dest );
+            if (dest.array().isNaN().any()) {
+                std::cerr << "Warning: Solution contains NaN values!" << std::endl;
+            }
             Dest = convertVecToSparseMat(dest);
         }
 };

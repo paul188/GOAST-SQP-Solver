@@ -14,7 +14,7 @@ class SQPBaseParams{
     public:
         using RealType = typename ConfiguratorType::RealType;
         RealType eps = 1e-12; // Convergence criterion
-        size_t maxIter = 500; // maximum number of iterations
+        size_t maxIter = 2000; // maximum number of iterations
         size_t iter = 0; // current iteration
 };
 // Specific parameters needed for SQP Line Search
@@ -287,11 +287,10 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                 D2E_mix = D2E_mix_kplus1;
                 lambda_k = lambda_kplus1;
 
-                if(_pars.iter %10 == 0){
-                    def_geometries.push_back(_problemDOFs.getVertexDOFs());
-                    ref_geometries.push_back(_problemDOFs.getReferenceGeometry());
-                    fold_DOFs.push_back(_problemDOFs.getFoldDOFs());
-                }
+                def_geometries.push_back(_problemDOFs.getVertexDOFs());
+                ref_geometries.push_back(_problemDOFs.getReferenceGeometry());
+                fold_DOFs.push_back(_problemDOFs.getFoldDOFs());
+                
                 _pars.iter++;
                 std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
                 std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t1 - t0);
@@ -405,8 +404,7 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                  // Also since the solving of the QP is expensive, only do it after a certain number of iterations
                 else if ((constr_l1_linesearch > constr_l1) && (alpha == 1.0) && _secondOrderCorrection)
                 {
-                    VectorType e_k = C_k.transpose() * (C_k * C_k.transpose()).ldlt().solve(-Constraint_linesearch);
-                    
+                    VectorType e_k = _scipy_solver.solve_with_scipy_pseudoinv(C_k.transpose() * (C_k * C_k.transpose()), -Constraint_linesearch);
                     
                     _boundaryDOFs.InverseTransformWithFoldDofs(e_k);
                     lineSearchDOFs += e_k;
@@ -470,12 +468,13 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
 
             size_t nEffectiveDOFs = nFoldDOFs + nEffectiveVertexDOFs;
 
-            B_invC = B_k_inv*C_k.transpose();
+            B_invC = C_k.transpose();//B_k_inv*C_k.transpose();
             mult = -C_k * B_invC;
             VectorType Br1 = B_k_inv*rhs_k.segment(0, nEffectiveDOFs);
             VectorType rhs = C_k*Br1 - rhs_k.segment(nEffectiveDOFs, nEffectiveVertexDOFs);
             VectorType sol(rhs.size());
             sol = _scipy_solver.solve_with_scipy(mult, rhs);
+            //std::cout<<"Error: "<<(mult*sol - rhs).norm()<<std::endl;
             d_k = Br1 + B_invC*sol;
             lambda_kplus1 = -sol;
         }

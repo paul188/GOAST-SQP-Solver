@@ -44,7 +44,7 @@ try{
     
 // load flat plate and prepare the arc crease
     TriMesh plate;
-    OpenMesh::IO::read_mesh(plate, "../../data/plate/rectangle_criss_cross.ply");
+    OpenMesh::IO::read_mesh(plate, "../../data/plate/paperCrissCross.ply");
     MeshTopologySaver plateTopol( plate );
     VectorType plateGeomRef; // plateGeomRef is the geometry without the arc crease in the mesh
     VectorType plateGeomInitial;
@@ -59,14 +59,14 @@ try{
         VecType coords;
         getXYZCoord<VectorType, VecType>( plateGeomRef, coords, i);
 
-        if(coords[0] > 1.0){
+        if(coords[1] > 0.25){
             upperVertices.push_back(i);
         }
 
         // we will use the fold vertices to modify the shape functions -> modify the stiffness matrix
         // in order to be able to regularize the mesh better using the Dirichlet minimization
         // In particular, we want a better mesh regularity at the fold
-        if(coords[0] == 1.0){
+        if(coords[1] == 0.25){
             foldVertices.push_back(i);
         }
     }
@@ -88,7 +88,7 @@ try{
         getXYZCoord<VectorType, VecType>( plateGeomRef, coords_j, node_j);
 
         // Set the edge weights for the edge at x = 0.5 to zero -> fold
-        if(coords_i[0] == 1.0 && coords_j[0] == 1.0){
+        if(coords_i[1] == 0.25 && coords_j[1] == 0.25){
             edge_weights[edgeIdx] = 0;
             // Set colors for both vertices of the edge
         plate.set_color(plate.vertex_handle(node_i), OpenMesh::Vec4f(1.0f, 0.0f, 0.0f, 1.0f));  // Red
@@ -102,12 +102,12 @@ try{
         VecType coords;
         getXYZCoord<VectorType, VecType>( plateGeomRef, coords, i);
 
-        if(coords[0] == 1.0){
+        if(coords[1] == 0.25){
             bdryMaskDirichlet.push_back(i);
-            coords[0] += (0.25 - std::pow(coords[1] - 0.5, 2.0));
+            coords[1] += 0.25*(0.25 - std::pow(coords[0] - 0.5, 2.0));
         }
 
-        if(coords[0] == 0.0 || coords[0] == 2.0 || coords[1] == 0.0 || coords[1] == 1.0){
+        if(coords[0] == 0.0 || coords[0] == 1.0 || coords[1] == 0.0 || coords[1] == 1.0){
             bdryMaskDirichlet.push_back(i);
         }
         setXYZCoord<VectorType,VecType>(plateGeomRef, coords, i);
@@ -180,30 +180,30 @@ try{
     // fix only (x,y) coordinates of the boundary
     std::vector<int> bdryMaskDirichletDef2;
 
-    // fix only x coordinates of the boundary
+    // fix only y coordinates of the boundary
     std::vector<int> bdryMaskDirichletDef3;
 
     for( int i = 0; i < plateTopol.getNumVertices(); i++ ){
         VecType coords;
         getXYZCoord<VectorType, VecType>( plateGeomDef, coords, i);
 
-        if( coords[0] <= 1.0 && (coords[1] == 0.0 || coords[1] == 1.0) ){
+        if( coords[1] <= 0.25 && (coords[0] == 0.0 || coords[0] == 1.0) ){
             bdryMaskOpt.push_back( i );
             bdryMaskDirichletDef1.push_back( i );
             // deform part of boundary
-            if(coords[1] == 0.0){
-                coords[1] += 0.2;
-                coords[2] += 0.15;
+            if(coords[0] == 0.0){
+                coords[0] += 0.1;
+                coords[2] += 0.1;
             }
             else{
-                coords[1] -= 0.2;
-                coords[2] += 0.15;
+                coords[0] -= 0.1;
+                coords[2] += 0.1;
             }
         }
-        if(coords[0] >= 1.2){
+        if(coords[1] >= 0.4){
             bdryMaskDirichletDef2.push_back(i);
         }
-        if(coords[0] == 0.0){
+        if(coords[1] == 0.0){
             bdryMaskDirichletDef3.push_back(i);
         }
 
@@ -225,7 +225,7 @@ try{
     std::vector<int> active = (std::vector<int>){1,1,0};
     extendBoundaryMaskPartial( plateTopol.getNumVertices(), bdryMaskDirichletDef2 , active);
 
-    std::vector<int> active2 = (std::vector<int>){1,0,0};
+    std::vector<int> active2 = (std::vector<int>){0,1,0};
     extendBoundaryMaskPartial( plateTopol.getNumVertices(), bdryMaskDirichletDef3 , active2);
 
     // append to the Dirichlet bdry mask
@@ -326,24 +326,19 @@ try{
     NLS.setBoundaryMask( bdryMaskOpt );
     NLS.solve( initialization, plateGeomDef );
 
-    std::vector<int> topVertices;
     for(int i = 0; i < plateTopol.getNumVertices(); i++){
         VecType coords;
         getXYZCoord<VectorType, VecType>(plateGeomInitial, coords, i);
-        if(std::abs(coords[0] - 2.0) < 1e-4){
-            topVertices.push_back(i);
+        if(std::abs(coords[1]) < 1e-4){
+            VecType coordsDef;
+            getXYZCoord<VectorType, VecType>(plateGeomDef, coordsDef, i);
+            std::cout<<"Coord: "<<i<<"; "<<coordsDef[0]<<" "<<coordsDef[1]<<" "<<coordsDef[2]<<std::endl;
         }
     }
 
-    CostFunctional<DefaultConfigurator> costFunctional(topVertices);
-    RealType costFunctional_val;
-    costFunctional.apply(plateGeomDef, costFunctional_val);
-    std::cout<<"Cost Functional Value: "<<costFunctional_val<<std::endl;
-    std::cout<<"Adjusted cost functional val: "<<costFunctional_val/2.0<<std::endl;
-
     // saving
     setGeometry( plate, plateGeomDef );
-    OpenMesh::IO::write_mesh(plate, "bendingFoldSol_withNewton2.ply");
+    OpenMesh::IO::write_mesh(plate, "bendingFoldSol_withNewton_scaled.ply");
     }
     catch ( BasicException &el ){
         std::cerr << std::endl << "ERROR!! CAUGHT FOLLOWING EXECEPTION: " << std::endl << el.getMessage() << std::endl << std::flush;

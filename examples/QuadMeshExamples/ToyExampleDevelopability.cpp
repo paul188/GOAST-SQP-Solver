@@ -26,9 +26,9 @@ int main()
         QuadMeshTopologySaver::getGeometry(mesh,geom);
 
         std::vector<int> bdryMask;
-        VectorType bdryCoords = VectorType::Zero(3*num_vertices);
+        VectorType bdryCoords;
 
-        // setting the boundary
+        // setting the boundary indices
         for(int i = 0; i < num_vertices; i++){
             VecType coords;
             coords[0] = geom[3*i];
@@ -36,16 +36,25 @@ int main()
             coords[2] = geom[3*i+2];
             if(std::abs(coords[0] - 1.0) < 1e-1)
             {
-                bdryCoords[3*bdryMask.size()] = coords[0];
-                bdryCoords[3*bdryMask.size() +1] = coords[1];
-                bdryCoords[3*bdryMask.size() + 2] = coords[2];
                 bdryMask.push_back(i);
             }
         }
 
-        std::cout<<"Size of the boundary mask: "<<bdryMask.size()<<std::endl;
+        // setting the boundary coordinates
+        bdryCoords.resize(3*bdryMask.size());
 
-        bdryCoords.conservativeResize(3*bdryMask.size());
+        for(int i = 0; i < bdryMask.size(); i++){
+            VecType coords;
+            coords[0] = geom[3*i];
+            coords[1] = geom[3*i+1];
+            coords[2] = geom[3*i+2];
+            if(std::abs(coords[0] - 1.0) < 1e-1)
+            {
+                bdryCoords[3*i] = coords[0];
+                bdryCoords[3*i +1] = coords[1];
+                bdryCoords[3*i + 2] = coords[2];
+            }
+        }
 
         std::pair<std::vector<int>, VectorType> bdryData = std::make_pair(bdryMask,bdryCoords);
 
@@ -74,6 +83,17 @@ int main()
         init.segment(view._idx["reweighted_vertices"],3*num_vertices) = geom;
         init.segment(view._idx["weights"],num_vertices) = VectorType::Ones(num_vertices);
         
+        constraint.initialize_vars(geom, init);
+        view.set_vector(init);
+
+        VectorType test_dest;
+        constraint.apply(init, test_dest);
+
+        std::cout<<"Test the first constraint vector: "<<std::endl;
+        for(int i = 0; i < test_dest.size(); i++){
+            std::cout<<"Index: "<<i<<" Test dest: "<<test_dest[i]<<std::endl;
+        }
+
         VectorType Dest;
         MatrixType Weights;
         cons_view.extend_weights(weights, Weights);

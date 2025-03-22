@@ -555,8 +555,8 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
             RealType w_2 = _view.vertex_weight(node_2);
             RealType w_3 = _view.vertex_weight(node_3);
 
-            Dest.segment(_view._idx["reweighted_edges_1"]+3*i,3) = (w_0 + w_1)*(_view.reweighted_vertex(node_2)+_view.reweighted_vertex(node_3)) + (w_2 + w_3)*(_view.reweighted_vertex(node_1) + _view.reweighted_vertex(node_0));
-            Dest.segment(_view._idx["reweighted_edges_2"]+3*i,3) = (w_1 + w_2)*(_view.reweighted_vertex(node_3)+_view.reweighted_vertex(node_0)) + (w_0 + w_3)*(_view.reweighted_vertex(node_1) + _view.reweighted_vertex(node_2));
+            Dest.segment(_view._idx["reweighted_edges_1"]+3*i,3) = (w_0 + w_1)*(_view.reweighted_vertex(node_2)+_view.reweighted_vertex(node_3)) - (w_2 + w_3)*(_view.reweighted_vertex(node_1) + _view.reweighted_vertex(node_0));
+            Dest.segment(_view._idx["reweighted_edges_2"]+3*i,3) = (w_1 + w_2)*(_view.reweighted_vertex(node_3)+_view.reweighted_vertex(node_0)) - (w_0 + w_3)*(_view.reweighted_vertex(node_1) + _view.reweighted_vertex(node_2));
         }
         _view.set_vector(Dest);
         // 6. initialize normals
@@ -564,6 +564,7 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
             VectorType normal = (_view.reweighted_edge_1(i).template head<3>()).cross(_view.reweighted_edge_2(i).template head<3>());
             Dest.segment(_view._idx["normals"]+3*i,3) = 1.0/(normal.norm())*normal;
         }
+
         _view.set_vector(Dest);
         _it_he.reset();
         // 7. initialize rulings
@@ -657,6 +658,8 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
             return; 
         }
 
+        Dest.setZero();
+
         _view.set_vector(vars);
 
         for(int i = 0; i < _bdryData.value().first.size(); i++){
@@ -688,7 +691,9 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
             RealType w_2 = _view.vertex_weight(node_2);
             RealType w_3 = _view.vertex_weight(node_3);
 
-            Dest.segment(_cons_idx["edge_vec_1"]+3*i,3) = _view.reweighted_edge_1(i) - (w_0 + w_1)*(_view.reweighted_vertex(node_2)+_view.reweighted_vertex(node_3)) + (w_2 + w_3)*(_view.reweighted_vertex(node_1) + _view.reweighted_vertex(node_0));
+            VectorType calc_edge_vec_1 = (w_0 + w_1)*(_view.reweighted_vertex(node_2)+_view.reweighted_vertex(node_3)) - (w_2 + w_3)*(_view.reweighted_vertex(node_1) + _view.reweighted_vertex(node_0));
+
+            Dest.segment(_cons_idx["edge_vec_1"]+3*i,3) = _view.reweighted_edge_1(i) - calc_edge_vec_1;
         }
     }
 
@@ -714,7 +719,9 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
             RealType w_2 = _view.vertex_weight(node_2);
             RealType w_3 = _view.vertex_weight(node_3);
 
-            Dest.segment(_cons_idx["edge_vec_2"] + 3*i,3) = _view.reweighted_edge_2(i) - (w_1 + w_2)*(_view.reweighted_vertex(node_3)+_view.reweighted_vertex(node_0)) + (w_0 + w_3)*(_view.reweighted_vertex(node_1) + _view.reweighted_vertex(node_2));
+            VectorType calc_edge_vec_2 = (w_1 + w_2)*(_view.reweighted_vertex(node_3)+_view.reweighted_vertex(node_0)) - (w_0 + w_3)*(_view.reweighted_vertex(node_1) + _view.reweighted_vertex(node_2));
+
+            Dest.segment(_cons_idx["edge_vec_2"] + 3*i,3) = _view.reweighted_edge_2(i) - calc_edge_vec_2;
         }
     }
 
@@ -968,7 +975,7 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
         }
     }
 
-void apply(const VectorType &vars, VectorType &Dest) const override
+    void apply(const VectorType &vars, VectorType &Dest) const override
 {
     Dest.setZero();
     
@@ -1126,7 +1133,7 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
 
         }
 
-        void get_constraintgrad_bdry_opt(const VectorType &vars, MatrixType &Dest) const{
+        void get_constraingrad_bdry_opt(const VectorType &vars, MatrixType &Dest) const{
             
             size_t num_dofs = _view._idx["num_dofs"];
             size_t num_constraints = _cons_idx["num_cons"];
@@ -1134,6 +1141,8 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
             if(Dest.rows() != num_constraints || Dest.cols() != num_dofs){
                 Dest.resize(num_constraints, num_dofs);
             }
+
+            Dest.setZero();
 
             if(!_bdryData.has_value())
             {
@@ -1148,13 +1157,7 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
             std::vector<Eigen::Triplet<RealType>> triplet;
 
             for(int i = 0; i < _bdryData.value().first.size(); i++){
-            auto vertex_now = _view.vertex(_bdryData.value().first[i]);
-            auto vertex_pos = _bdryData.value().second.segment(3*i,3);
-            Dest.segment(_cons_idx["bdry_opt"] + 3*i,3) = vertex_now - vertex_pos;
-        }
-
-            for(int i = 0; i < _bdryData.value().first.size(); i++){
-                assignSparseBlockInplace(Dest,Id, _cons_idx["bdry_opt"] + 3*i,_view._idx["vertex"] + 3*_bdryData.value().first[i],triplet);
+                assignSparseBlockInplace(Dest,Id, _cons_idx["bdry_opt"] + 3*i,_view._idx["vertices"] + 3*_bdryData.value().first[i],triplet);
             }
         }
 
@@ -1170,7 +1173,7 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
             Id.setIdentity();
 
             for(int i = 0; i < _bdryData.value().first.size(); i++){
-                assignSparseMatBlockTriplet(Id, _cons_idx["bdry_opt"] + 3*i,_view._idx["vertex"] + 3*_bdryData.value().first[i],triplet);
+                assignSparseMatBlockTriplet(Id, _cons_idx["bdry_opt"] + 3*i,_view._idx["vertices"] + 3*_bdryData.value().first[i],triplet);
             }
         }
 
@@ -2103,296 +2106,4 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
             Dest.setFromTriplets(triplet.begin(), triplet.end());
         }
 
-        /*
-        What has been achieved here ?
-        1. vertex_1 done
-        2. vertex_2 done
-        3. edge_vec_1 done
-        4. edge_vec_2 done
-        5. normal_1 done
-        6. normal_2 done
-        7. normal_3 done
-        8. ruling_0 done
-        9. ruling_1 done
-        10. ruling_2 done
-        11. dev done
-        12. fair_v done
-        13. fair_n
-        14. fair_r
-        void get_constraintgrads(const VectorType &vars, MatrixType &Dest){
-            _view.set_vector(vars);
-
-            size_t num_dofs = _view._idx["num_dofs"];
-            size_t num_constraints = _cons_idx["num_cons"];
-
-            if(Dest.rows() != num_constraints || Dest.cols() != num_dofs){
-                Dest.resize(num_constraints, num_dofs);
-            }
-
-            Dest.setZero();
-
-            std::vector<Eigen::Triplet<RealType>> triplet;
-            auto Id = MatrixType(3,3);
-            Id.setIdentity();
-
-            // All vertices constraints (vertex_1, vertex_2)
-            for(int i = 0; i < _num_vertices; i++){
-                RealType dummy_i = _view.dummy_weight(i);
-                RealType w_i = _view.vertex_weight(i);
-                VectorType vec = -_view.vertex(i);
-                MatrixType vec_mat = vectorToSparseMat(vec);
-
-                // Assign values directly
-                Dest.coeffRef(i + _cons_idx["vertex_1"], i + _view._idx["dummy_weights"]) = -2.0 * dummy_i;
-                Dest.coeffRef(i + _cons_idx["vertex_1"], i + _view._idx["weights"]) = 1.0;
-                assignSparseBlockInplace(Dest,-w_i*Id,_cons_idx["vertex_2"] + 3*i,3*i + _view._idx["vertices"],triplet);
-                assignSparseBlockInplace(Dest,vec_mat,_cons_idx["vertex_2"] + 3*i,i + _view._idx["weights"],triplet);
-                assignSparseBlockInplace(Dest,Id,_cons_idx["vertex_2"] +3*i,3*i + _view._idx["reweighted_vertices"],triplet);
-            }
-
-            // All face constraints (edge_vec_1, edge_vec_2, normal_1, normal_2, normal_3)
-            for(int i = 0; i < _num_faces; i++){
-
-                // First, obtain first vertex idces of the face
-                int node_0 = _quadTopol.getNodeOfQuad(i,0);
-                int node_1 = _quadTopol.getNodeOfQuad(i,1);
-                int node_2 = _quadTopol.getNodeOfQuad(i,2);
-                int node_3 = _quadTopol.getNodeOfQuad(i,3);
-
-                RealType w0 = _view.vertex_weight(node_0);
-                RealType w1 = _view.vertex_weight(node_1);
-                RealType w2 = _view.vertex_weight(node_2);
-                RealType w3 = _view.vertex_weight(node_3);
-
-                VectorType v0_tilde = _view.reweighted_vertex(node_0);
-                VectorType v1_tilde = _view.reweighted_vertex(node_1);
-                VectorType v2_tilde = _view.reweighted_vertex(node_2);
-                VectorType v3_tilde = _view.reweighted_vertex(node_3);
-
-                assignSparseBlockInplace(Dest,Id,_cons_idx["edge_vec_1"] + 3*i,3*i+_view._idx["reweighted_edges_1"],triplet);
-
-                // Derivatives w.r.t. the weights w0, w1, w2, w3
-                MatrixType sum_1 = vectorToSparseMat((v2_tilde + v3_tilde));
-                MatrixType sum_2 = vectorToSparseMat((v1_tilde + v0_tilde));
-                assignSparseBlockInplace(Dest, -sum_1,_cons_idx["edge_vec_1"] + 3*i,_view._idx["weights"] + node_0,triplet);
-                assignSparseBlockInplace(Dest, -sum_1, _cons_idx["edge_vec_1"]+ 3*i,_view._idx["weights"] + node_1,triplet);
-                assignSparseBlockInplace(Dest, sum_2,_cons_idx["edge_vec_1"] + 3*i,_view._idx["weights"] + node_2,triplet);
-                assignSparseBlockInplace(Dest, sum_2,_cons_idx["edge_vec_1"] + 3*i,_view._idx["weights"] + node_3,triplet);
-
-                //Derivatives w.r.t. the vertex dofs of reweighted vertices Tilde{v}_0, ..., Tilde{v}_3
-                assignSparseBlockInplace(Dest, (w2+w3)*Id,_cons_idx["edge_vec_1"] + 3*i,_view._idx["reweighted_vertices"] + 3*node_0,triplet);
-                assignSparseBlockInplace(Dest, (w2+w3)*Id,_cons_idx["edge_vec_1"] + 3*i,_view._idx["reweighted_vertices"] + 3*node_1,triplet);
-                assignSparseBlockInplace(Dest, -(w0+w1)*Id,_cons_idx["edge_vec_1"] + 3*i,_view._idx["reweighted_vertices"] + 3*node_2,triplet);
-                assignSparseBlockInplace(Dest, -(w0+w1)*Id,_cons_idx["edge_vec_1"] + 3*i,_view._idx["reweighted_vertices"] + 3*node_3,triplet);
-
-                assignSparseBlockInplace(Dest,Id,_cons_idx["edge_vec_2"] + 3*i,3*i+_view._idx["reweighted_edges_2"],triplet);
-
-                // Derivatives w.r.t. the weights w0, w1, w2, w3
-                MatrixType sum_3 = vectorToSparseMat((v2_tilde + v1_tilde));
-                MatrixType sum_4 = vectorToSparseMat((v0_tilde + v3_tilde));
-    
-                assignSparseBlockInplace(Dest, sum_3,_cons_idx["edge_vec_2"] + 3*i,_view._idx["weights"] + node_0,triplet);
-                assignSparseBlockInplace(Dest, -sum_4,_cons_idx["edge_vec_2"] + 3*i,_view._idx["weights"] + node_1,triplet);
-                assignSparseBlockInplace(Dest, -sum_4,_cons_idx["edge_vec_2"] + 3*i,_view._idx["weights"] + node_2,triplet);
-                assignSparseBlockInplace(Dest, sum_3,_cons_idx["edge_vec_2"] + 3*i,_view._idx["weights"] + node_3,triplet);
-
-                //Derivatives w.r.t. the vertex dofs of reweighted vertices Tilde{v}_0, ..., Tilde{v}_3
-                assignSparseBlockInplace(Dest,-(w1+w2)*Id,_cons_idx["edge_vec_2"] + 3*i,_view._idx["reweighted_vertices"] + 3*node_0,triplet);
-                assignSparseBlockInplace(Dest,(w0+w3)*Id,_cons_idx["edge_vec_2"] + 3*i,_view._idx["reweighted_vertices"] + 3*node_1,triplet);
-                assignSparseBlockInplace(Dest,(w0+w3)*Id,_cons_idx["edge_vec_2"] + 3*i,_view._idx["reweighted_vertices"] + 3*node_2,triplet);
-                assignSparseBlockInplace(Dest,-(w1+w2)*Id,_cons_idx["edge_vec_2"] + 3*i,_view._idx["reweighted_vertices"] + 3*node_3,triplet);
-            
-                 // Set the derivatives w.r.t. the normals
-                MatrixType rw_edge_1_mat = vectorToSparseMat(_view.reweighted_edge_1(i),true);
-                MatrixType normal_mat = vectorToSparseMat(_view.face_normal(i),true);
-                assignSparseBlockInplace(Dest,rw_edge_1_mat,_cons_idx["normal_1"] + i,_view._idx["normals"] + 3*i,triplet);
-                assignSparseBlockInplace(Dest,normal_mat,_cons_idx["normal_1"] + i,_view._idx["reweighted_edges_1"] + 3*i,triplet);
-            
-                MatrixType rw_edge_2_mat = vectorToSparseMat(_view.reweighted_edge_2(i),true);
-                assignSparseBlockInplace(Dest,rw_edge_2_mat,_cons_idx["normal_2"] + i,_view._idx["normals"] + 3*i,triplet);
-                assignSparseBlockInplace(Dest,normal_mat,_cons_idx["normal_2"] + i,_view._idx["reweighted_edges_2"] + 3*i,triplet);
-            
-                assignSparseBlockInplace(Dest,2.0*normal_mat,_cons_idx["normal_3"] + i,_view._idx["normals"] + 3*i,triplet);
-            }
-
-            _it_he.reset();
-
-            // ruling_0 constraint
-            for(_it_he; _it_he.valid();_it_he++)
-            {
-                int i = _it_he.idx();
-                int i_nobdry = _it_he.idx_nobdry();
-
-                size_t faceIdx_1 = _quadTopol.getFaceOfHalfEdge(i,0);
-                size_t faceIdx_2 = _quadTopol.getFaceOfHalfEdge(i,1);
-                Eigen::Vector3d normal_1 = _view.face_normal(faceIdx_1).template head<3>();
-                Eigen::Vector3d normal_2 = _view.face_normal(faceIdx_2).template head<3>();
-
-                // First, set the derivative w.r.t. the ruling vector
-                auto Id = MatrixType(3,3);
-                Id.setIdentity();
-
-                assignSparseBlockInplace(Dest,Id,_cons_idx["ruling_0"] + 3*(i_nobdry),_view._idx["rulings"] + 3*i_nobdry,triplet);
-
-                // Now, set the derivatives w.r.t. the cross product
-                // First, differentiate w.r.t. normal_1
-                Eigen::Vector3d e;
-                MatrixType vec_prod;
-                e.setZero();
-                e[0] = 1.0;
-                vec_prod = convertVecToSparseMat(-e.cross(normal_2));
-                assignSparseBlockInplace(Dest,vec_prod,_cons_idx["ruling_0"] + 3*(i_nobdry),_view._idx["normals"] + 3*faceIdx_1,triplet);
-                e[0] = 0.0;
-                e[1] = 1.0;
-                vec_prod = convertVecToSparseMat(-e.cross(normal_2));
-                assignSparseBlockInplace(Dest,vec_prod,_cons_idx["ruling_0"] + 3*(i_nobdry),_view._idx["normals"] + 3*faceIdx_1 + 1,triplet);
-                e[1] = 0.0;
-                e[2] = 1.0;
-                vec_prod = convertVecToSparseMat(-e.cross(normal_2));
-                assignSparseBlockInplace(Dest,vec_prod,_cons_idx["ruling_0"] + 3*(i_nobdry),_view._idx["normals"] + 3*faceIdx_1 + 2,triplet);
-
-                // Now, differentiate w.r.t. normal_2
-                e[2] = 0.0;
-                e[0] = 1.0;
-                vec_prod = convertVecToSparseMat(e.cross(normal_1));
-                assignSparseBlockInplace(Dest,vec_prod,_cons_idx["ruling_0"] + 3*(i_nobdry),_view._idx["normals"] + 3*faceIdx_2,triplet);
-                e[0] = 0.0;
-                e[1] = 1.0;
-                vec_prod = convertVecToSparseMat(e.cross(normal_1));
-                assignSparseBlockInplace(Dest,vec_prod,_cons_idx["ruling_0"] + 3*(i_nobdry),_view._idx["normals"] + 3*faceIdx_2 + 1,triplet);
-                e[1] = 0.0;
-                e[2] = 1.0;
-                vec_prod = convertVecToSparseMat(e.cross(normal_1));
-                assignSparseBlockInplace(Dest,vec_prod,_cons_idx["ruling_0"] + 3*(i_nobdry),_view._idx["normals"] + 3*faceIdx_2 + 2,triplet);
-            }
-
-            _it_face.reset();
-
-            // constraints ruling_1, ruling_2
-            for(_it_face; _it_face.valid(); _it_face++){
-
-                int i = _it_face.idx();
-                int i_nobdry = _it_face.idx_nobdry();
-
-                int node_0 = _quadTopol.getNodeOfQuad(i,0);
-                int node_1 = _quadTopol.getNodeOfQuad(i,1);
-                int node_2 = _quadTopol.getNodeOfQuad(i,2);
-                int node_3 = _quadTopol.getNodeOfQuad(i,3);
-
-                auto node_0_vert = _view.vertex(node_0);
-                auto node_1_vert = _view.vertex(node_1);
-                auto node_2_vert = _view.vertex(node_2);
-                auto node_3_vert = _view.vertex(node_3);
-
-                int heh_01 = _quadTopol.getHalfEdgeOfQuad(i,0);
-                int heh_12 = _quadTopol.getHalfEdgeOfQuad(i,1);
-                int heh_23 = _quadTopol.getHalfEdgeOfQuad(i,2);
-                int heh_30 = _quadTopol.getHalfEdgeOfQuad(i,3);
-
-                RealType w0 = _view.vertex_weight(node_0);
-                RealType w1 = _view.vertex_weight(node_1);
-                RealType w2 = _view.vertex_weight(node_2);
-                RealType w3 = _view.vertex_weight(node_3);
-
-                VectorType ruling_01 = _view.ruling(_it_he.to_nbdry(heh_01));
-                VectorType ruling_12 = _view.ruling(_it_he.to_nbdry(heh_12));
-                VectorType ruling_23 = _view.ruling(_it_he.to_nbdry(heh_23));
-                VectorType ruling_30 = _view.ruling(_it_he.to_nbdry(heh_30));
-
-                // obtain the reweighted ruling vectors
-                Eigen::Vector3d reweighted_ruling_1 = _view.reweighted_ruling_1(i).template head<3>();
-                Eigen::Vector3d reweighted_ruling_2 = _view.reweighted_ruling_2(i).template head<3>();
-
-                // Differentiate w.r.t. the reweighted ruling r_{1,3,f}
-
-                assignSparseBlockInplace(Dest,Id,_cons_idx["ruling_1"] + 3*i_nobdry,_view._idx["reweighted_rulings_1"] + 3*i_nobdry,triplet);
-
-                MatrixType ruling_30_mat = vectorToSparseMat(ruling_30);
-                MatrixType ruling_12_mat = vectorToSparseMat(ruling_12);
-
-                // Derivatives w.r.t. the weights w0, w1, w2, w3
-                assignSparseBlockInplace(Dest, ruling_30_mat,_cons_idx["ruling_1"] + 3*i_nobdry,_view._idx["weights"] + node_0,triplet);
-                assignSparseBlockInplace(Dest, -ruling_12_mat,_cons_idx["ruling_1"] + 3*i_nobdry,_view._idx["weights"] + node_1,triplet);
-                assignSparseBlockInplace(Dest, -ruling_12_mat,_cons_idx["ruling_1"] + 3*i_nobdry,_view._idx["weights"] + node_2,triplet);
-                assignSparseBlockInplace(Dest, ruling_30_mat,_cons_idx["ruling_1"] + 3*i_nobdry,_view._idx["weights"] + node_3,triplet);
-
-                //Derivatives w.r.t. the rulings
-                assignSparseBlockInplace(Dest,-(w1 + w2)*Id,_cons_idx["ruling_1"] + 3*i_nobdry,_view._idx["rulings"] + 3*_it_he.to_nbdry(heh_12),triplet);
-                assignSparseBlockInplace(Dest,(w3 + w0)*Id,_cons_idx["ruling_1"] + 3*i_nobdry,_view._idx["rulings"] + 3*_it_he.to_nbdry(heh_30),triplet);
-
-                MatrixType ruling_01_mat = vectorToSparseMat(ruling_01);
-                MatrixType ruling_23_mat = vectorToSparseMat(ruling_23);
-
-                // Differentiate w.r.t. the reweighted ruling r_{1,3,f}
-                assignSparseBlockInplace(Dest,Id,_cons_idx["ruling_2"] + 3*i_nobdry,_view._idx["reweighted_rulings_2"] + 3*i_nobdry,triplet);
-
-                // Derivatives w.r.t. the weights w0, w1, w2, w3
-                assignSparseBlockInplace(Dest, -ruling_01_mat,_cons_idx["ruling_2"] + 3*i_nobdry,_view._idx["weights"] + node_0,triplet);
-                assignSparseBlockInplace(Dest, -ruling_01_mat,_cons_idx["ruling_2"] + 3*i_nobdry,_view._idx["weights"] + node_1,triplet);
-                assignSparseBlockInplace(Dest, ruling_23_mat,_cons_idx["ruling_2"] + 3*i_nobdry,_view._idx["weights"] + node_2,triplet);
-                assignSparseBlockInplace(Dest, ruling_23_mat,_cons_idx["ruling_2"] + 3*i_nobdry,_view._idx["weights"] + node_3,triplet);
-
-                //Derivatives w.r.t. the rulings
-                assignSparseBlockInplace(Dest,-(w0 + w1)*Id,_cons_idx["ruling_2"] + 3*i_nobdry,_view._idx["rulings"] + 3*_it_he.to_nbdry(heh_01),triplet);
-                assignSparseBlockInplace(Dest,(w2 + w3)*Id,_cons_idx["ruling_2"]+ 3*i_nobdry,_view._idx["rulings"] + 3*_it_he.to_nbdry(heh_23),triplet);
-            
-                // Derivatives w.r.t. the first ruling vector \Tilde{r}_{13,f}
-                Eigen::Vector3d e;
-                e.setZero();
-                e[0] = 1.0; 
-                assignSparseBlockInplace(Dest,vectorToSparseMat(e.cross(reweighted_ruling_2)),_cons_idx["dev"] + 3*i_nobdry,3*i_nobdry + _view._idx["reweighted_rulings_1"],triplet);
-                e[0] = 0.0;
-                e[1] = 1.0;
-                assignSparseBlockInplace(Dest,vectorToSparseMat(e.cross(reweighted_ruling_2)),_cons_idx["dev"] + 3*i_nobdry,3*i_nobdry + _view._idx["reweighted_rulings_1"] + 1,triplet);
-                e[1] = 0.0;
-                e[2] = 1.0;
-                assignSparseBlockInplace(Dest,vectorToSparseMat(e.cross(reweighted_ruling_2)),_cons_idx["dev"] + 3*i_nobdry,3*i_nobdry + _view._idx["reweighted_rulings_1"] + 2,triplet); 
-            
-                // Derivatives w.r.t. the second ruling vector \Tilde{r}_{02,f}
-                e[2] = 0.0;
-                e[0] = 1.0;
-                assignSparseBlockInplace(Dest,vectorToSparseMat(reweighted_ruling_1.cross(e)),_cons_idx["dev"] + 3*i_nobdry,3*i_nobdry + _view._idx["reweighted_rulings_2"],triplet);
-                e[0] = 0.0;
-                e[1] = 1.0;
-                assignSparseBlockInplace(Dest,vectorToSparseMat(reweighted_ruling_1.cross(e)),_cons_idx["dev"] + 3*i_nobdry,3*i_nobdry + _view._idx["reweighted_rulings_2"] + 1,triplet);
-                e[1] = 0.0;
-                e[2] = 1.0;
-                assignSparseBlockInplace(Dest,vectorToSparseMat(reweighted_ruling_1.cross(e)),_cons_idx["dev"] + 3*i_nobdry,3*i_nobdry + _view._idx["reweighted_rulings_2"] + 2,triplet);   
-            }
-
-            for(int i = 0; i < _stripHandle.num_vertexStrips(); i++){
-                auto triple = _stripHandle.vertex_strip(i);
-                int node_0 = std::get<0>(triple);
-                int node_1 = std::get<1>(triple);
-                int node_2 = std::get<2>(triple);
-                
-                assignSparseBlockInplace(Dest,Id,_cons_idx["fair_v"] + 3*i,3*node_0 + _view._idx["vertices"],triplet);
-                assignSparseBlockInplace(Dest,-2*Id,_cons_idx["fair_v"] + 3*i,3*node_1 + _view._idx["vertices"], triplet);
-                assignSparseBlockInplace(Dest, Id, _cons_idx["fair_v"] + 3*i,3*node_2 + _view._idx["vertices"], triplet);
-            }
-
-            for(int i = 0; i < _stripHandle.num_faceStrips(); i++){
-                auto triple = _stripHandle.face_strip(i);
-                int normal_0 = std::get<0>(triple);
-                int normal_1 = std::get<1>(triple);
-                int normal_2 = std::get<2>(triple);
-
-                assignSparseBlockInplace(Dest,Id,_cons_idx["fair_n"] + 3*i,3*normal_0 + _view._idx["normals"],triplet);
-                assignSparseBlockInplace(Dest,-2*Id,_cons_idx["fair_n"] + 3*i,3*normal_1 + _view._idx["normals"],triplet);
-                assignSparseBlockInplace(Dest,Id,_cons_idx["fair_n"] + 3*i,3*normal_2 + _view._idx["normals"],triplet);
-            }
-
-            for(int i = 0; i < _stripHandle.num_halfedgeStrips(); i++)
-            {
-                auto triple = _stripHandle.halfedge_strip(i);
-                int heh_0 = std::get<0>(triple);
-                int heh_1 = std::get<1>(triple);
-                int heh_2 = std::get<2>(triple);
-
-                assignSparseBlockInplace(Dest,Id,_cons_idx["fair_r"] + 3*i,3*_it_he.to_nbdry(heh_0) + _view._idx["rulings"],triplet);
-                assignSparseBlockInplace(Dest,-2*Id,_cons_idx["fair_r"] + 3*i,3*_it_he.to_nbdry(heh_1) + _view._idx["rulings"],triplet);
-                assignSparseBlockInplace(Dest,Id,_cons_idx["fair_r"] + 3*i,3*_it_he.to_nbdry(heh_2) + _view._idx["rulings"],triplet);
-            }
-        }
-*/
-};
+    };
