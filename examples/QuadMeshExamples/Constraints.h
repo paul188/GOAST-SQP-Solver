@@ -996,6 +996,8 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
     get_constraint_fair_r(vars, Dest);
 }
 
+    template <typename ConfiguratorType2>
+    friend void plot_gauss_image(QuadMeshTopologySaver &quadTopol, Constraint<ConfiguratorType2> &constraint, std::string &filepath);
 };
 
 template <typename ConfiguratorType>
@@ -2107,3 +2109,31 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
         }
 
     };
+
+// Now, write a function to easily export the Gauss map image as plot
+// Needs to be able to access 
+template<typename ConfiguratorType>
+void plot_gauss_image(QuadMeshTopologySaver &quadTopol, VectorView<ConfiguratorType> &view, std::string &filepath)
+{
+    std::ofstream stream;
+    stream.open(filepath);
+    // Write all the normals
+    for(int i = 0; i < quadTopol.getNumFaces(); i++)
+    {
+        auto normal = view.face_normal(i);
+        stream << normal[0] << " " << normal[1] << " " << normal[2] << std::endl;
+    }
+}
+
+template<typename ConfiguratorType>
+void plot_gauss_image(QuadMeshTopologySaver &quadTopol, Constraint<ConfiguratorType> &constraint, std::string &filepath)
+{
+    std::ofstream stream;
+    stream.open(filepath);
+    // Write all the normals
+    for(int i = 0; i < quadTopol.getNumFaces(); i++)
+    {
+        auto normal = constraint._view.face_normal(i);
+        stream << normal[0] << " " << normal[1] << " " << normal[2] << std::endl;
+    }
+}

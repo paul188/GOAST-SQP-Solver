@@ -42,6 +42,7 @@ try{
     std::cerr << "SIMPLE ARC FOLD SIMULATION WITH BENDING AND MEMBRANE ENERGIES" << std::endl;
     std::cerr << "=================================================================================" << std::endl << std::endl;
     
+    RealType t_0 = 0.8084239959716796; // optimal Fold parameter
 // load flat plate and prepare the arc crease
     TriMesh plate;
     OpenMesh::IO::read_mesh(plate, "../../data/plate/paperCrissCross.ply");
@@ -104,7 +105,7 @@ try{
 
         if(coords[1] == 0.25){
             bdryMaskDirichlet.push_back(i);
-            coords[1] += 0.25*(0.25 - std::pow(coords[0] - 0.5, 2.0));
+            coords[1] += t_0*(0.25 - std::pow(coords[0] - 0.5, 2.0));
         }
 
         if(coords[0] == 0.0 || coords[0] == 1.0 || coords[1] == 0.0 || coords[1] == 1.0){
@@ -339,6 +340,12 @@ try{
     // saving
     setGeometry( plate, plateGeomDef );
     OpenMesh::IO::write_mesh(plate, "bendingFoldSol_withNewton_scaled.ply");
+
+    RealType cost = 0.0;
+    CostFunctional<DefaultConfigurator> costFunctional(upperVertices);
+    costFunctional.apply(plateGeomDef,cost);
+    std::cout<<"Cost in the end: "<<std::setprecision(12)<< cost <<std::endl;
+
     }
     catch ( BasicException &el ){
         std::cerr << std::endl << "ERROR!! CAUGHT FOLLOWING EXECEPTION: " << std::endl << el.getMessage() << std::endl << std::flush;
