@@ -38,6 +38,9 @@ add_executable(ToyExampleDevelopability QuadMeshExamples/ToyExampleDevelopabilit
 add_executable(TestBLASLAPACK testBLASLAPACK.cpp)
 add_executable(bendingFoldParamDirichlet_scaled SingleArcCrease/bendingFoldParamDirichlet_scaled.cpp)
 add_executable(FoldArcLineTest FoldOptimization/FoldDofDerivTests/FoldArcLineTest.cpp)
+add_executable(ToyExampleFreeArcLine FoldOptimization/ToyExampleFreeArcLine.cpp)
+
+target_link_libraries(ToyExampleFreeArcLine PRIVATE GOAST::GOAST)
 
 target_link_libraries(CrossFoldNewton PRIVATE GOAST::GOAST)
 

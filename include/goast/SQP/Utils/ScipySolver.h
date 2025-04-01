@@ -7,8 +7,8 @@
 
 namespace py = pybind11;
 
-class ScipySolver{
-    private:
+class __attribute__((visibility("default"))) ScipySolver{
+    public:
         py::module np;
         py::module scipy_linalg;
 

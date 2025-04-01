@@ -998,6 +998,9 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
 
     template <typename ConfiguratorType2>
     friend void plot_gauss_image(QuadMeshTopologySaver &quadTopol, Constraint<ConfiguratorType2> &constraint, std::string &filepath);
+
+    template <typename ConfiguratorType2>
+    friend void export_normals(QuadMeshTopologySaver &quadTopol, Constraint<ConfiguratorType2> &constraint, std::string &filepath);
 };
 
 template <typename ConfiguratorType>
@@ -2130,6 +2133,25 @@ void plot_gauss_image(QuadMeshTopologySaver &quadTopol, Constraint<ConfiguratorT
 {
     std::ofstream stream;
     stream.open(filepath);
+    // Write all the normals
+    for(int i = 0; i < quadTopol.getNumFaces(); i++)
+    {
+        auto normal = constraint._view.face_normal(i);
+        stream << normal[0] << " " << normal[1] << " " << normal[2] << std::endl;
+    }
+}
+
+template<typename ConfiguratorType>
+void export_normals(QuadMeshTopologySaver &quadTopol, Constraint<ConfiguratorType> &constraint, std::string &filepath)
+{
+    std::ofstream stream;
+    stream.open(filepath);
+    // First, write all the coordinates to the file
+    for(int i = 0; i < quadTopol.getNumVertices(); i++)
+    {
+        auto vertex = constraint._view.vertex(i);
+        stream << vertex[0] << " " << vertex[1] << " " << vertex[2] << std::endl;
+    }
     // Write all the normals
     for(int i = 0; i < quadTopol.getNumFaces(); i++)
     {

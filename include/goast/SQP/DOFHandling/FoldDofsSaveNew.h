@@ -213,20 +213,19 @@ class FoldDofsFreeLine : public FoldDofs<ConfiguratorType>, public BaseOp<typena
         typedef typename ConfiguratorType::VecType VecType;
 
     private:
-        // is the line parallel to the x axis or y axis
-        const bool is_x_parallel;
-        // how far away is the line from x-/resp. y-axis
-        const RealType start_value;
+        bool parallel_x;
+        RealType initial_line_pos;
 
     public:
         // We start from a certain reference geometry relative to which we translate the foldDofs. This is plateGeomRef_basic
         // This reference geometry should not be updated during the optimization
         // No new object needs to be created during optimization loop
         // parallel_x specifies whether the line is oriented parallel to the x-direction (true) or y-direction (false)
-        FoldDofsFreeLine(const MeshTopologySaver &plateTopol, const VectorType &plateGeomInitial, const VectorType &plateGeomRef_basic, const std::vector<int> &bdryMaskRef, const bool is_x_parallel, const RealType start_value) 
-        : FoldDofs<ConfiguratorType>(plateTopol,plateGeomInitial,plateGeomRef_basic,bdryMaskRef), is_x_parallel(is_x_parallel), start_value(start_value)
+        FoldDofsFreeLine(const MeshTopologySaver &plateTopol, const VectorType &plateGeomInitial, const VectorType &plateGeomRef_basic, const std::vector<int> &bdryMaskRef, RealType initial_line_pos, bool parallel_x)
+        : FoldDofs<ConfiguratorType>(plateTopol,plateGeomInitial,plateGeomRef_basic,bdryMaskRef)
         {
             this->initialize_folds_edges();
+            this->parallel_x = parallel_x;
         }
 
         void apply(const VectorType &t, VectorType &Dest) const override{
@@ -240,12 +239,11 @@ class FoldDofsFreeLine : public FoldDofs<ConfiguratorType>, public BaseOp<typena
             for(int i = 0; i < this->_foldVertices.size(); i++){
                 VecType coords;
                 getXYZCoord<VectorType, VecType>( Dest, coords, this->_foldVertices[i]);
-                if(is_x_parallel){
-                    // This is the difference to FoldDofsSimpleLine
-                    // -> have one param t[i] for each fold vertex
+                // This is the difference to FoldDofsSimpleLine
+                // -> have one param t[i] for each fold vertex
+                if(parallel_x){
                     coords[1] += t[i];
-                }
-                else{
+                }else{
                     coords[0] += t[i];
                 }
                 setXYZCoord<VectorType, VecType>( Dest, coords, this->_foldVertices[i]);
@@ -259,10 +257,10 @@ class FoldDofsFreeLine : public FoldDofs<ConfiguratorType>, public BaseOp<typena
         bool isFoldVertex(const RealType coord_x, const RealType coord_y) const
         {
             const RealType tolerance = 1e-5;  // Adjust as necessary
-            if(is_x_parallel){
-                return std::abs(coord_y - start_value) < tolerance;
+            if(parallel_x){
+                return std::abs(coord_y - initial_line_pos) < tolerance;
             }else{
-                return std::abs(coord_x - start_value) < tolerance;
+                return std::abs(coord_x - initial_line_pos) < tolerance;
             }
         }
 
@@ -302,17 +300,18 @@ class FoldDofsFreeLineGradient : public FoldDofsGradient<ConfiguratorType>, publ
     typedef typename ConfiguratorType::SparseMatrixType MatrixType;
 
     private:
-        // is the line parallel to the x axis or y axis
-        const bool is_x_parallel;
+        bool parallel_x;
 
     public:
         FoldDofsFreeLineGradient(const MeshTopologySaver &plateTopol,
                                    const std::vector<int> &bdryMaskRef,
                                    const VectorType &plateGeomInitial,
                                    const std::vector<int> &foldVertices,
-                                   const bool is_x_parallel)
-                                   : FoldDofsGradient<ConfiguratorType>(plateTopol,bdryMaskRef,plateGeomInitial,foldVertices), is_x_parallel(is_x_parallel)
-                                   {}
+                                   bool parallel_x)
+                                   : FoldDofsGradient<ConfiguratorType>(plateTopol,bdryMaskRef,plateGeomInitial,foldVertices)
+                                   {
+                                        this->parallel_x = parallel_x;
+                                   }
 
         void apply(const VectorType &t, MatrixType& Dest) const override{
             // Compute the gradient of the translation of the vertices of the fold with parameters t_i       
@@ -331,10 +330,16 @@ class FoldDofsFreeLineGradient : public FoldDofsGradient<ConfiguratorType>, publ
             indicator_dof.setZero();
 
             std::vector<Eigen::Triplet<RealType>> triplets;
-            for (int i = 0; i < this->_foldVertices.size(); i++) {
-                if(is_x_parallel){
+            if(parallel_x){
+                for (int i = 0; i < this->_foldVertices.size(); i++) {
+                    VecType coords;
+                    getXYZCoord<VectorType, VecType>( this->_plateGeomInitial, coords, this->_foldVertices[i]);
                     triplets.push_back(Eigen::Triplet<RealType>(this->_plateTopol.getNumVertices() + this->_foldVertices[i], i, 1.0));
-                }else{
+                }
+            }else{
+                for (int i = 0; i < this->_foldVertices.size(); i++) {
+                    VecType coords;
+                    getXYZCoord<VectorType, VecType>( this->_plateGeomInitial, coords, this->_foldVertices[i]);
                     triplets.push_back(Eigen::Triplet<RealType>(this->_foldVertices[i], i, 1.0));
                 }
             }

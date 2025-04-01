@@ -32,7 +32,7 @@ try{
 
     // load flat plate [0,1]^2
     TriMesh plate;
-    OpenMesh::IO::read_mesh(plate, "../../data/plate/testMesh2_fine.ply");
+    OpenMesh::IO::read_mesh(plate, "../../data/plate/testMesh2.ply");
     MeshTopologySaver plateTopol( plate );
     std::cerr << "num of nodes = " << plateTopol.getNumVertices() << std::endl;
     VectorType plateGeomRef, plateGeomDef, plateGeomInitial;
@@ -108,7 +108,7 @@ try{
 
     extendBoundaryMask( plateTopol.getNumVertices(), bdryMaskOpt );
 
-    auto foldDofsPtr = std::make_shared<FoldDofsFreeLine<DefaultConfigurator>>(plateTopol,plateGeomInitial, plateGeomRef, bdryMaskRef_1);
+    auto foldDofsPtr = std::make_shared<FoldDofsFreeLine<DefaultConfigurator>>(plateTopol,plateGeomInitial, plateGeomRef, bdryMaskRef_1, 2.0, true);
 
     std::vector<int> foldVertices;
     foldDofsPtr -> getFoldVertices(foldVertices);
@@ -118,7 +118,7 @@ try{
         std::cout<<"("<<coords[0]<<", "<<coords[1]<<")"<<std::endl;
     }
 
-    auto DfoldDofsPtr = std::make_shared<FoldDofsFreeLineGradient<DefaultConfigurator>>(plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices);
+    auto DfoldDofsPtr = std::make_shared<FoldDofsFreeLineGradient<DefaultConfigurator>>(plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices, true);
 
     VectorType edge_weights = VectorType::Zero(plateTopol.getNumEdges());
     foldDofsPtr->getEdgeWeights(edge_weights);

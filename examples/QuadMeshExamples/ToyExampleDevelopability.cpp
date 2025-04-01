@@ -169,6 +169,8 @@ int main()
         OpenMesh::IO::write_mesh(mesh, "result_developability.ply");
         std::string filepath_end = "/home/paul_johannssen/Desktop/masterarbeit/goast_old/examples/QuadMeshExamples/plotting/gauss_image_data_final.txt";
         plot_gauss_image(quadTopol,constraint, filepath_end);
+        std::string normals_file = "/home/paul_johannssen/Desktop/masterarbeit/goast_old/examples/QuadMeshExamples/plotting/normals.txt";
+        export_normals(quadTopol,constraint, normals_file);
 
     }catch(std::exception &e){
         std::cerr << "Exception caught: " << e.what() << std::endl;
