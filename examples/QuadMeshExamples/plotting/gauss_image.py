@@ -30,19 +30,42 @@ x_coords = []
 y_coords = []
 z_coords = []
 
-# Open the file and read each line
-with open("/home/paul_johannssen/Desktop/masterarbeit/goast_old/examples/QuadMeshExamples/plotting/gauss_image_data_final.txt", "r") as file:
-    for line in file:
-        # Split the line by whitespace and extract x, y, z
-        coords = line.split()
-        x, y, z = float(coords[0]), float(coords[1]), float(coords[2])
-        
-        # Append the coordinates to respective arrays
-        x_coords.append(x)
-        y_coords.append(y)
-        z_coords.append(z)
+positions = []
+normals = []
 
-ax.scatter(x_coords, y_coords, z_coords, color='b')  # Scatter plot of points on the sphere
+# Open the file and read it line by line
+with open('normals.txt', 'r') as file:
+    n = sum(1 for _ in file)
+
+    # Reset file pointer to the beginning
+    file.seek(0)
+
+    # Read the first n lines as positions
+    for _ in range(n // 2):  # You should know n, the number of position vectors
+        position_line = file.readline().strip()
+        #numbers = [float(x) for x in position_line.split()]
+        positions.append([float(x) for x in position_line.split()])
+
+    # Read the second n lines as normal vectors
+    for _ in range(n // 2):  # The same n for the normals
+        normal_line = file.readline().strip()
+        normals.append([float(x) for x in normal_line.split()])
+
+# Extract x, y, z components separately
+x_coords = [normal[0] for normal in normals]
+y_coords = [normal[1] for normal in normals]
+z_coords = [normal[2] for normal in normals]
+
+print("X test: ")
+print(x_coords)
+
+print("Y test: ")
+print(y_coords)
+
+print("Z test: ")
+print(z_coords)
+
+ax.scatter(x_coords, y_coords, z_coords, color='b',s=0.001)  # Scatter plot of points on the sphere
 
 # Labels and aspect ratio
 ax.set_xlabel('X-axis')
@@ -50,6 +73,6 @@ ax.set_ylabel('Y-axis')
 ax.set_zlabel('Z-axis')
 ax.set_box_aspect([1, 1, 1])  # Ensure proper scaling
 
-ax.set_title('Random Points on a Unit Sphere')
+ax.set_title('Plot of the Gauss image of the surface on the unit sphere')
 
 plt.show()

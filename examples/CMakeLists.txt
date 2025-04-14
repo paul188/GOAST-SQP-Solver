@@ -39,6 +39,12 @@ add_executable(TestBLASLAPACK testBLASLAPACK.cpp)
 add_executable(bendingFoldParamDirichlet_scaled SingleArcCrease/bendingFoldParamDirichlet_scaled.cpp)
 add_executable(FoldArcLineTest FoldOptimization/FoldDofDerivTests/FoldArcLineTest.cpp)
 add_executable(ToyExampleFreeArcLine FoldOptimization/ToyExampleFreeArcLine.cpp)
+add_executable(ToyExampleDevelopabilityCylinder QuadMeshExamples/ToyExampleDevelopabilityCylinder.cpp)
+add_executable(SharpCreaseDevelopability QuadMeshExamples/SharpCreaseDevelopability.cpp)
+
+target_link_libraries(SharpCreaseDevelopability PRIVATE GOAST::GOAST)
+
+target_link_libraries(ToyExampleDevelopabilityCylinder PRIVATE GOAST::GOAST)
 
 target_link_libraries(ToyExampleFreeArcLine PRIVATE GOAST::GOAST)
 

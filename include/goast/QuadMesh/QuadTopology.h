@@ -1,9 +1,9 @@
 #pragma once
 
 //== INCLUDES =================================================================
-#include "QuadMesh.h"
 #include "QuadMeshIncludes.h"
 #include <goast/Core/Auxiliary.h>
+#include <goast/Core.h>
 
 #include <queue>
 
@@ -116,8 +116,8 @@ protected:
     // run over all edges
     for (  MyMesh::EdgeIter e_it = mesh.edges_begin(); e_it != mesh.edges_end(); ++e_it ){
        // define two corresponding half edges
-       HEH heh0( mesh.halfedge_handle( *e_it, 0) );
-       HEH heh1( mesh.halfedge_handle( *e_it, 1) );
+       MyMesh::HalfedgeHandle heh0( mesh.halfedge_handle( *e_it, 0) );
+       MyMesh::HalfedgeHandle heh1( mesh.halfedge_handle( *e_it, 1) );
        
        // indices of vertices at current edge
        _nodesOfEdges[e_it->idx()][0] = mesh.from_vertex_handle( heh0 ).idx();
@@ -131,7 +131,7 @@ protected:
     // run over all halfedges
     for ( MyMesh::HalfedgeIter he_it = mesh.halfedges_begin(); he_it != mesh.halfedges_end(); ++he_it ){
       // define two corresponding half edges
-      HEH heh( *he_it );
+      MyMesh::HalfedgeHandle heh( *he_it );
       
       // indices of vertices at current edge
       _facesOfHalfedges[heh.idx()][0] = mesh.face_handle( heh ).idx();
@@ -494,9 +494,9 @@ protected:
     for (; !_mesh.is_boundary ( *hIter ); ++hIter ) ;
     
     // run along boundary
-    HEH startHEH = *hIter;
+    MyMesh::HalfedgeHandle startHEH = *hIter;
     mask.push_back(  _mesh.to_vertex_handle ( startHEH ).idx() );
-    HEH bdryHEH = _mesh.next_halfedge_handle ( startHEH );
+    MyMesh::HalfedgeHandle bdryHEH = _mesh.next_halfedge_handle ( startHEH );
     while( startHEH != bdryHEH ){
       mask.push_back(  _mesh.to_vertex_handle( bdryHEH ).idx() );
       bdryHEH = _mesh.next_halfedge_handle ( bdryHEH );
@@ -549,5 +549,126 @@ static void setGeometry( MyMesh& Mesh, const VectorType& geom ){
     }        
 }
 
+// ---------------------- HERE COME THE METHODS FOR TURNING A QUAD MESH INTO A TRIMESH WITH CENTROIDS ---------------------------
+
+VertexHandle add_vertex_unique_Tri(TriMesh &triMesh, TriMesh::Point p)
+{
+    // Check if the vertex already exists
+    for(const auto &vh : triMesh.vertices())
+    {
+        if((triMesh.point(vh) - p).norm() < 1e-6){
+            return vh;
+        }
+    }
+    TriMesh::VertexHandle vh = triMesh.add_vertex(p);
+    return vh;
+}
+
+void split_quad(MyMesh::FaceHandle &fh, MyMesh::HalfedgeHandle &start_heh, TriMesh &triMesh){
+        
+  // This is the outgoing halfedge from vertex vh along the face fh
+  MyMesh::VertexHandle v1 = _mesh.from_vertex_handle(start_heh);
+  auto heh2 = _mesh.next_halfedge_handle(start_heh);
+  MyMesh::VertexHandle v2 = _mesh.from_vertex_handle(heh2);
+  MyMesh::VertexHandle v3 = _mesh.to_vertex_handle(heh2);
+  MyMesh::VertexHandle v4 = _mesh.to_vertex_handle(_mesh.next_halfedge_handle(heh2));
+
+  MyMesh::VertexHandle v1_tri = add_vertex_unique_Tri(triMesh,_mesh.point(v1));
+  MyMesh::VertexHandle v2_tri = add_vertex_unique_Tri(triMesh,_mesh.point(v2));
+  MyMesh::VertexHandle v3_tri = add_vertex_unique_Tri(triMesh,_mesh.point(v3));
+  MyMesh::VertexHandle v4_tri = add_vertex_unique_Tri(triMesh,_mesh.point(v4));
+  MyMesh::VertexHandle v5_tri = add_vertex_unique_Tri(triMesh,0.25*(_mesh.point(v1) + _mesh.point(v2) + _mesh.point(v3) + _mesh.point(v4)));
+
+  MyMesh::FaceHandle trifh_1 = triMesh.add_face(v1_tri,v2_tri,v5_tri);
+  MyMesh::FaceHandle trifh_2 = triMesh.add_face(v2_tri,v3_tri,v5_tri);
+  MyMesh::FaceHandle trifh_3 = triMesh.add_face(v3_tri,v4_tri,v5_tri);
+  MyMesh::FaceHandle trifh_4 = triMesh.add_face(v4_tri,v1_tri,v5_tri);
+  
+  if(!trifh_1.is_valid() || !trifh_2.is_valid() || !trifh_3.is_valid() || !trifh_4.is_valid()){
+      std::cerr << "Error: Could not create a triangle face!" << std::endl;
+  }
+
+}
+
+TriMesh makeQuadMeshCentroid() {
+  // The result trimesh
+  TriMesh triMesh;
+  MyMesh quad_mesh = _mesh;
+
+  // Add a property that signals the orientation of the face -> one vertex of the face that lies on the diagonal
+  // We consider the halfedge that starts from that vertex
+  OpenMesh::FPropHandleT<OpenMesh::HalfedgeHandle> centroid_heh;
+  OpenMesh::FPropHandleT<bool> visited;
+  quad_mesh.add_property(centroid_heh, "centroid_heh");
+  quad_mesh.add_property(visited, "visited");
+
+  // We have not visited any faces yet -> means not added to face_stack yet
+  // and don't have a diagonal halfedge yet
+  for (const auto& fh : quad_mesh.faces()) {
+      quad_mesh.property(visited, fh) = false;
+  }
+
+  // Start with some face handle of the mesh
+  FaceHandle init_face;
+
+  for (auto fh : quad_mesh.faces()) {
+      init_face = fh;
+      break; // Take the first face
+  }
+
+  if (!init_face.is_valid()) {
+      std::cerr << "Error: No valid face found!" << std::endl;
+  }
+
+  // Stack for DFS traversal
+  std::vector<MyMesh::FaceHandle> face_stack;
+
+  // Push the starting face
+  face_stack.push_back(init_face);
+  quad_mesh.property(visited, init_face) = true;
+
+  VertexHandle init_vertex;
+  HalfedgeHandle init_heh;
+
+  init_heh = quad_mesh.halfedge_handle(init_face);
+  init_vertex = quad_mesh.from_vertex_handle(init_heh);
+
+  quad_mesh.property(centroid_heh,init_face) = init_heh;
+
+  // The halfedge handle from the current face going out from a vertex on the diagonal
+  HalfedgeHandle start_heh;
+  while (!face_stack.empty()) {
+      // Pop a face from the stack
+      FaceHandle current_face = face_stack.back();
+      face_stack.pop_back();
+
+      start_heh = quad_mesh.property(centroid_heh,current_face);
+
+      // Store all adjacent non triangle faces
+      auto current_heh = start_heh;
+      int counter = 0;
+      do {
+          if(! quad_mesh.is_boundary(current_heh)){
+              FaceHandle adj_face = quad_mesh.opposite_face_handle(current_heh);
+              if (adj_face.is_valid() && !quad_mesh.property(visited, adj_face)) {
+                  face_stack.push_back(adj_face);
+                  // Set the halfedge handle property of the adjacent face
+                  HalfedgeHandle centroid_property = quad_mesh.opposite_halfedge_handle(current_heh);
+                  quad_mesh.property(centroid_heh,adj_face) = centroid_property;
+                  quad_mesh.property(visited, adj_face) = true;
+              }
+          }
+          current_heh = quad_mesh.next_halfedge_handle(current_heh);
+          counter ++;
+      } while(current_heh != start_heh);
+
+      // Split the current face and add to the trimesh
+      split_quad(current_face, start_heh, triMesh);
+  }
+  quad_mesh.remove_property(centroid_heh);
+  quad_mesh.remove_property(visited);
+
+  return triMesh;
+}
 
 };

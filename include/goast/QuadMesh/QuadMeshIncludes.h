@@ -19,6 +19,8 @@
 #include <OpenMesh/Core/Utils/vector_cast.hh>
 #include <OpenMesh/Core/Geometry/QuadricT.hh>
 
+#include <OpenMesh/Core/Mesh/PolyMesh_ArrayKernelT.hh>
+
 struct QuadTraits : public OpenMesh::DefaultTraits
 {
   /// Use double precision points

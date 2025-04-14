@@ -78,7 +78,7 @@ class LMAlgorithm{
 
             while(_pars.iter < _pars.maxIter && !_pars.found){
                 std::cout << "\rIteration: "<< std::setw(4) << _pars.iter
-                << " | F_k: " << std::setprecision(12)<< std::setw(10) << 0.5*f_k.dot(f_k)
+                << " | F_k: " << std::setprecision(12)<< std::setw(10) << 0.5*f_k.dot(W*f_k)
                 << " | g_k: " << std::setprecision(12)<<std::setw(10)<<g_k.template lpNorm<Eigen::Infinity>()<<std::endl;
 
                 F_k = 0.5*f_k.dot(W*f_k);

@@ -144,33 +144,37 @@ int main()
 
         LevenbergMarquardtParams<DefaultConfigurator> pars;
         StripHandler<DefaultConfigurator> stripHandle(quadTopol);
-        Constraint<DefaultConfigurator> constraint(quadTopol,stripHandle, bdryData);
-        ConstraintGrad<DefaultConfigurator> constraintGrad(quadTopol,stripHandle, bdryData);
-        VectorView<DefaultConfigurator> view(quadTopol);
-        ConstraintView<DefaultConfigurator> cons_view(stripHandle, quadTopol, bdryData);
-
-        LMAlgorithm<DefaultConfigurator> lm(pars, constraint, constraintGrad, view._idx["num_dofs"], cons_view._cons_idx["num_cons"]);
+        VarsIdx<DefaultConfigurator> vars_idx(quadTopol);
+        ConstraintIdx<DefaultConfigurator> cons_idx(stripHandle, quadTopol, bdryData);
+        Constraint<DefaultConfigurator> constraint(quadTopol,stripHandle, cons_idx, vars_idx, bdryData);
+        ConstraintGrad<DefaultConfigurator> constraintGrad(quadTopol,stripHandle,cons_idx, vars_idx, bdryData);
+        
+        LMAlgorithm<DefaultConfigurator> lm(pars, constraint, constraintGrad, vars_idx["num_dofs"], cons_idx["num_cons"]);
 
         // CHOOSE GOOD INITIAL GUESS
-        VectorType init = VectorType::Zero(view._idx["num_dofs"]);
-        
+        VectorType init = VectorType::Zero(vars_idx["num_dofs"]);
         constraint.initialize_vars(geom, init);
-        view.set_vector(init);
 
-        std::string filepath_begin = "/home/paul_johannssen/Desktop/masterarbeit/goast_old/examples/QuadMeshExamples/plotting/gauss_image_data_begin.txt";
-        plot_gauss_image(quadTopol,view, filepath_begin);
+        //::string filepath_begin = "/home/paul_johannssen/Desktop/masterarbeit/goast_old/examples/QuadMeshExamples/plotting/gauss_image_data_begin.txt";
+        //plot_gauss_image(quadTopol,view, filepath_begin);
 
         VectorType Dest;
         MatrixType Weights;
-        cons_view.extend_weights(weights, Weights);
+        weights.extend_weights(cons_idx, Weights);
         lm.solve(init, Dest, Weights);
-        VectorType DestGeom = Dest.segment(view._idx["vertices"],3*num_vertices);
+        VectorType DestGeom = Dest.segment(vars_idx["vertices"],3*num_vertices);
         QuadMeshTopologySaver::setGeometry(mesh, DestGeom);
         OpenMesh::IO::write_mesh(mesh, "result_developability.ply");
+        /*
         std::string filepath_end = "/home/paul_johannssen/Desktop/masterarbeit/goast_old/examples/QuadMeshExamples/plotting/gauss_image_data_final.txt";
         plot_gauss_image(quadTopol,constraint, filepath_end);
         std::string normals_file = "/home/paul_johannssen/Desktop/masterarbeit/goast_old/examples/QuadMeshExamples/plotting/normals.txt";
         export_normals(quadTopol,constraint, normals_file);
+        std::string rw_rulings_file = "/home/paul_johannssen/Desktop/masterarbeit/goast_old/examples/QuadMeshExamples/plotting/rw_rulings.txt";
+        export_rw_rulings(quadTopol,constraint, rw_rulings_file);
+        std::string rulings_file = "/home/paul_johannssen/Desktop/masterarbeit/goast_old/examples/QuadMeshExamples/plotting/rulings.txt";
+        export_rulings(quadTopol,constraint, rulings_file);
+        */
 
     }catch(std::exception &e){
         std::cerr << "Exception caught: " << e.what() << std::endl;

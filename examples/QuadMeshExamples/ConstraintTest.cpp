@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-#include <goast/Quads.h>
+#include <goast/QuadMesh/QuadTopology.h>
 #include <goast/Core.h>
 #include "Constraints.h"
 
@@ -12,20 +12,6 @@
 typedef DefaultConfigurator::VectorType VectorType;
 typedef DefaultConfigurator::VecType VecType;
 typedef DefaultConfigurator::RealType RealType;
-
-/** 
- * \brief Simulation of a simple fold 
- * \author Johannssen
- *
- * We optimize this energy by direct optimization via gradient descent or BFGS.
- * 
- */
-
-/**/
-
-typedef DefaultConfigurator::SparseMatrixType MatrixType;
-typedef DefaultConfigurator::FullMatrixType FullMatrixType;
-typedef DefaultConfigurator::VectorType VectorType;
 
 int main(int argc, char *argv[])
 {
@@ -44,7 +30,7 @@ try{
 
     QuadMeshTopologySaver::getGeometry(mesh,geom);
 
-    VectorView<DefaultConfigurator> view(quadTopol);
+    VarsIdx<DefaultConfigurator> vars_idx(quadTopol);
     StripHandler<DefaultConfigurator> stripHandle(quadTopol);
 
     // set the boundary
@@ -78,12 +64,15 @@ try{
 
     std::pair<std::vector<int>, VectorType> bdryData = std::make_pair(bdryMask,bdryCoords);
 
-    Constraint<DefaultConfigurator> constraint(quadTopol,stripHandle, bdryData);
-    ConstraintGrad<DefaultConfigurator> constraintGrad(quadTopol,stripHandle, bdryData);
+    ConstraintIdx<DefaultConfigurator> cons_idx(stripHandle, quadTopol, bdryData);
+    VarsIdx<DefaultConfigurator> variablesIdx(quadTopol);
 
-    VectorType test_input = VectorType::Ones(view._idx["num_dofs"]);
+    Constraint<DefaultConfigurator> constraint(quadTopol,stripHandle,cons_idx, vars_idx, bdryData);
+    ConstraintGrad<DefaultConfigurator> constraintGrad(quadTopol,stripHandle, cons_idx, vars_idx, bdryData);
 
-    test_input.segment(view._idx["vertices"],3*num_vertices) = geom;
+    VectorType test_input = VectorType::Ones(vars_idx["num_dofs"]);
+
+    test_input.segment(vars_idx["vertices"],3*num_vertices) = geom;
     
     VectorType test_input_2;
     constraint.initialize_vars(geom,test_input_2);
