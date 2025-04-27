@@ -656,3 +656,224 @@ class FoldDofsArcLineGradient : public FoldDofsGradient<ConfiguratorType>, publi
             Dest = convertVecToSparseMat(dest);
         }
 };
+
+template<typename ConfiguratorType>
+class FoldDofsSkewedCross : public FoldDofs<ConfiguratorType>, public BaseOp<typename ConfiguratorType::VectorType, typename ConfiguratorType::VectorType>{
+    typedef typename ConfiguratorType::RealType RealType;
+    typedef typename ConfiguratorType::VectorType VectorType;
+    typedef typename ConfiguratorType::VecType VecType;
+
+    public:
+        FoldDofsSkewedCross(const MeshTopologySaver &plateTopol, const VectorType &plateGeomInitial, const VectorType &plateGeomRef_basic, const std::vector<int> &bdryMaskRef)
+        : FoldDofs<ConfiguratorType>(plateTopol,plateGeomInitial,plateGeomRef_basic,bdryMaskRef)
+        {
+            this->initialize_folds_edges();
+        }
+
+        void apply(const VectorType &t, VectorType &Dest) const override{
+            if(Dest.size() != 3*this->_plateTopol.getNumVertices()){
+                Dest.resize(3*this->_plateTopol.getNumVertices());
+            }
+
+            Dest = this->_plateGeomRef_basic;
+
+            // Now, apply the translation to the fold vertices
+            RealType angle;
+            if((0 <= t[0] && t[0] <= M_PI_4) || (t[0] <= 0 && t[0] >= - M_PI_4)){
+                angle = std::atan(2*t[0]);
+            }
+            else{
+                throw std::invalid_argument("t[0] is not in the range [-pi/4, pi/4]");
+            }
+            RealType cos_angle = std::cos(angle);
+            RealType sin_angle = std::sin(angle);
+            for(int i = 0; i < this->_foldVertices.size(); i++)
+            {
+                VecType coords;
+                getXYZCoord<VectorType, VecType>( Dest, coords, this->_foldVertices[i]);
+
+                // prepare for rotation
+                coords[0] -= 0.5;
+                coords[1] -= 0.5;
+
+                // now rotate by arctan(2t) clockwise such that we get the y component t
+                RealType x_store = coords[0];
+                RealType y_store = coords[1];
+                coords[0] = cos_angle*x_store + sin_angle*y_store;
+                coords[1] = -sin_angle*x_store + cos_angle*y_store;
+
+                // Now, scale according to the rotation
+                if(((0 <= angle) && (angle) <= M_PI/4.0) || (angle <= 0 && angle >= -M_PI/4.0))
+                {
+                    RealType scaling = sqrt(t[0]*t[0] + 0.25)/ 0.5;
+                    coords[0] *= scaling;
+                    coords[1] *= scaling;
+                }
+                else{
+                    throw std::invalid_argument("Something went wrong, angle shouldnt be this large/negative");
+                }
+
+                // now translate back
+                coords[0] += 0.5;
+                coords[1] += 0.5;
+
+                setXYZCoord<VectorType, VecType>( Dest, coords, this->_foldVertices[i]);
+            }   
+
+            // Now, use the DirichletSmoother to regularize
+            /*
+            DirichletSmoother<DefaultConfigurator> smoother(this->_plateGeomInitial,this->_bdryMaskRef, this->_plateTopol);
+            smoother.apply(Dest, Dest);
+            */
+        }
+
+        bool isFoldVertex(const RealType coord_x, const RealType coord_y) const
+        {
+            if((std::abs(coord_x - 0.5) < 1e-4) || (std::abs(coord_y - 0.5) < 1e-4)){
+                return true;
+            }
+            return false;
+        }
+
+        bool isFoldEdge(const int edgeIdx) const
+        {
+            int node_i = this->_plateTopol.getAdjacentNodeOfEdge(edgeIdx,0);
+            int node_j = this->_plateTopol.getAdjacentNodeOfEdge(edgeIdx,1);
+
+            VecType coords_i, coords_j;
+            getXYZCoord<VectorType, VecType>( this->_plateGeomInitial, coords_i, node_i);
+            getXYZCoord<VectorType, VecType>( this->_plateGeomInitial, coords_j, node_j);
+
+            if((std::abs(coords_i[0] - 0.5) < 1e-4 && std::abs(coords_j[0] - 0.5) < 1e-4) || (std::abs(coords_i[1] - 0.5) < 1e-4 && std::abs(coords_j[1] - 0.5) < 1e-4)){
+                return true;
+            }
+            return false;
+        }
+
+        void getFoldVertices(std::vector<int> &foldVertices) const{
+            foldVertices = this->_foldVertices;
+        }
+
+        void getEdgeWeights(VectorType &edge_weights) const{
+            edge_weights = this->_edge_weights;
+        }
+
+        size_t getNumDofs() const {
+            return 1;
+        }
+};
+
+template<typename ConfiguratorType>
+class FoldDofsSkewedCrossGradient : public FoldDofsGradient<ConfiguratorType>, public BaseOp<typename ConfiguratorType::VectorType, typename ConfiguratorType::SparseMatrixType> {
+    typedef typename ConfiguratorType::RealType RealType;
+    typedef typename ConfiguratorType::VectorType VectorType;
+    typedef typename ConfiguratorType::VecType VecType;
+
+    public:
+        FoldDofsSkewedCrossGradient(const MeshTopologySaver &plateTopol,
+            const std::vector<int> &bdryMaskRef,
+            const VectorType &plateGeomInitial,
+            const std::vector<int> &foldVertices): FoldDofsGradient<ConfiguratorType>(plateTopol,bdryMaskRef,plateGeomInitial,foldVertices){}
+
+        void apply(const VectorType &t, MatrixType& Dest) const override{
+            VectorType dest, rhs;
+            dest.resize(this->_plateGeomInitial.size());
+            rhs.resize(this->_plateGeomInitial.size());
+           
+            if(Dest.rows() != this->_plateGeomInitial.size() || Dest.cols() != 1){
+                Dest.resize(this->_plateGeomInitial.size(), 1);
+            }
+
+            rhs.setZero();
+            dest.setZero();
+            Dest.setZero();
+
+
+            // derivative of the translation of the fold vertices
+            // differentiate concatenation of rotation and scaling
+            // -> first rotation, then scaling. both are linear operations
+            // but at very first, differentiate how the angle changes with t
+            // angle = atan(2*t) -> derivative 2/(1 + (2*t^2))
+
+            RealType dangle_dt = 2.0/(1.0 + 4.0*t[0]*t[0]);
+            RealType scaling = sqrt(t[0]*t[0] + 0.25)/ 0.5;
+            RealType dscaling_dt = 2.0*t[0] / (sqrt(t[0]*t[0] + 0.25));
+
+            RealType angle;
+            if((0 <= t[0] && t[0] <= M_PI_4) || (t[0] <= 0 && t[0] >= - M_PI_4)){
+                angle = std::atan(2*t[0]);
+            }
+            else{
+                throw std::invalid_argument("t[0] is not in the range [-pi/4, pi/4]");
+            }
+
+            FullMatrixType rotation(2,2);
+            rotation(0,0) = std::cos(angle);
+            rotation(0,1) = std::sin(angle);
+            rotation(1,0) = -std::sin(angle);
+            rotation(1,1) = std::cos(angle);
+            FullMatrixType drotation_dt(2,2);
+            drotation_dt(0,0) = -std::sin(angle);
+            drotation_dt(0,1) = std::cos(angle);
+            drotation_dt(1,0) = -std::cos(angle);
+            drotation_dt(1,1) = -std::sin(angle);
+            /*
+            std::cout<<"Test the rotation matrix: "<<std::endl;
+            std::cout<<rotation(0,0)<<std::endl;
+            std::cout<<rotation(1,0)<<std::endl;
+            std::cout<<rotation(0,1)<<std::endl;
+            std::cout<<rotation(1,1)<<std::endl;
+
+            std::cout<<"Test dscaling_dt: "<<dscaling_dt<<std::endl;
+            */
+            Eigen::VectorXd relevant_term(2);
+            Eigen::VectorXd relevant_second_term(2);
+
+            for(int i = 0; i < this->_foldVertices.size(); i++)
+            {
+                VecType coords;
+                getXYZCoord<VectorType, VecType>( this->_plateGeomInitial, coords, this->_foldVertices[i]);
+
+                Eigen::VectorXd translation_vec = Eigen::VectorXd::Ones(2)*0.5;
+
+                // Fill the derivative vec with entries of deriv w.r.t. x,y, and z
+                Eigen::VectorXd deriv(2);
+                Eigen::VectorXd xy(2);
+                xy[0] = coords[0];
+                xy[1] = coords[1];
+                getXYZCoord<VectorType, VecType>(this->_plateGeomInitial,coords,this->_foldVertices[i]);
+                //deriv = (dscaling_dt*rotation + scaling*drotation_dt*dangle_dt)*xy. template head<2>();
+                deriv = (dscaling_dt*(translation_vec + rotation*(xy - translation_vec))) + (scaling*drotation_dt*(xy - translation_vec)*dangle_dt);
+                Eigen::VectorXd deriv_first_term = (dscaling_dt*(translation_vec + rotation*(xy - translation_vec)));
+                Eigen::VectorXd deriv_second_term = (scaling*drotation_dt*(xy - translation_vec)*dangle_dt);
+                if(std::abs(xy[0] - 1.0) < 1e-4 && std::abs(xy[1] - 0.5) < 1e-4){
+                    // Check the second derivative of deriv
+                    relevant_term[0] = deriv_first_term[0];
+                    relevant_term[1] = deriv_first_term[1];
+                    relevant_second_term[0] = deriv_second_term[0];
+                    relevant_second_term[1] = deriv_second_term[1];
+                }
+
+                rhs[this->_foldVertices[i]] = deriv[0];
+                rhs[this->_plateTopol.getNumVertices() + this->_foldVertices[i]] = deriv[1];
+            }
+
+            //std::cout<<"Test the first term: "<<relevant_term[0]<<"; "<<relevant_term[1]<<std::endl;
+            //std::cout<<"Test the second term: "<<relevant_second_term[0]<<"; "<<relevant_second_term[1]<<std::endl;
+
+            // Now that I have the derivative of the boundary w.r.t. t, just solve the Laplace problem like usual
+            typename ConfiguratorType::SparseMatrixType StiffnessMatrix;
+            computeStiffnessMatrix<ConfiguratorType>(this->_plateTopol, this->_plateGeomInitial, StiffnessMatrix);
+            applyMaskToMajor(this->_bdryMaskRef, StiffnessMatrix );
+
+            /*
+            LinearSolver<DefaultConfigurator> directSolver;
+            directSolver.prepareSolver( StiffnessMatrix );
+            directSolver.backSubstitute( rhs, dest );
+            if (dest.array().isNaN().any()) {
+                std::cerr << "Warning: Solution contains NaN values!" << std::endl;
+            }*/
+            Dest = convertVecToSparseMat(rhs);
+            //Dest = convertVecToSparseMat(dest);
+        }
+};   

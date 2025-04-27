@@ -327,16 +327,6 @@ try{
     NLS.setBoundaryMask( bdryMaskOpt );
     NLS.solve( initialization, plateGeomDef );
 
-    for(int i = 0; i < plateTopol.getNumVertices(); i++){
-        VecType coords;
-        getXYZCoord<VectorType, VecType>(plateGeomInitial, coords, i);
-        if(std::abs(coords[1]) < 1e-4){
-            VecType coordsDef;
-            getXYZCoord<VectorType, VecType>(plateGeomDef, coordsDef, i);
-            std::cout<<"Coord: "<<i<<"; "<<coordsDef[0]<<" "<<coordsDef[1]<<" "<<coordsDef[2]<<std::endl;
-        }
-    }
-
     // saving
     setGeometry( plate, plateGeomDef );
     OpenMesh::IO::write_mesh(plate, "bendingFoldSol_withNewton_scaled.ply");

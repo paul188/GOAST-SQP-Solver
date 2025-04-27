@@ -2,6 +2,7 @@
 #pragma once
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
+#include <pybind11/embed.h>
 #include <goast/Core.h>
 #include <iostream>
 
@@ -31,7 +32,14 @@ class __attribute__((visibility("default"))) ScipySolver{
 
     public:
         ScipySolver(size_t n){
+
+            //pybind11::scoped_interpreter guard{}; // Start the interpreter and keep it alive
+
+            //setenv("PYTHONHOME", "/home/paul_johannssen/anaconda3/envs/myenv", 1);
+            //setenv("PYTHONPATH", "/home/paul_johannssen/anaconda3/envs/myenv/lib/python3.13/site-packages", 1);
+            
             Py_Initialize();
+            
             np = py::module::import("numpy");
             scipy_linalg = py::module::import("scipy.linalg");
 

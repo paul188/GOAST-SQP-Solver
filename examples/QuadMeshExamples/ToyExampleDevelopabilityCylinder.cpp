@@ -68,8 +68,8 @@ int main()
         // --------------------- INITIALIZE CONSTRAINT WEIGHTS --------------------------------
 
           constraint_weights<DefaultConfigurator> weights;
-          weights.fair_v = 50.0;
-          weights.fair_n = 10.0;
+          weights.fair_v = 0.5;//50.0;
+          weights.fair_n = 0.5;//10.0;
           weights.fair_r = 0.0;
           weights.ruling_0 = 10.0;
           weights.ruling_1 = 10.0;
@@ -104,9 +104,9 @@ int main()
         VectorType DestGeom = Dest.segment(variablesIdx["vertices"],3*num_vertices);
         QuadMeshTopologySaver::setGeometry(mesh, DestGeom);
         OpenMesh::IO::write_mesh(mesh, "result_developability.ply");
-        std::string normals_file = "/home/paul_johannssen/Desktop/masterarbeit/goast_old/examples/QuadMeshExamples/plotting/normals.txt";
+        std::string normals_file = "/home/paul_johannssen/Desktop/masterarbeit/goast/examples/QuadMeshExamples/plotting/normals.txt";
         export_normals(quadTopol,Dest, variablesIdx, normals_file);
-        std::string rw_rulings_file = "/home/paul_johannssen/Desktop/masterarbeit/goast_old/examples/QuadMeshExamples/plotting/rw_rulings.txt";
+        std::string rw_rulings_file = "/home/paul_johannssen/Desktop/masterarbeit/goast/examples/QuadMeshExamples/plotting/rw_rulings.txt";
         export_rw_rulings(quadTopol,Dest, variablesIdx, rw_rulings_file);
 
     }catch(std::exception &e){

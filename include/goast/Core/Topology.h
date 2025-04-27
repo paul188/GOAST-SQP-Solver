@@ -436,8 +436,10 @@ void getGeometry( const TriMesh& Mesh, VectorType& geom ){
 template<typename VectorType>
 void setGeometry( TriMesh& Mesh, const VectorType& geom ){
     
-    if( 3 * Mesh.n_vertices() != (uint)geom.size() )
+    if( 3 * Mesh.n_vertices() != (uint)geom.size() ){
+        std::cout<< 3*Mesh.n_vertices() << " != " << geom.size() << std::endl;
         throw BasicException( "setGeometry: sizes don't match!" );
+    }
 
     for( TriMesh::VertexIter v_it = Mesh.vertices_begin(); v_it!=Mesh.vertices_end(); ++v_it) {
       TriMesh::Point p;

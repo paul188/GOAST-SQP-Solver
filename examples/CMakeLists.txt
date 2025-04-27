@@ -1,5 +1,7 @@
 project(examples)
 
+add_executable(SkewedCrossFoldOptimization FoldOptimization/SkewedCrossFoldOptimization.cpp)
+add_executable(FoldDofsSkewedCrossTest FoldOptimization/FoldDofDerivTests/FoldDofsSkewedCrossTest.cpp)
 add_executable(multires_example multires_example.cpp)
 add_executable(interpolationShells geodesic_interpolation_shells.cpp)
 add_executable(extrapolationShells geodesic_extrapolation_shells.cpp)
@@ -23,6 +25,8 @@ add_executable(bendingSmallArcInterpolation SmallArc/bendingSmallArcInterpolatio
 add_executable(FoldDofsCrossTest FoldOptimization/FoldDofsCrossTest.cpp)
 add_executable(Test FoldOptimization/Test.cpp)
 add_executable(CrossFoldNewton CrossFold/CrossFoldNewton.cpp)
+add_executable(SkewedCrossFold FoldOptimization/SkewedCrossFold.cpp)
+
 #add_executable(SimpleFoldOptimization2 FoldOptimization/SimpleFoldOptimization2.cpp)
 #add_executable(SimpleFoldOptimization FoldOptimization/SimpleFoldOptimization.cpp)
 #add_executable(QuadMeshTest2 QuadMeshExamples/QuadMeshTest2.cpp)
@@ -41,6 +45,12 @@ add_executable(FoldArcLineTest FoldOptimization/FoldDofDerivTests/FoldArcLineTes
 add_executable(ToyExampleFreeArcLine FoldOptimization/ToyExampleFreeArcLine.cpp)
 add_executable(ToyExampleDevelopabilityCylinder QuadMeshExamples/ToyExampleDevelopabilityCylinder.cpp)
 add_executable(SharpCreaseDevelopability QuadMeshExamples/SharpCreaseDevelopability.cpp)
+
+target_link_libraries(FoldDofsSkewedCrossTest PRIVATE GOAST::GOAST)
+
+target_link_libraries(SkewedCrossFoldOptimization PRIVATE GOAST::GOAST)
+
+target_link_libraries(SkewedCrossFold PRIVATE GOAST::GOAST)
 
 target_link_libraries(SharpCreaseDevelopability PRIVATE GOAST::GOAST)
 

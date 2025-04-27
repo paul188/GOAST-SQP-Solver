@@ -404,8 +404,8 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                  // Also since the solving of the QP is expensive, only do it after a certain number of iterations
                 else if ((constr_l1_linesearch > constr_l1) && (alpha == 1.0) && _secondOrderCorrection)
                 {
-                    VectorType e_k = _scipy_solver.solve_with_scipy_pseudoinv(C_k.transpose() * (C_k * C_k.transpose()), -Constraint_linesearch);
-                    
+                    //VectorType e_k = _scipy_solver.solve_with_scipy_pseudoinv(C_k.transpose() * (C_k * C_k.transpose()), -Constraint_linesearch);
+                    VectorType e_k = C_k.transpose()*_scipy_solver.solve_with_scipy(C_k*C_k.transpose(), -Constraint_linesearch);
                     _boundaryDOFs.InverseTransformWithFoldDofs(e_k);
                     lineSearchDOFs += e_k;
                     _costFunctional.apply(lineSearchDOFs.getVertexDOFs(),CostFunctional_val_linesearch);

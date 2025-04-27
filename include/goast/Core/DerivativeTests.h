@@ -364,10 +364,8 @@ public:
         innerDirection[i] = 1.;
 
         // F = (f_1, ..., f_n)  =>  \nabla f_i = DF^T e_i
-        gradientWRTOuterDirection = JacobiMatrixTrans * outerDirection;
+        gradientWRTOuterDirection = JacobiMatrixTrans * outerDirection; 
         RealType gateauxDerivative = gradientWRTOuterDirection.dot( innerDirection );
-
-        if( std::abs( gateauxDerivative ) > 1.e-4 ) {
 
         VectorType tempVec( dimRange );
         _F.apply( testPoint, tempVec );
@@ -386,8 +384,6 @@ public:
           generatePNG( timeSteps, energies, derivs, saveName.str());
         }
       }
-
-    }
 
   }
 
