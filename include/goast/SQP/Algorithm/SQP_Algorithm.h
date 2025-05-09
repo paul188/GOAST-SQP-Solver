@@ -14,7 +14,7 @@ class SQPBaseParams{
     public:
         using RealType = typename ConfiguratorType::RealType;
         RealType eps = 1e-12; // Convergence criterion
-        size_t maxIter = 2000; // maximum number of iterations
+        size_t maxIter = 800; // maximum number of iterations
         size_t iter = 0; // current iteration
 };
 // Specific parameters needed for SQP Line Search
@@ -91,6 +91,11 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
         // our degrees of freedom as the vertexDOFs, we will modify it during the run
         void solve(const VectorType& plateGeomRef_basic, std::vector<VectorType> &def_geometries, std::vector<VectorType> &ref_geometries, std::vector<VectorType> &fold_DOFs)
         {
+            // REMOVE THIS LATER ONLY FOR TESTING
+            TriMesh plate;
+            OpenMesh::IO::read_mesh(plate, "../../data/plate/paperCrissCross_coarse.ply");
+            MeshTopologySaver plateTopol( plate );
+
             size_t nAllVertexDOFs = _boundaryDOFs.getNumVertexDOFs();
             size_t nFoldDOFs = _boundaryDOFs.getNumFoldDOFs();
             size_t nAllDOFs = nAllVertexDOFs + nFoldDOFs;
@@ -295,6 +300,13 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                 std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
                 std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t1 - t0);
                 std::cout<<"Time for iteration: "<<time_span.count()<<std::endl;
+            
+                /*
+                setGeometry(plate, _problemDOFs.getReferenceGeometry());
+                OpenMesh::IO::write_mesh(plate,"reference/plate_" + std::to_string(_pars.iter) + ".ply");
+                setGeometry(plate, _problemDOFs.getVertexDOFs());
+                OpenMesh::IO::write_mesh(plate, "deformed/plate_" + std::to_string(_pars.iter) + ".ply");
+                */    
             }
         }
 

@@ -44,3 +44,29 @@ class DirichletSmoother : public BaseOp<typename ConfiguratorType::VectorType, t
             directSolver.backSubstitute( rhs, Dest );
         }
 };
+
+/*
+class CrossFoldInterpolationSmoother : public BaseOp<typename DefaultConfigurator::VectorType, typename DefaultConfigurator::VectorType>{
+    protected:
+        typedef DefaultConfigurator::VectorType VectorType;
+        typedef DefaultConfigurator::VecType VecType;
+        typedef DefaultConfigurator::RealType RealType;
+
+        const VectorType &_plateGeomInitial;
+        const std::vector<int> &_bdryMask;
+        const MeshTopologySaver& _plateTopol;
+
+    public:
+        CrossFoldInterpolationSmoother(const VectorType &plateGeomInitial, const std::vector<int> &bdryMask, const MeshTopologySaver &plateTopol)
+        : _plateGeomInitial(plateGeomInitial), _bdryMask(bdryMask), _plateTopol(plateTopol) {}
+
+        void apply(const VectorType& ActiveGeometry, VectorType &Dest) const override{
+            
+            if(ActiveGeometry.size() != _plateGeomInitial.size()){
+                std::cerr << "size of active = " << ActiveGeometry.size() << " vs. size of inactive = " << _plateGeomInitial.size() << std::endl;
+                throw BasicException( "CrossFoldInterpolationSmoother::smoothMesh(): sizes dont match!");
+            }
+
+            // First, distinguish between different quadrants
+        }
+};*/

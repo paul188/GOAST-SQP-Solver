@@ -91,31 +91,6 @@ try{
         {
             bdryMaskRef_1.push_back( i );            continue;
         }
-        // identify four small rectangles at the outer corners of the square at which we want to enforce clamped boundary conditions
-        // rectangle 0 -> fix y positions
-        if( coords[1] <= 0.16 && coords[0] <= 0.07)
-        {
-            bdryMaskRef_1.push_back(i);
-            continue;
-        }
-        // rectangle 1 -> fix x positions
-        if( coords[1] >= (1-0.07) && coords[0] <= 0.16)
-        {
-            bdryMaskRef_1.push_back(i);
-            continue;
-        }
-        // rectangle 2 -> fix y positions
-        if( coords[1] >= (1-0.16) && coords[0] >= (1-0.07))
-        {
-            bdryMaskRef_1.push_back(i);
-            continue;
-        }
-
-        if(coords[0] >= (1-0.16) && coords[1] <= 0.07)
-        {
-            bdryMaskRef_1.push_back(i);
-            continue;
-        }
 
         // fix the middle vertex
         if(is_near(coords[0], 0.5, tolerance) && is_near(coords[1], 0.5, tolerance))
@@ -152,40 +127,6 @@ try{
 
     }
 
-    // store four parts of the boundary that would get squashed together by the rotation
-    std::vector<int> scaling_piece_1, scaling_piece_2, scaling_piece_3, scaling_piece_4;
-    for(int i = 0; i < plateTopol.getNumVertices(); i++)
-    {
-        VecType coords; 
-        getXYZCoord<VectorType, VecType>( plateGeomInitial, coords, i);
-
-        if((std::abs(coords[0]) < tolerance) && (coords[1] > 0.5 + tolerance) && (coords[1] < 1.0 - tolerance))
-        {
-            scaling_piece_1.push_back(i);
-            bdryMaskRef_1.push_back(i);
-            continue;
-        }
-        if((std::abs(coords[1] - 1.0) < tolerance) && (coords[0] > 0.5 + tolerance) && (coords[0] < 1.0 - tolerance))
-        {
-            scaling_piece_2.push_back(i);
-            bdryMaskRef_1.push_back(i);
-            continue;
-        }
-        if(std::abs(coords[0] - 1.0) < tolerance && (coords[1] < 0.5 - tolerance) && (coords[1] > tolerance))
-        {
-            scaling_piece_3.push_back(i);
-            bdryMaskRef_1.push_back(i);
-            continue;
-        }
-        if(std::abs(coords[1]) < tolerance && (coords[0] < 0.5 - tolerance) && (coords[0] > tolerance))
-        {
-            scaling_piece_4.push_back(i);
-            bdryMaskRef_1.push_back(i);
-            continue;
-        }
-    }
-
-
     extendBoundaryMask( plateTopol.getNumVertices(), bdryMaskRef_1 );
     std::vector<int> activeRef_2 = (std::vector<int>){0,1,1};
     std::vector<int> activeRef_3 = (std::vector<int>){1,0,1};
@@ -203,13 +144,14 @@ try{
 
     std::vector<int> foldVertices;
 
-    auto foldDofs = FoldDofsSkewedCross<DefaultConfigurator>(plateTopol,plateGeomInitial, plateGeomRef, bdryMaskRef_1, scaling_piece_1, scaling_piece_2, scaling_piece_3, scaling_piece_4);
+    auto foldDofs = FoldDofsCrossInterpolation<DefaultConfigurator>(plateTopol,plateGeomInitial, plateGeomRef, bdryMaskRef_1);
     foldDofs.getFoldVertices(foldVertices);
-    auto DfoldDofs = FoldDofsSkewedCrossGradient<DefaultConfigurator>(plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices, scaling_piece_1, scaling_piece_2, scaling_piece_3, scaling_piece_4);
+    auto DfoldDofs = FoldDofsCrossInterpolationGradient<DefaultConfigurator>(plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices);
 
     // TEST THE FOLD DOFS ACTION
     VectorType translate_vec = VectorType::Ones(foldDofs.getNumDofs());
-    translate_vec[0] = 0.0;
+    translate_vec[0] = 5.0;
+    translate_vec[1] = 5.0;
     VectorType testGeom = plateGeomInitial;
     MatrixType testMat;
     foldDofs.apply(translate_vec,testGeom);
@@ -217,15 +159,13 @@ try{
     setGeometry(plate, testGeom);
     OpenMesh::IO::write_mesh(plate, "deformed_mesh_test_new.ply");
 
+    // Get the coords of the point with index 0
+    VecType coords;
+    getXYZCoord<VectorType, VecType>(plateGeomInitial, coords,0);
+    std::cout<<"Point zero: "<<coords[0]<<" "<<coords[1]<<" "<<coords[2]<<std::endl;
+    
     VectorValuedDerivativeTester<DefaultConfigurator> tester3(foldDofs, DfoldDofs, 0.005, testMat.rows());
     tester3.plotAllDirections(translate_vec, "deriv_test/");
-
-    for(int i = 0; i < plateTopol.getNumVertices(); i++)
-    {
-        VecType coords;
-        getXYZCoord<VectorType, VecType>( plateGeomInitial, coords, i);
-        std::cout<<std::setprecision(12)<<"coords: "<<coords[0]<<" "<<coords[1]<<" "<<std::endl;
-    }
 } 
 catch ( BasicException &el ){
       std::cerr << std::endl << "ERROR!! CAUGHT FOLLOWING EXECEPTION: " << std::endl << el.getMessage() << std::endl << std::flush;

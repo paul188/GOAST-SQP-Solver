@@ -34,13 +34,14 @@ try{
 
     // load flat plate [0,1]^2
     TriMesh plate;
-    OpenMesh::IO::read_mesh(plate, "../../data/plate/paperCrissCross_coarse.ply");
+    OpenMesh::IO::read_mesh(plate, "../../data/plate/paperCrissCross.ply");
     MeshTopologySaver plateTopol( plate );
     std::cerr << "num of nodes = " << plateTopol.getNumVertices() << std::endl;
-    VectorType plateGeomRef, plateGeomDef, plateGeomInitial;
+    VectorType plateGeomRef, plateGeomDef, plateGeomInitial, plateGeomTest;
     getGeometry( plate, plateGeomRef );
     getGeometry( plate, plateGeomDef );
     getGeometry( plate, plateGeomInitial );
+    getGeometry( plate, plateGeomTest );
 
     // bdryMaskRef_1 fixes x,y,z coordinates in the reference geometry
     std::vector<int> bdryMaskRef_1;
@@ -74,11 +75,6 @@ try{
             plate.set_color(plate.vertex_handle(node_i), OpenMesh::Vec4f(1.0f, 0.0f, 0.0f, 1.0f));  // Red
             plate.set_color(plate.vertex_handle(node_j), OpenMesh::Vec4f(1.0f, 0.0f, 0.0f, 1.0f));  // Red
         }
-    }
-
-    for(int i = 0; i < edge_weights.size(); i++)
-    {
-        std::cout<<"Edge weight "<<i<<": "<<edge_weights[i]<<std::endl;
     }
 
     // bdryMaskRef_1 fixes x,y,z coordinates in the reference geometry
@@ -221,14 +217,20 @@ try{
     std::sort(bdryMaskRef_1.begin(), bdryMaskRef_1.end());
 
     // Now, rotate the fold
-    FoldDofsSkewedCross<DefaultConfigurator> foldDofs( plateTopol, plateGeomInitial, plateGeomInitial, bdryMaskRef_1 , scaling_piece_1, scaling_piece_2, scaling_piece_3, scaling_piece_4);
+    FoldDofsCrossInterpolation<DefaultConfigurator> foldDofs( plateTopol, plateGeomInitial, plateGeomInitial, bdryMaskRef_1 , scaling_piece_1, scaling_piece_2, scaling_piece_3, scaling_piece_4);
     std::vector<int> foldVertices;
     foldDofs.getFoldVertices(foldVertices);
+    VectorType t_0(2);
+    t_0[0] = 10000.0;
+    t_0[1] = 10000.0;
+    foldDofs.apply(t_0, plateGeomTest);
+    setGeometry( plate, plateGeomTest );
+    OpenMesh::IO::write_mesh(plate, "interpolated.ply");
     //FoldDofsSkewedCrossGradient<DefaultConfigurator> DfoldDofs( plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices, scaling_piece_1, scaling_piece_2, scaling_piece_3, scaling_piece_4);
 
     // determine boundary mask for optimization
     // and deform part of boundary
-     std::vector<int> bdryMaskOpt;
+    std::vector<int> bdryMaskOpt;
     for(int i = 0; i < plateTopol.getNumVertices(); i++)
     {
         VecType coords;

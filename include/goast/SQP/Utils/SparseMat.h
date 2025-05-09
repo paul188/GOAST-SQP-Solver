@@ -61,6 +61,18 @@ void calculateIdfit(size_t rows, size_t cols, FullMatrixType &Dest)
     }
 }
 
+void scaleRowColByFactor(MatrixType &M, VectorType &factors)
+{
+    assert(M.rows() == M.cols());
+    assert(M.rows() == factors.size());
+
+    for(int i = 0; i < factors.size(); i++)
+    {
+        M.row(i) *= factors[i];
+        M.col(i) *= factors[i];
+    }
+}
+
 MatrixType convertVecToSparseMat(const VectorType& vec){
     MatrixType sparseMatrix(vec.size(), 1); // Single column sparse matrix
     for (int i = 0; i < vec.size(); ++i) {

@@ -49,7 +49,7 @@ try{
     Eigen::setNbThreads(8);
 
     TriMesh plate;
-    OpenMesh::IO::read_mesh(plate, "../../data/plate/paperCrissCross.ply");
+    OpenMesh::IO::read_mesh(plate, "../../data/plate/paperCrissCross_coarse.ply");
     MeshTopologySaver plateTopol( plate );
     std::cout<<"num vertices: "<<plateTopol.getNumVertices()<<std::endl;
     VectorType plateGeomRef, plateGeomDef, plateGeomInitial, plateGeomPenalty; // plateGeomRef is the geometry without the arc crease in the mesh
@@ -139,6 +139,40 @@ try{
 
     }
 
+    // store four parts of the boundary that would get squashed together by the rotation
+    std::vector<int> scaling_piece_1, scaling_piece_2, scaling_piece_3, scaling_piece_4;
+    for(int i = 0; i < plateTopol.getNumVertices(); i++)
+    {
+        VecType coords; 
+        getXYZCoord<VectorType, VecType>( plateGeomInitial, coords, i);
+
+        if((std::abs(coords[0]) < tolerance) && (coords[1] > 0.5 + tolerance) && (coords[1] < 1.0 - tolerance))
+        {
+            scaling_piece_1.push_back(i);
+            bdryMaskRef_1.push_back(i);
+            continue;
+        }
+        if((std::abs(coords[1] - 1.0) < tolerance) && (coords[0] > 0.5 + tolerance) && (coords[0] < 1.0 - tolerance))
+        {
+            scaling_piece_2.push_back(i);
+            bdryMaskRef_1.push_back(i);
+            continue;
+        }
+        if(std::abs(coords[0] - 1.0) < tolerance && (coords[1] < 0.5 - tolerance) && (coords[1] > tolerance))
+        {
+            scaling_piece_3.push_back(i);
+            bdryMaskRef_1.push_back(i);
+            continue;
+        }
+        if(std::abs(coords[1]) < tolerance && (coords[0] < 0.5 - tolerance) && (coords[0] > tolerance))
+        {
+            scaling_piece_4.push_back(i);
+            bdryMaskRef_1.push_back(i);
+            continue;
+        }
+    }
+    
+
     extendBoundaryMask( plateTopol.getNumVertices(), bdryMaskRef_1 );
     std::vector<int> activeRef_2 = (std::vector<int>){0,1,1};
     std::vector<int> activeRef_3 = (std::vector<int>){1,0,1};
@@ -162,6 +196,8 @@ try{
         VecType coords;
         getXYZCoord<VectorType, VecType>( plateGeomDef, coords, i);
 
+        // Neumann boundary conditions
+        /*
         if( coords[1] <= 0.16 && coords[0] <= 0.07)
         {
             bdryMaskOpt.push_back(i);
@@ -184,13 +220,33 @@ try{
         {
             bdryMaskOpt.push_back(i);
             continue;
+        }*/
+
+        // Dirichlet boundary conditions
+        if(std::abs(coords[0]) < tolerance && (coords[1] <= 0.16))
+        {
+            bdryMaskOpt.push_back(i);
+            continue;
+        }
+        if(std::abs(coords[1] - 1.0) < tolerance && (coords[0] <= 0.16))
+        {
+            bdryMaskOpt.push_back(i);
+            continue;
+        }
+        if(std::abs(coords[0] - 1.0) < tolerance && (coords[1] >= (1-0.16)))
+        {
+            bdryMaskOpt.push_back(i);
+            continue;
+        }
+        if(std::abs(coords[1]) < tolerance && (coords[0] >= (1-0.16)))
+        {
+            bdryMaskOpt.push_back(i);
+            continue;
         }
 
     }
 
     extendBoundaryMask( plateTopol.getNumVertices(), bdryMaskOpt );
-
-    std::cout<<"Plate number of vertices before: "<<plate.n_vertices();
 
     /*
     // Now, read the initial deformed plate
@@ -199,19 +255,54 @@ try{
     std::cout<<"Plate number of vertices after: "<<plate.n_vertices();
     */
 
-    FoldDofsSkewedCross<DefaultConfigurator> foldDofs( plateTopol, plateGeomInitial, plateGeomInitial, bdryMaskRef_1 );
-    VectorType t(1);
-    t[0] = 0.3;
-    VectorType Dest;
-    foldDofs.apply(t, Dest);
-    //std::cout<<"Size test 0: "<<plateTopol.getNumVertices()<<std::endl;
-    //std::cout<<"Size test 1: "<<plateGeomRef.size()<<std::endl;
-    setGeometry(plate, Dest);
+    auto foldDofsPtr = std::make_shared<FoldDofsSkewedCross<DefaultConfigurator>>( plateTopol, plateGeomInitial, plateGeomInitial, bdryMaskRef_1, scaling_piece_1, scaling_piece_2, scaling_piece_3, scaling_piece_4);
+    //FoldDofsSkewedCross<DefaultConfigurator> foldDofs( plateTopol, plateGeomInitial, plateGeomInitial, bdryMaskRef_1 );
+    
     std::vector<int> foldVertices;
-    foldVertices.resize(plateTopol.getNumVertices());
-    foldDofs.getFoldVertices(foldVertices);
-    std::cout<<"Fold vertices size: "<<foldVertices.size()<<std::endl;
-    OpenMesh::IO::write_mesh(plate, "skewed_reference.ply");
+    foldDofsPtr->getFoldVertices(foldVertices);
+    
+    auto DfoldDofsPtr = std::make_shared<FoldDofsSkewedCrossGradient<DefaultConfigurator>>( plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices, scaling_piece_1, scaling_piece_2, scaling_piece_3, scaling_piece_4);
+
+    size_t nFoldDOFs = foldDofsPtr->getNumDofs();
+    size_t nVertexDOFs = 3*plateTopol.getNumVertices();
+
+    SQPLineSearchParams<DefaultConfigurator> pars;
+    CostFunctional<DefaultConfigurator> costFunctional(foldVertices);
+    CostFunctionalGradient<DefaultConfigurator> DcostFunctional(plateTopol,foldVertices);
+
+    RealType factor_membrane = 10000.0;
+    RealType factor_bending = 1.0;
+    RealType factor_gravity = 0.0;
+
+    VectorType factors(2);
+    factors[0] = factor_membrane;
+    factors[1] = factor_bending;
+
+    OpenMesh::IO::read_mesh(plate, "deformed_plate_after_optimization_dirichlet.ply");
+    getGeometry(plate, plateGeomDef);
+
+    VectorType edge_weights;
+    foldDofsPtr->getEdgeWeights(edge_weights);
+
+    std::vector<VectorType> def_geometries, ref_geometries, fold_DOFs;
+    auto factory = std::make_shared<ElasticEnergyFactory<DefaultConfigurator>>(factors, plateTopol, edge_weights);
+    BoundaryDOFS<DefaultConfigurator> boundaryDOFs(bdryMaskOpt, nVertexDOFs, nFoldDOFs);
+    // Create the degrees of freedom object
+    std::vector<RealType> deviations;
+    VectorType t_initial = VectorType::Ones(foldDofsPtr->getNumDofs())*t_0;
+    ProblemDOFs<DefaultConfigurator> problemDOFs(t_initial, plateGeomDef, foldDofsPtr, DfoldDofsPtr);
+    SQPLineSearchSolver<DefaultConfigurator> solver(pars, costFunctional, DcostFunctional, std::move(factory), boundaryDOFs, problemDOFs, 20);
+    solver.solve(plateGeomRef, def_geometries, ref_geometries, fold_DOFs);
+    std::string filename;
+
+    for(int i = 0; i < def_geometries.size(); i++){
+        filename = "deformed/plate_" + std::to_string(i) + ".ply";
+        setGeometry(plate, def_geometries[i]);
+        OpenMesh::IO::write_mesh(plate,filename);
+        setGeometry(plate, ref_geometries[i]);
+        filename = "reference/plate_" + std::to_string(i) + ".ply";
+        OpenMesh::IO::write_mesh(plate, filename);
+    }
 
 }catch ( BasicException &el ){
     std::cerr << std::endl << "ERROR!! CAUGHT FOLLOWING EXECEPTION: " << std::endl << el.getMessage() << std::endl << std::flush;
