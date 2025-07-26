@@ -85,7 +85,8 @@ public:
                               optPars.getStartTau(), optPars.getTauMin(), optPars.getTauMax()),
             _maxIterations( optPars.getGradientIterations()), _stopEpsilon( optPars.getStopEpsilon()),
             _useNonlinearCG( false ), _useGradientBasedStopping( true ), _quietMode( optPars.getQuietMode()), _bdryMask( nullptr ),
-            _Preconditioner( nullptr ) {}
+            _Preconditioner( nullptr ) 
+            {}
 
   void setGradientBasedStopping( bool useGradientBasedStopping = true ) {
     _useGradientBasedStopping = useGradientBasedStopping;
@@ -106,6 +107,106 @@ public:
 
   // x^{k+1} = x^k - tau * E'[x^k]
   void solve( const VectorType &x_0, VectorType &x_k ) const {
+
+    std::string _path;
+    std::string _path_vert_1;
+    std::string _path_vert_2;
+    std::string _path_edge_vec_1;
+    std::string _path_edge_vec_2;
+    std::string _path_normal_1;
+    std::string _path_normal_2;
+    std::string _path_normal_3;
+    std::string _path_ruling_0;
+    std::string _path_ruling_1;
+    std::string _path_ruling_2;
+    std::string _path_dev;
+
+    std::ofstream _outFile;
+    std::ofstream _outFile_vert_1;
+    std::ofstream _outFile_vert_2;
+    std::ofstream _outFile_edge_vec_1;
+    std::ofstream _outFile_edge_vec_2;
+    std::ofstream _outFile_normal_1;
+    std::ofstream _outFile_normal_2;
+    std::ofstream _outFile_normal_3;
+    std::ofstream _outFile_ruling_0;
+    std::ofstream _outFile_ruling_1;
+    std::ofstream _outFile_ruling_2;
+    std::ofstream _outFile_dev;
+
+    _path = "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/total_norm/norm.txt";
+    _path_vert_1 = "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/total_norm/vert_1.txt";
+    _path_vert_2 = "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/total_norm/vert_2.txt";
+    _path_edge_vec_1 = "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/total_norm/edge_vec_1.txt";
+    _path_edge_vec_2 = "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/total_norm/edge_vec_2.txt";
+    _path_normal_1 = "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/total_norm/normal_1.txt";
+    _path_normal_2 = "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/total_norm/normal_2.txt";
+    _path_normal_3 = "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/total_norm/normal_3.txt";
+    _path_ruling_0 = "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/total_norm/ruling_0.txt";
+    _path_ruling_1 = "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/total_norm/ruling_1.txt";
+    _path_ruling_2 = "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/total_norm/ruling_2.txt";
+    _path_dev = "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/total_norm/dev.txt";
+    
+    _outFile = std::ofstream(_path, std::ios::app);  // open in append mode
+    if (!_outFile) {
+        std::cerr << "Failed to open file.\n";
+    }
+
+    _outFile_vert_1 = std::ofstream(_path_vert_1, std::ios::app);  // open in append mode
+    if (!_outFile_vert_1) {
+        std::cerr << "Failed to open file for vert_1.\n";
+    }
+
+    _outFile_vert_2 = std::ofstream(_path_vert_2, std::ios::app);  // open in append mode
+    if (!_outFile_vert_2) {
+        std::cerr << "Failed to open file for vert_2.\n";
+    }
+
+    _outFile_edge_vec_1 = std::ofstream(_path_edge_vec_1, std::ios::app);  // open in append mode
+    if (!_outFile_edge_vec_1) {
+        std::cerr << "Failed to open file for edge_vec_1.\n";
+    }
+
+    _outFile_edge_vec_2 = std::ofstream(_path_edge_vec_2, std::ios::app);  // open in append mode
+    if (!_outFile_edge_vec_2) {
+        std::cerr << "Failed to open file for edge_vec_2.\n";
+    }
+
+    _outFile_normal_1 = std::ofstream(_path_normal_1, std::ios::app);  // open in append mode
+    if (!_outFile_normal_1) {
+        std::cerr << "Failed to open file for normal_1.\n";
+    }
+
+    _outFile_normal_2 = std::ofstream(_path_normal_2, std::ios::app);  // open in append mode
+    if (!_outFile_normal_2) {
+        std::cerr << "Failed to open file for normal_2.\n";
+    }
+
+    _outFile_normal_3 = std::ofstream(_path_normal_3, std::ios::app);  // open in append mode
+    if (!_outFile_normal_3) {
+        std::cerr << "Failed to open file for normal_3.\n";
+    }
+
+    _outFile_ruling_0 = std::ofstream(_path_ruling_0, std::ios::app);  // open in append mode
+    if (!_outFile_ruling_0) {
+        std::cerr << "Failed to open file for ruling_0.\n";
+    }
+
+    _outFile_ruling_1 = std::ofstream(_path_ruling_1, std::ios::app);  // open in append mode
+    if (!_outFile_ruling_1) {
+        std::cerr << "Failed to open file for ruling_1.\n";
+    }
+
+    _outFile_ruling_2 = std::ofstream(_path_ruling_2, std::ios::app);  // open in append mode
+    if (!_outFile_ruling_2) {
+        std::cerr << "Failed to open file for ruling_2.\n";
+    }
+
+    _outFile_dev = std::ofstream(_path_dev, std::ios::app);  // open in append mode
+    if (!_outFile_dev) {
+        std::cerr << "Failed to open file for dev.\n";
+    }
+
 
     if ( _maxIterations == 0 )
       return;
@@ -180,6 +281,19 @@ public:
       _DE.apply( x_k, currGradient );
       if ( _bdryMask )
         applyMaskToVector( *_bdryMask, currGradient );
+      
+      _outFile << "here"<<std::endl;
+      _outFile_vert_1 <<" here"<<std::endl;
+      _outFile_vert_2 <<" here"<<std::endl;
+      _outFile_edge_vec_1 <<" here"<<std::endl;
+      _outFile_edge_vec_2 <<" here"<<std::endl;
+      _outFile_normal_1 <<" here"<<std::endl;
+      _outFile_normal_2 <<" here"<<std::endl;
+      _outFile_normal_3 <<" here"<<std::endl;
+      _outFile_ruling_0 <<" here"<<std::endl;
+      _outFile_ruling_1 <<" here"<<std::endl;
+      _outFile_ruling_2 <<" here"<<std::endl;
+      _outFile_dev <<" here"<<std::endl;
       _E.apply( x_k, energyScalar );
       energyNew = energyScalar;
 

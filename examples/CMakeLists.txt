@@ -1,5 +1,13 @@
 project(examples)
 
+add_executable(plotBendingContributions plotBendingContributions.cpp)
+add_executable(simpleExample_clamped simpleExample_clamped.cpp)
+add_executable(simpleExample simpleExample.cpp)
+add_executable(ConstraintSqrdReducedTest QuadMeshExamples/ConstraintSqrdReducedTest.cpp)
+add_executable(bendingFoldQuadDevelopability QuadMeshExamples/bendingFoldQuadDevelopability.cpp)
+add_executable(ArcFoldOptimizationInterpolation FoldOptimization/ArcFoldOptimizationInterpolation.cpp)
+add_executable(TestConstraintHess QuadMeshExamples/TestConstraintHess.cpp)
+add_executable(CrossFoldInterpolationOptimization FoldOptimization/CrossFoldInterpolationOptimization.cpp)
 add_executable(CrossFoldInterpolation FoldOptimization/CrossFoldInterpolation.cpp)
 add_executable(SkewedCrossFoldOptimization FoldOptimization/SkewedCrossFoldOptimization.cpp)
 add_executable(FoldDofsSkewedCrossTest FoldOptimization/FoldDofDerivTests/FoldDofsSkewedCrossTest.cpp)
@@ -39,13 +47,28 @@ add_executable(ToyExampleFreeLine FoldOptimization/ToyExampleFreeLine.cpp)
 add_executable(ConstraintTest QuadMeshExamples/ConstraintTest.cpp)
 add_executable(LMTest QuadMeshExamples/LMTest.cpp)
 add_executable(ToyExampleDevelopability QuadMeshExamples/ToyExampleDevelopability.cpp)
-add_executable(TestBLASLAPACK testBLASLAPACK.cpp)
 add_executable(bendingFoldParamDirichlet_scaled SingleArcCrease/bendingFoldParamDirichlet_scaled.cpp)
 add_executable(FoldArcLineTest FoldOptimization/FoldDofDerivTests/FoldArcLineTest.cpp)
 add_executable(ToyExampleFreeArcLine FoldOptimization/ToyExampleFreeArcLine.cpp)
 add_executable(ToyExampleDevelopabilityCylinder QuadMeshExamples/ToyExampleDevelopabilityCylinder.cpp)
 add_executable(SharpCreaseDevelopability QuadMeshExamples/SharpCreaseDevelopability.cpp)
 add_executable(CrossFoldInterpolationTest FoldOptimization/CrossFoldInterpolationTest.cpp)
+
+target_link_libraries(plotBendingContributions PRIVATE GOAST::GOAST)
+
+target_link_libraries(simpleExample_clamped PRIVATE GOAST::GOAST)
+
+target_link_libraries(simpleExample PRIVATE GOAST::GOAST)
+
+target_link_libraries(ConstraintSqrdReducedTest PRIVATE GOAST::GOAST)
+
+target_link_libraries(bendingFoldQuadDevelopability PRIVATE GOAST::GOAST)
+
+target_link_libraries(ArcFoldOptimizationInterpolation PRIVATE GOAST::GOAST)
+
+target_link_libraries(TestConstraintHess PRIVATE GOAST::GOAST)
+
+target_link_libraries(CrossFoldInterpolationOptimization PRIVATE GOAST::GOAST)
 
 target_link_libraries(CrossFoldInterpolationTest PRIVATE GOAST::GOAST)
 
@@ -68,8 +91,6 @@ target_link_libraries(CrossFoldNewton PRIVATE GOAST::GOAST)
 target_link_libraries(FoldArcLineTest PRIVATE GOAST::GOAST)
 
 target_link_libraries(bendingFoldParamDirichlet_scaled PRIVATE GOAST::GOAST)
-
-target_link_libraries(TestBLASLAPACK PRIVATE GOAST::GOAST)
 
 target_link_libraries(FoldDofsCrossTest PRIVATE GOAST::GOAST)
 

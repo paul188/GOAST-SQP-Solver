@@ -248,7 +248,8 @@ try{
     BoundaryDOFS<DefaultConfigurator> boundaryDOFs(bdryMaskOpt, nVertexDOFs, nFoldDOFs);
     // Create the degrees of freedom object
     std::vector<RealType> deviations;
-    ProblemDOFs<DefaultConfigurator> problemDOFs(VectorType::Ones(foldDofsPtr->getNumDofs())*t_0, plateGeomDef, foldDofsPtr, DfoldDofsPtr);
+    VectorType vertexDOFs = VectorType::Zero(3*plateTopol.getNumVertices());
+    ProblemDOFs<DefaultConfigurator> problemDOFs(VectorType::Ones(foldDofsPtr->getNumDofs())*t_0, vertexDOFs, plateGeomDef, foldDofsPtr, DfoldDofsPtr);
     SQPLineSearchSolver<DefaultConfigurator> solver(pars, costFunctional, DcostFunctional, std::move(factory), boundaryDOFs, problemDOFs, 20);
     solver.solve(plateGeomRef, def_geometries, ref_geometries, fold_DOFs);
     std::string filename;

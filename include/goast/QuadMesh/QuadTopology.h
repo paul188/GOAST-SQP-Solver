@@ -84,8 +84,9 @@ protected:
     for ( MyMesh::FaceIter f_it = mesh.faces_begin(); f_it != mesh.faces_end(); ++f_it ){
       // global node indices of current face 
       int locIdx = 0;
-      for ( MyMesh::ConstFaceVertexIter cfv_it = mesh.cfv_iter(*f_it); cfv_it.is_valid(); ++cfv_it)
-        _nodesOfQuads[f_it->idx()][locIdx++] = cfv_it->idx();
+      for ( MyMesh::ConstFaceHalfedgeIter cfh_it = mesh.cfh_iter(*f_it); cfh_it.is_valid(); ++cfh_it){
+        _nodesOfQuads[f_it->idx()][locIdx++] = mesh.from_vertex_handle(*cfh_it).idx();
+      }
       
       // Ordering consistent with ordering of the halfedges of the face
       locIdx = 0;

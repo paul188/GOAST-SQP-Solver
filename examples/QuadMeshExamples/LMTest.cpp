@@ -1,5 +1,4 @@
-#include "Levenberg_Marquardt.h"
-#include "Constraints.h"
+#include <goast/Developability/Developability.h>
 #include <goast/Core.h>
 #include <random>
 #include <iostream>
@@ -83,6 +82,7 @@ int main()
 
     CostFunctional<DefaultConfigurator> costFunctional(points);
     CostFunctionalGrad<DefaultConfigurator> gradCostFunctional(points);
+    /*
     LMAlgorithm<DefaultConfigurator> lm(pars, costFunctional, gradCostFunctional, 2, (points.size()/2));
     VectorType Dest;
     Dest.resize(2);
@@ -92,5 +92,6 @@ int main()
     lm.solve(init, Dest, W);
 
     std::cout<<"Line parameters: "<<Dest[0]<<" "<<Dest[1]<<std::endl;
+    */
     return 0;
 }

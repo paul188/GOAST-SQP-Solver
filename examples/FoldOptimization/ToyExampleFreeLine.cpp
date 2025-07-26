@@ -151,7 +151,8 @@ try{
     BoundaryDOFS<DefaultConfigurator> boundaryDOFs(bdryMaskOpt, nVertexDOFs, nFoldDOFs);
     // Create the degrees of freedom object
     std::vector<RealType> deviations;
-    ProblemDOFs<DefaultConfigurator> problemDOFs(VectorType::Zero(nFoldDOFs), plateGeomDef, foldDofsPtr, DfoldDofsPtr);
+    VectorType vertexDOFs_initial = VectorType::Zero(3*plateTopol.getNumVertices());
+    ProblemDOFs<DefaultConfigurator> problemDOFs(VectorType::Zero(nFoldDOFs), vertexDOFs_initial, plateGeomDef, foldDofsPtr, DfoldDofsPtr);
     SQPLineSearchSolver<DefaultConfigurator> solver(pars, costFunctional, DcostFunctional, factory, boundaryDOFs, problemDOFs, 20);
     solver.solve(plateGeomRef, def_geometries, ref_geometries, fold_DOFs);
 

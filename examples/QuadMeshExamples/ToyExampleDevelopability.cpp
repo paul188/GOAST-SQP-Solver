@@ -1,5 +1,4 @@
-#include "Levenberg_Marquardt.h"
-#include "Constraints.h"
+#include <goast/Developability/Developability.h>
 #include <goast/Core.h>
 #include <random>
 #include <iostream>
@@ -35,7 +34,6 @@ int main()
         weights.ruling_0 = 10.0;
         weights.ruling_1 = 10.0;
         weights.ruling_2 = 10.0;
-        weights.bdry_opt = 100000.0;
         weights.dev = 1000.0;
 
         VectorType bdryCoords_set(3 * 66);  
@@ -126,30 +124,15 @@ int main()
             }
         }
 
-        VectorType bdryCoords(3*bdryMask.size());
-
-        for(int i = 0; i < bdryMask.size(); i++)
-        {
-            VecType coords;
-            coords[0] = geom[3*bdryMask[i]];
-            coords[1] = geom[3*bdryMask[i]+1];
-            coords[2] = geom[3*bdryMask[i]+2];
-
-            bdryCoords[3*i] = coords[0];
-            bdryCoords[3*i+1] = coords[1];
-            bdryCoords[3*i+2] = coords[2];
-        }
-
-        std::pair<std::vector<int>, VectorType> bdryData = std::make_pair(bdryMask,bdryCoords);
-
         LevenbergMarquardtParams<DefaultConfigurator> pars;
         StripHandler<DefaultConfigurator> stripHandle(quadTopol);
         VarsIdx<DefaultConfigurator> vars_idx(quadTopol);
-        ConstraintIdx<DefaultConfigurator> cons_idx(stripHandle, quadTopol, bdryData);
-        Constraint<DefaultConfigurator> constraint(quadTopol,stripHandle, cons_idx, vars_idx, bdryData);
-        ConstraintGrad<DefaultConfigurator> constraintGrad(quadTopol,stripHandle,cons_idx, vars_idx, bdryData);
+        ConstraintIdx<DefaultConfigurator> cons_idx(stripHandle, quadTopol);
+        Constraint<DefaultConfigurator> constraint(quadTopol,stripHandle, cons_idx, vars_idx);
+        ConstraintGrad<DefaultConfigurator> constraintGrad(quadTopol,stripHandle,cons_idx, vars_idx);
+        BoundaryDOFS_quad<DefaultConfigurator> bdryDOFs(bdryMask, num_vertices, vars_idx);
         
-        LMAlgorithm<DefaultConfigurator> lm(pars, constraint, constraintGrad, vars_idx["num_dofs"], cons_idx["num_cons"]);
+        LMAlgorithm<DefaultConfigurator> lm(pars, constraint, constraintGrad, bdryDOFs, vars_idx["num_dofs"], cons_idx["num_cons"]);
 
         // CHOOSE GOOD INITIAL GUESS
         VectorType init = VectorType::Zero(vars_idx["num_dofs"]);

@@ -27,7 +27,7 @@ try{
 
     // load flat plate [0,1]^2
     TriMesh plate;
-    OpenMesh::IO::read_mesh(plate, "../../data/plate/testMeshCrissCross.ply");
+    OpenMesh::IO::read_mesh(plate, "../../data/plate/paperCrissCross.ply");
     MeshTopologySaver plateTopol( plate );
     std::cerr << "num of nodes = " << plateTopol.getNumVertices() << std::endl;
     VectorType plateGeomRef, plateGeomDef, plateGeomInitial;
@@ -184,6 +184,43 @@ try{
 
     RealType factor_membrane = 10000.0;
     RealType factor_bending = 1.0;
+
+    std::vector<int> line1NoCenter, line2NoCenter, Center;
+    for(int i = 0; i < plateTopol.getNumVertices(); i++)
+    {
+        VecType coords;
+        getXYZCoord<VectorType, VecType>( plateGeomInitial, coords, i);
+        if( std::abs(coords[0] - 0.625) < 1e-6 && std::abs(coords[1] - 0.625) > 1e-4)
+        {
+            line1NoCenter.push_back(i);
+        }
+        if( std::abs(coords[1] - 0.625) < 1e-6 && std::abs(coords[0] - 0.625) > 1e-4)
+        {
+            line2NoCenter.push_back(i);
+        }
+        if( std::abs(coords[0] - 0.625) < 1e-6 && std::abs(coords[1] - 0.625) < 1e-6)
+        {
+            Center.push_back(i);
+        }
+    }
+
+    std::ofstream stream_line1NoCenter, stream_line2NoCenter, stream_Center;
+    stream_line1NoCenter.open("/home/s24pjoha_hpc/goast_old_old/goast/build/examples/line1NoCenter.txt");
+    stream_line2NoCenter.open("/home/s24pjoha_hpc/goast_old_old/goast/build/examples/line2NoCenter.txt");
+    stream_Center.open("/home/s24pjoha_hpc/goast_old_old/goast/build/examples/Center.txt");
+
+    for(int i = 0; i < line1NoCenter.size(); i++)
+    {
+        stream_line1NoCenter << line1NoCenter[i] << std::endl;
+    }
+    for(int i = 0; i < line2NoCenter.size(); i++)
+    {
+        stream_line2NoCenter << line2NoCenter[i] << std::endl;      
+    }
+    for(int i = 0; i < Center.size(); i++)
+    {
+        stream_Center << Center[i] << std::endl;
+    }
 
     VectorType factors(2);
     factors[0] = factor_membrane;

@@ -61,6 +61,8 @@ cmake_minimum_required(VERSION 3.5)
 #if already found via finder or simulated finder in openmesh CMakeLists.txt, skip the search
 IF (NOT OPENMESH_FOUND) 
   SET (SEARCH_PATHS 
+    /home/s24pjoha_hpc/openmesh/
+    /home/s24pjoha_hpc/openmesh/OpenMesh-11.0.0/
     /usr/local/
     /usr/
     "${CMAKE_SOURCE_DIR}/OpenMesh/src/OpenMesh"

@@ -85,6 +85,18 @@ MatrixType convertVecToSparseMat(const VectorType& vec){
     return sparseMatrix;
 }
 
+MatrixType convertVecToSparseMatTranspose(const VectorType& vec){
+    MatrixType sparseMatrix(1, vec.size()); // Single column sparse matrix
+    for (int i = 0; i < vec.size(); ++i) {
+        if (vec[i] != 0.0) {
+            sparseMatrix.insert(0, i) = vec[i];
+        }
+    }
+
+    //sparseMatrix.makeCompressed();
+    return sparseMatrix;
+}
+
 bool is_posdef(MatrixType H) {
     auto H_dense = H.toDense();
     Eigen::LLT<FullMatrixType> llt(H_dense);
@@ -114,7 +126,7 @@ inline bool replaceNanWithZero(MatrixType& x) {
 
 // method to extract a block from a sparse matrix
 typedef Eigen::Triplet<double> Tri;
-MatrixType extractSparseBlock(MatrixType &M, int ibegin, int jbegin, int icount, int jcount) {
+MatrixType extractSparseBlock(const MatrixType &M, int ibegin, int jbegin, int icount, int jcount) {
     assert(ibegin + icount <= M.rows());
     assert(jbegin + jcount <= M.cols());
     
@@ -333,9 +345,6 @@ void printVectorToFile(const VectorType& vec, const std::string& filename, int p
         return;
     }
 
-    // Write vector size
-    file << "Vector size: " << vec.size() << "\n\n";
-
     // Set formatting
     file << std::fixed << std::setprecision(precision);
 
@@ -346,6 +355,31 @@ void printVectorToFile(const VectorType& vec, const std::string& filename, int p
 
     file.close();
     std::cout << "Vector successfully printed to " << filename << "\n";
+}
+
+void readVectorFromFile(VectorType& vec, const std::string& filename) {
+
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Error: Could not open file " << filename << " for reading.\n";
+        return;
+    }
+
+    vec.setZero();  // In case it has previous contents
+    double value;
+    std::string line;
+    
+    int counter = 0;
+    while (std::getline(file, line)) {
+        std::istringstream iss(line);
+        if (iss >> value) {
+            vec[counter] = value;
+        }
+        counter++;
+    }
+
+    file.close();
+    std::cout << "Vector successfully read from " << filename << " with " << vec.size() << " elements.\n";
 }
 
 

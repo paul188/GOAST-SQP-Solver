@@ -8,19 +8,29 @@ class ProblemDOFs{
         typedef typename ConfiguratorType::RealType RealType;
         typedef typename ConfiguratorType::SparseMatrixType MatrixType;
 
+        VectorType _foldDOFs;
+        VectorType _vertexDOFs;
+        VectorType _baseDeformedGeometry; // base deformed geometry, used to apply the vertex dofs often the result of Newton minimization
+        std::shared_ptr<FoldDofs<ConfiguratorType>> _foldDofsPtr; // pointer to the fold dofs object
+        std::shared_ptr<FoldDofsGradient<ConfiguratorType>> _DfoldDofsPtr; // pointer to the fold dofs gradient object
+
+
     public:
-        ProblemDOFs(const VectorType &foldDOFs, 
-                    const VectorType &vertexDOFs, 
+        ProblemDOFs(const VectorType &foldDOFs_initial, 
+                    const VectorType &vertexDOFs_initial, 
+                    const VectorType &baseDeformedGeometry,
                     std::shared_ptr<FoldDofs<ConfiguratorType>> foldDofsPtr,
                     std::shared_ptr<FoldDofsGradient<ConfiguratorType>> DfoldDofsPtr)
-                     : _foldDOFs(foldDOFs), 
-                       _vertexDOFs(vertexDOFs), 
+                     : _foldDOFs(foldDOFs_initial), 
+                       _vertexDOFs(vertexDOFs_initial), 
+                       _baseDeformedGeometry(baseDeformedGeometry),
                        _foldDofsPtr(std::move(foldDofsPtr)),
                        _DfoldDofsPtr(std::move(DfoldDofsPtr)) {}
 
         ProblemDOFs(const ProblemDOFs& other): 
                     _foldDOFs(other._foldDOFs),
                     _vertexDOFs(other._vertexDOFs),
+                    _baseDeformedGeometry(other._baseDeformedGeometry),
                     _foldDofsPtr(other._foldDofsPtr),
                     _DfoldDofsPtr(other._DfoldDofsPtr){}
         
@@ -43,9 +53,9 @@ class ProblemDOFs{
         }
 
         // apply the degrees of freedom to the respective geometries
-        void apply(VectorType &plateGeomRef, VectorType &plateGeomDef) const{
-            plateGeomDef += _vertexDOFs;
-            _foldDofsPtr->apply(_foldDOFs, plateGeomRef);
+        void apply(VectorType &geomRefDest, VectorType &geomDefDest) const{
+            geomDefDest = _baseDeformedGeometry + _vertexDOFs;
+            _foldDofsPtr->apply(_foldDOFs, geomRefDest);
         }
 
         VectorType getReferenceGeometry() const{
@@ -64,8 +74,8 @@ class ProblemDOFs{
             return _foldDOFs;
         }
 
-        VectorType getVertexDOFs() const{
-            return _vertexDOFs;
+        VectorType getDeformedGeometry() const{
+            return _baseDeformedGeometry + _vertexDOFs;
         }
 
         void setFoldDOFs(const VectorType &foldDOFs){
@@ -75,10 +85,4 @@ class ProblemDOFs{
         void setVertexDOFs(const VectorType &vertexDOFs){
             _vertexDOFs = vertexDOFs;
         }
-
-    private:
-        VectorType _foldDOFs;
-        VectorType _vertexDOFs;
-        std::shared_ptr<FoldDofs<ConfiguratorType>> _foldDofsPtr;
-        std::shared_ptr<FoldDofsGradient<ConfiguratorType>> _DfoldDofsPtr; 
 };

@@ -52,7 +52,7 @@ try{
     OpenMesh::IO::read_mesh(plate, "../../data/plate/paperCrissCross_coarse.ply");
     MeshTopologySaver plateTopol( plate );
     std::cout<<"num vertices: "<<plateTopol.getNumVertices()<<std::endl;
-    VectorType plateGeomRef, plateGeomDef, plateGeomInitial, plateGeomPenalty; // plateGeomRef is the geometry without the arc crease in the mesh
+    VectorType plateGeomRef, plateGeomDef, plateGeomInitial; // plateGeomRef is the geometry without the arc crease in the mesh
     getGeometry(plate,plateGeomRef);
     getGeometry(plate,plateGeomDef);
     getGeometry(plate,plateGeomInitial);
@@ -242,13 +242,20 @@ try{
 
     extendBoundaryMask( plateTopol.getNumVertices(), bdryMaskOpt );
 
-    auto foldDofsPtr = std::make_shared<FoldDofsSkewedCross<DefaultConfigurator>>( plateTopol, plateGeomInitial, plateGeomInitial, bdryMaskRef_1);
+    /*
+    // Now, read the initial deformed plate
+    OpenMesh::IO::read_mesh(plate, "SkewedCrossFoldInitPlate.ply");
+    getGeometry(plate, plateGeomDef);
+    std::cout<<"Plate number of vertices after: "<<plate.n_vertices();
+    */
+
+    auto foldDofsPtr = std::make_shared<FoldDofsCrossInterpolation<DefaultConfigurator>>( plateTopol, plateGeomInitial, plateGeomInitial, bdryMaskRef_1 );
     //FoldDofsSkewedCross<DefaultConfigurator> foldDofs( plateTopol, plateGeomInitial, plateGeomInitial, bdryMaskRef_1 );
     
     std::vector<int> foldVertices;
     foldDofsPtr->getFoldVertices(foldVertices);
     
-    auto DfoldDofsPtr = std::make_shared<FoldDofsSkewedCrossGradient<DefaultConfigurator>>( plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices);
+    auto DfoldDofsPtr = std::make_shared<FoldDofsCrossInterpolationGradient<DefaultConfigurator>>( plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices );
 
     size_t nFoldDOFs = foldDofsPtr->getNumDofs();
     size_t nVertexDOFs = 3*plateTopol.getNumVertices();
@@ -264,6 +271,9 @@ try{
     factors[0] = factor_membrane;
     factors[1] = factor_bending;
 
+    OpenMesh::IO::read_mesh(plate, "deformed_plate_after_optimization_dirichlet.ply");
+    getGeometry(plate, plateGeomDef);
+
     VectorType edge_weights;
     foldDofsPtr->getEdgeWeights(edge_weights);
 
@@ -273,11 +283,9 @@ try{
     // Create the degrees of freedom object
     std::vector<RealType> deviations;
     VectorType t_initial = VectorType::Ones(foldDofsPtr->getNumDofs())*t_0;
-    VectorType vertexDOFS_initial = VectorType::Zero(3*plateTopol.getNumVertices());
-    ProblemDOFs<DefaultConfigurator> problemDOFs(t_initial, vertexDOFS_initial, plateGeomDef, foldDofsPtr, DfoldDofsPtr);
-
+    VectorType vertexDOFs_initial = VectorType::Zero(3*plateTopol.getNumVertices());
+    ProblemDOFs<DefaultConfigurator> problemDOFs(t_initial, vertexDOFs_initial, plateGeomDef, foldDofsPtr, DfoldDofsPtr);
     SQPLineSearchSolver<DefaultConfigurator> solver(pars, costFunctional, DcostFunctional, std::move(factory), boundaryDOFs, problemDOFs, 20);
-    
     solver.solve(plateGeomRef, def_geometries, ref_geometries, fold_DOFs);
     std::string filename;
 

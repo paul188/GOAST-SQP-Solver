@@ -76,11 +76,6 @@ try{
         }
     }
 
-    for(int i = 0; i < edge_weights.size(); i++)
-    {
-        std::cout<<"Edge weight "<<i<<": "<<edge_weights[i]<<std::endl;
-    }
-
     // bdryMaskRef_1 fixes x,y,z coordinates in the reference geometry
     std::vector<int> bdryMaskDirichletDef_1;
     // bdryMaskRef_2 fixes y coordinates in the reference geometry
@@ -221,10 +216,16 @@ try{
     std::sort(bdryMaskRef_1.begin(), bdryMaskRef_1.end());
 
     // Now, rotate the fold
-    FoldDofsSkewedCross<DefaultConfigurator> foldDofs( plateTopol, plateGeomInitial, plateGeomInitial, bdryMaskRef_1 , scaling_piece_1, scaling_piece_2, scaling_piece_3, scaling_piece_4);
+    FoldDofsSkewedCross<DefaultConfigurator> foldDofs( plateTopol, plateGeomInitial, plateGeomInitial, bdryMaskRef_1);
     std::vector<int> foldVertices;
     foldDofs.getFoldVertices(foldVertices);
     //FoldDofsSkewedCrossGradient<DefaultConfigurator> DfoldDofs( plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices, scaling_piece_1, scaling_piece_2, scaling_piece_3, scaling_piece_4);
+
+    // Now, apply here the fold dofs just as a test
+    foldDofs.apply(VectorType::Ones(1)*t_init, plateGeomRef);
+
+    setGeometry(plate, plateGeomRef);
+    OpenMesh::IO::write_mesh(plate, "plateGeomRef_transformed.ply");
 
     // determine boundary mask for optimization
     // and deform part of boundary
@@ -313,6 +314,12 @@ try{
         
     }
 
+    std::cout<<"Test boundary mask opt: "<<std::endl;
+    for(int i = 0; i < bdryMaskOpt.size(); i++)
+    {
+        std::cout<<i <<"; "<< bdryMaskOpt[i] <<"; ";
+    }
+
     extendBoundaryMask( plateTopol.getNumVertices(), bdryMaskOpt );
 
     extendBoundaryMask( plateTopol.getNumVertices(), bdryMaskDirichletDef_1 );
@@ -374,8 +381,32 @@ try{
     NLS.setBoundaryMask( bdryMaskOpt );
     NLS.solve( initialization, plateGeomDef );
 
+    VectorType deriv;
+    DE_tot.apply(plateGeomDef, deriv);
+    applyMaskToVector(bdryMaskOpt, deriv);
+    std::cout<<std::setprecision(12)<<"Norm of gradient: "<<deriv.norm()<<std::endl;
+
     setGeometry( plate, plateGeomDef );
     OpenMesh::IO::write_mesh( plate, "deformed_plate_after_optimization_dirichlet.ply" );
+
+    VectorType testGeom(plateGeomDef.size());
+    OpenMesh::IO::read_mesh( plate, "deformed_plate_after_optimization_dirichlet.ply");
+    getGeometry( plate, testGeom );
+
+    printVectorToFile(testGeom,"test/test_deformed_2.txt");
+    printVectorToFile(plateGeomRef, "test/test_reference_2.txt");
+
+    // Try to recreate the factory object
+    auto foldDofsPtr = std::make_shared<FoldDofsSkewedCross<DefaultConfigurator>>( plateTopol, plateGeomInitial, plateGeomInitial, bdryMaskRef_1);
+    auto DfoldDofsPtr = std::make_shared<FoldDofsSkewedCrossGradient<DefaultConfigurator>>( plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices);
+    RealType t_0 = 0.0;
+    VectorType t_initial = VectorType::Ones(foldDofs.getNumDofs())*t_0;
+    VectorType vertexDOFS_initial = VectorType::Zero(3*plateTopol.getNumVertices());
+    ProblemDOFs<DefaultConfigurator> problemDOFs(t_initial, vertexDOFS_initial, plateGeomDef, foldDofsPtr, DfoldDofsPtr);
+
+    std::cout<< (testGeom - plateGeomDef).norm() << std::endl;
+    DE_tot.apply(plateGeomDef, deriv);
+    applyMaskToVector(bdryMaskOpt, deriv);
 } 
 catch ( BasicException &el ){
       std::cerr << std::endl << "ERROR!! CAUGHT FOLLOWING EXECEPTION: " << std::endl << el.getMessage() << std::endl << std::flush;

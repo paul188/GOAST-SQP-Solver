@@ -50,7 +50,7 @@ class ElasticEnergyFactory : public EnergyFactory<ConfiguratorType>{
         void produceE(const ProblemDOFs<ConfiguratorType> &problemDOFs, RealType &Dest) const override{
             // first, generate plateGeomRef
             VectorType plateGeomRef = problemDOFs.getReferenceGeometry();
-            VectorType plateGeomDef = problemDOFs.getVertexDOFs();
+            VectorType plateGeomDef = problemDOFs.getDeformedGeometry();
 
             // then, generate the energy
             auto *E_bend = new SimpleBendingEnergy<ConfiguratorType>(this->_plateTopol, plateGeomRef, true, this->_edge_weights);
@@ -62,8 +62,7 @@ class ElasticEnergyFactory : public EnergyFactory<ConfiguratorType>{
         void produceDE_vertex(const ProblemDOFs<ConfiguratorType> &problemDOFs, VectorType& Dest) const override{
             // first, generate plateGeomRef
             VectorType plateGeomRef = problemDOFs.getReferenceGeometry();
-
-            VectorType plateGeomDef = problemDOFs.getVertexDOFs();
+            VectorType plateGeomDef = problemDOFs.getDeformedGeometry();
 
             // then, generate the gradient
             auto *DE_bend = new SimpleBendingGradientDef<ConfiguratorType>(this->_plateTopol, plateGeomRef, this->_edge_weights);
@@ -75,7 +74,7 @@ class ElasticEnergyFactory : public EnergyFactory<ConfiguratorType>{
         void produceD2E_vertex(const ProblemDOFs<ConfiguratorType> &problemDOFs, MatrixType& Dest) const{
             // first, generate plateGeomRef
             VectorType plateGeomRef = problemDOFs.getReferenceGeometry();
-            VectorType plateGeomDef = problemDOFs.getVertexDOFs();
+            VectorType plateGeomDef = problemDOFs.getDeformedGeometry();
 
             // then, generate the hessian
             auto *D2E_bend = new SimpleBendingHessianDef<ConfiguratorType>(this->_plateTopol, plateGeomRef, this->_edge_weights);
@@ -88,7 +87,7 @@ class ElasticEnergyFactory : public EnergyFactory<ConfiguratorType>{
         void produceD2E_mix(const ProblemDOFs<ConfiguratorType> &problemDOFs, MatrixType &Dest) const{
             // first, generate plateGeomRef
             VectorType plateGeomRef = problemDOFs.getReferenceGeometry();
-            VectorType plateGeomDef = problemDOFs.getVertexDOFs();
+            VectorType plateGeomDef = problemDOFs.getDeformedGeometry();
             
             // generate mixed hessians w.r.t. deformed and undeformed geometry
             auto *D2E_bend_def_undef = new SimpleBendingHessianMixed<ConfiguratorType>(this->_plateTopol, plateGeomRef, true, true, this->_edge_weights);
@@ -133,7 +132,7 @@ class ElasticGravitationalFactory : public EnergyFactory<ConfiguratorType>{
         void produceE(const ProblemDOFs<ConfiguratorType> &problemDOFs, RealType &Dest) const {
             // first, generate plateGeomRef
             VectorType plateGeomRef = problemDOFs.getReferenceGeometry();
-            VectorType plateGeomDef = problemDOFs.getVertexDOFs();
+            VectorType plateGeomDef = problemDOFs.getDeformedGeometry();
 
             // then, generate the energy
             auto *E_bend = new SimpleBendingEnergy<ConfiguratorType>(this->_plateTopol, plateGeomRef, true, this->_edge_weights);
@@ -147,7 +146,7 @@ class ElasticGravitationalFactory : public EnergyFactory<ConfiguratorType>{
             // first, generate plateGeomRef
             VectorType plateGeomRef = problemDOFs.getReferenceGeometry();
 
-            VectorType plateGeomDef = problemDOFs.getVertexDOFs();
+            VectorType plateGeomDef = problemDOFs.getDeformedGeometry();
 
             // then, generate the gradient
             auto *DE_bend = new SimpleBendingGradientDef<ConfiguratorType>(this->_plateTopol, plateGeomRef, this->_edge_weights);
@@ -160,7 +159,7 @@ class ElasticGravitationalFactory : public EnergyFactory<ConfiguratorType>{
         void produceD2E_vertex(const ProblemDOFs<ConfiguratorType> &problemDOFs, MatrixType& Dest) const{
             // first, generate plateGeomRef
             VectorType plateGeomRef = problemDOFs.getReferenceGeometry();
-            VectorType plateGeomDef = problemDOFs.getVertexDOFs();
+            VectorType plateGeomDef = problemDOFs.getDeformedGeometry();
 
             // second derivative of gravitational energy is zero
             auto *D2E_bend = new SimpleBendingHessianDef<ConfiguratorType>(this->_plateTopol, plateGeomRef, this->_edge_weights);
@@ -176,7 +175,7 @@ class ElasticGravitationalFactory : public EnergyFactory<ConfiguratorType>{
         void produceD2E_mix(const ProblemDOFs<ConfiguratorType> &problemDOFs, MatrixType &Dest) const{
             // first, generate plateGeomRef
             VectorType plateGeomRef = problemDOFs.getReferenceGeometry();
-            VectorType plateGeomDef = problemDOFs.getVertexDOFs();
+            VectorType plateGeomDef = problemDOFs.getDeformedGeometry();
             
             // generate mixed hessians w.r.t. deformed and undeformed geometry
             auto *D2E_bend_def_undef = new SimpleBendingHessianMixed<ConfiguratorType>(this->_plateTopol, plateGeomRef, true, true, this->_edge_weights);

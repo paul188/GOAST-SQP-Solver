@@ -14,7 +14,7 @@ class SQPBaseParams{
     public:
         using RealType = typename ConfiguratorType::RealType;
         RealType eps = 1e-12; // Convergence criterion
-        size_t maxIter = 800; // maximum number of iterations
+        size_t maxIter = 10000; // maximum number of iterations
         size_t iter = 0; // current iteration
 };
 // Specific parameters needed for SQP Line Search
@@ -91,11 +91,6 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
         // our degrees of freedom as the vertexDOFs, we will modify it during the run
         void solve(const VectorType& plateGeomRef_basic, std::vector<VectorType> &def_geometries, std::vector<VectorType> &ref_geometries, std::vector<VectorType> &fold_DOFs)
         {
-            // REMOVE THIS LATER ONLY FOR TESTING
-            TriMesh plate;
-            OpenMesh::IO::read_mesh(plate, "../../data/plate/paperCrissCross_coarse.ply");
-            MeshTopologySaver plateTopol( plate );
-
             size_t nAllVertexDOFs = _boundaryDOFs.getNumVertexDOFs();
             size_t nFoldDOFs = _boundaryDOFs.getNumFoldDOFs();
             size_t nAllDOFs = nAllVertexDOFs + nFoldDOFs;
@@ -131,17 +126,19 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
             _factory->produceD2E_mix(_problemDOFs, D2E_mix);
 
             VectorType DCostFunctional_val;
-            _DcostFunctional.apply(_problemDOFs.getVertexDOFs(), DCostFunctional_val);
+            _DcostFunctional.apply(_problemDOFs.getDeformedGeometry(), DCostFunctional_val);
             _boundaryDOFs.addZeroFoldDOFs(DCostFunctional_val);
 
             RealType costFunctional_val;
-            _costFunctional.apply(_problemDOFs.getVertexDOFs(), costFunctional_val);
+            _costFunctional.apply(_problemDOFs.getDeformedGeometry(), costFunctional_val);
 
             // Now, reduce everything to the effective space
             _boundaryDOFs.transformToReducedSpace(Constraint);
             _boundaryDOFs.transformWithFoldDofsToReducedSpace(DCostFunctional_val);
             _boundaryDOFs.transformRowColToReducedSpace(D2E_vertex);
             _boundaryDOFs.transformRowToReducedSpace(D2E_mix);
+
+            std::cout<<"Norm of constraint in the zeroth step: "<<Constraint.norm()<<"; "<<norm_l1(Constraint)<<"; "<<Constraint.norm()<<std::endl;
 
             // Reserve memory for the r.h.s for the linear system
             VectorType rhs_k = VectorType::Zero(nEffectiveDOFs + nEffectiveVertexDOFs);
@@ -238,11 +235,11 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                 //Evaluate J[x_k+1]
                 RealType costFunctional_kplus1_val;
                 // can use the same costFunctional object, since foldVertices dont change
-                _costFunctional.apply(_problemDOFs.getVertexDOFs(), costFunctional_kplus1_val);
+                _costFunctional.apply(_problemDOFs.getDeformedGeometry(), costFunctional_kplus1_val);
 
                 // Evaluate grad J[x_k+1]
                 VectorType DCostFunctional_kplus1_val;
-                _DcostFunctional.apply(_problemDOFs.getVertexDOFs(), DCostFunctional_kplus1_val);
+                _DcostFunctional.apply(_problemDOFs.getDeformedGeometry(), DCostFunctional_kplus1_val);
                 _boundaryDOFs.addZeroFoldDOFs(DCostFunctional_kplus1_val);
                 _boundaryDOFs.transformWithFoldDofsToReducedSpace(DCostFunctional_kplus1_val);
 
@@ -292,7 +289,7 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                 D2E_mix = D2E_mix_kplus1;
                 lambda_k = lambda_kplus1;
 
-                def_geometries.push_back(_problemDOFs.getVertexDOFs());
+                def_geometries.push_back(_problemDOFs.getDeformedGeometry());
                 ref_geometries.push_back(_problemDOFs.getReferenceGeometry());
                 fold_DOFs.push_back(_problemDOFs.getFoldDOFs());
                 
@@ -304,7 +301,7 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                 /*
                 setGeometry(plate, _problemDOFs.getReferenceGeometry());
                 OpenMesh::IO::write_mesh(plate,"reference/plate_" + std::to_string(_pars.iter) + ".ply");
-                setGeometry(plate, _problemDOFs.getVertexDOFs());
+                setGeometry(plate, _problemDOFs.getDeformedGeometry());
                 OpenMesh::IO::write_mesh(plate, "deformed/plate_" + std::to_string(_pars.iter) + ".ply");
                 */    
             }
@@ -399,7 +396,7 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                 // Update deformed and reference geometry
                 lineSearchDOFs += alpha*d_k_full;
 
-                _costFunctional.apply(lineSearchDOFs.getVertexDOFs(),CostFunctional_val_linesearch);
+                _costFunctional.apply(lineSearchDOFs.getDeformedGeometry(),CostFunctional_val_linesearch);
                 
                 _factory->produceDE_vertex(lineSearchDOFs,Constraint_linesearch);
                 _boundaryDOFs.transformToReducedSpace(Constraint_linesearch);
@@ -420,7 +417,7 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                     VectorType e_k = C_k.transpose()*_scipy_solver.solve_with_scipy(C_k*C_k.transpose(), -Constraint_linesearch);
                     _boundaryDOFs.InverseTransformWithFoldDofs(e_k);
                     lineSearchDOFs += e_k;
-                    _costFunctional.apply(lineSearchDOFs.getVertexDOFs(),CostFunctional_val_linesearch);
+                    _costFunctional.apply(lineSearchDOFs.getDeformedGeometry(),CostFunctional_val_linesearch);
                 
                     _factory->produceDE_vertex(lineSearchDOFs,Constraint_linesearch);
                     _boundaryDOFs.transformToReducedSpace(Constraint_linesearch);

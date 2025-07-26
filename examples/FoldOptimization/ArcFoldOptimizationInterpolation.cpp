@@ -50,7 +50,7 @@ try{
 
 // load flat plate and prepare the arc crease
     TriMesh plate;
-    OpenMesh::IO::read_mesh(plate, "../../data/plate/paperCrissCross.ply");
+    OpenMesh::IO::read_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/data/plate/paperCrissCross.ply");
     MeshTopologySaver plateTopol( plate );
     std::cout<<"num vertices: "<<plateTopol.getNumVertices()<<std::endl;
     VectorType plateGeomRef, plateGeomDef, plateGeomInitial; // plateGeomRef is the geometry without the arc crease in the mesh
@@ -114,13 +114,30 @@ try{
     }
 
     extendBoundaryMask( plateTopol.getNumVertices(), bdryMaskOpt );
+
+    std::vector<int> polDegrees = {0, 2, 4};
+    /// generate chebyshev nodes -> optimal for minimizing oscillations at the bdry
+    std::vector<RealType> x_points;
+
+    x_points.push_back(0.0);
+    x_points.push_back(0.25);
+    x_points.push_back(0.5);
    
-    auto foldDofsPtr = std::make_shared<FoldDofsArcLine<DefaultConfigurator>>(plateTopol,plateGeomInitial, plateGeomInitial, bdryMaskRef);
+    auto foldDofsPtr = std::make_shared<FoldDofsArcInterpolation2<DefaultConfigurator>>(plateTopol,plateGeomInitial, plateGeomInitial, bdryMaskRef, polDegrees, x_points);
 
     std::vector<int> foldVertices;
     foldDofsPtr -> getFoldVertices(foldVertices);
 
-    auto DfoldDofsPtr = std::make_shared<FoldDofsArcLineGradient<DefaultConfigurator>>(plateTopol, bdryMaskRef, plateGeomInitial, foldVertices);
+    auto DfoldDofsPtr = std::make_shared<FoldDofsArcInterpolation2Gradient<DefaultConfigurator>>(plateTopol, bdryMaskRef, plateGeomInitial, foldVertices, polDegrees, x_points);
+
+    // Test: 
+    std::cout<<"Test"<<std::endl;
+    VectorType testGeom = plateGeomInitial;
+    VectorType dofs(3);
+    dofs[0] = -5.34699373254;
+    dofs[1] = -0.689781754798;
+    dofs[2] = -0.305910351344;
+    foldDofsPtr->apply(dofs,plateGeomInitial);
 
     VectorType edge_weights = VectorType::Zero(plateTopol.getNumEdges());
     foldDofsPtr->getEdgeWeights(edge_weights);
@@ -136,7 +153,7 @@ try{
     
     RealType factor_membrane = 10000.0;
     RealType factor_bending = 1.0;
-    RealType factor_gravity = 500.0;
+    RealType factor_gravity = 0.0;
 
     VectorType factors(3);
     factors[0] = factor_membrane;
@@ -165,26 +182,34 @@ try{
     // Create the degrees of freedom object
     std::vector<RealType> deviations;
     VectorType vertexDOFs_initial = VectorType::Zero(3*plateTopol.getNumVertices());
-    ProblemDOFs<DefaultConfigurator> problemDOFs(VectorType::Ones(1)*t_0, vertexDOFs_initial, plateGeomDef, foldDofsPtr, DfoldDofsPtr);
-    SQPLineSearchSolver<DefaultConfigurator> solver(pars, costFunctional, DcostFunctional, factory, boundaryDOFs, problemDOFs, 20);
     
-    // Test the constraint norm:
-    ProblemDOFs<DefaultConfigurator> problemDOFsTest(VectorType::Ones(1)*t_0, vertexDOFs_initial, plateGeomDef, foldDofsPtr, DfoldDofsPtr);
-    VectorType DE_test;
-    factory->produceDE_vertex(problemDOFsTest, DE_test);
-    applyMaskToVector(bdryMaskOpt, DE_test);
-    RealType constraint_norm = DE_test.norm();
-    std::cout<<"Constraint norm: "<<constraint_norm<<std::endl;
+    VectorType foldDOFs_initial(3);
+    /*
+    foldDOFs_initial[0] = -0.649641492065;
+    foldDOFs_initial[1] = -0.469134819296;//-0.469134819296;
+    foldDOFs_initial[2] = -0.415174151037;
+    */
+    foldDOFs_initial[0] = -0.5;
+    foldDOFs_initial[1] = -0.5;
+    foldDOFs_initial[2] = -0.5;
+
+    ProblemDOFs<DefaultConfigurator> problemDOFs(foldDOFs_initial, vertexDOFs_initial, plateGeomDef, foldDofsPtr, DfoldDofsPtr);
+    SQPLineSearchSolver<DefaultConfigurator> solver(pars, costFunctional, DcostFunctional, factory, boundaryDOFs, problemDOFs, 20);
 
     solver.solve(plateGeomInitial, def_geometries, ref_geometries, fold_DOFs);
     std::string filename;
 
+    std::cout<<"Test:"<<std::endl;
+    setGeometry(plate, plateGeomDef);
+    OpenMesh::IO::write_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/deformed/plate_test.ply");
+    std::cout<<"Test done"<<std::endl;
+
     for(int i = 0; i < def_geometries.size(); i++){
-        filename = "deformed/plate_" + std::to_string(i) + ".ply";
+        filename = "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/deformed/plate_" + std::to_string(i) + ".ply";
         setGeometry(plate, def_geometries[i]);
         OpenMesh::IO::write_mesh(plate,filename);
         setGeometry(plate, ref_geometries[i]);
-        filename = "reference/plate_" + std::to_string(i) + ".ply";
+        filename = "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/reference/plate_" + std::to_string(i) + ".ply";
         OpenMesh::IO::write_mesh(plate, filename);
     }
 

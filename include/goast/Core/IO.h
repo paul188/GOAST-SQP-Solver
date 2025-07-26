@@ -16,7 +16,7 @@
 //==========================================================================================================
 
 bool runGnuplot(const std::string GnuplotCommandFileName) {
-	std::string systemCommand = "gnuplot ";
+	std::string systemCommand = "/home/s24pjoha_hpc/gnuplot/gnuplot-5.4.10/bin/gnuplot ";
 	systemCommand += GnuplotCommandFileName;
 	const bool failed = (system(systemCommand.c_str()) != EXIT_SUCCESS);
 	if (failed)
@@ -43,7 +43,7 @@ void generatePNG( const VectorType &t, const VectorType &x, const VectorType &y,
         generateDataFile ( t, x, "tempEnergyFile.dat" );
         generateDataFile ( t, y, "tempGateauxFile.dat" );
         
-        out << "set terminal png" << std::endl;
+        out << "set terminal svg" << std::endl;
         out << "set xlabel \"\"" << std::endl;
         out << "set ylabel \"\"" << std::endl;
         out << "set output \"" << saveName <<"\"" << std::endl;

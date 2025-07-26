@@ -670,6 +670,7 @@ public:
 
   }
 
+  
   void plotAllDirections( const VectorType &testPoint, const std::string saveNameStem ) const {
     int numDofs = testPoint.size();
 
@@ -677,6 +678,9 @@ public:
     _DF.apply( testPoint, Hessian );
 
     VectorType timeSteps( _numSteps ), energies( _numSteps ), derivs( _numSteps );
+
+    bool continue_1 = false;
+    bool continue_2 = false;
 
     for ( int dim1 = 0; dim1 < _dimOfRange; dim1++ ) { //point at which hessian is checked
       for ( int dim2 = 0; dim2 < numDofs; dim2++ ) { //first derivative
@@ -686,9 +690,13 @@ public:
 
           RealType gateauxDerivative = Hessian( dim1, dim2, dim3 );
 
+          if(std::abs(gateauxDerivative) < 1e-4)
+            continue_1 = true;
+
           MatrixType tempMat( _dimOfRange, numDofs );
           _F.apply( testPoint, tempMat );
           RealType initialEnergy = tempMat.coeffRef( dim1, dim2 );
+          std::cout<< "Testing direction: " << dim1 << ", " << dim2 << ", " << dim3 << std::endl;
 
           for ( int j = 0; j < _numSteps; j++ ) {
             timeSteps[j] = ( j - _numSteps / 2 ) * _stepSize;
@@ -698,6 +706,19 @@ public:
             energies[j] = tempMat.coeffRef( dim1, dim2 );
             derivs[j] = initialEnergy + timeSteps[j] * gateauxDerivative;
           }
+
+          RealType minEnergy = energies.minCoeff();
+          RealType maxEnergy = energies.maxCoeff();
+          if (std::abs(maxEnergy - minEnergy) < 1e-4)
+            continue_2 = true;
+
+          if(continue_1 && continue_2 )
+          {
+            continue_1 = false;
+            continue_2 = false;
+            continue;
+          }
+
           generatePNG( timeSteps, energies, derivs, saveName.str());
 
         }

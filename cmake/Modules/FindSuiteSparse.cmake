@@ -232,13 +232,16 @@ list(APPEND SUITESPARSE_CHECK_INCLUDE_DIRS
      /opt/local/include/ufsparse # Mac OS X
      /usr/local/homebrew/include # Mac OS X
      /usr/local/include
-     /usr/include)
+     /usr/include
+     /home/s24pjoha_hpc/SuiteSparse_install/include/suitesparse
+     /home/s24pjoha_hpc/SuiteSparse_install/include)
 list(APPEND SUITESPARSE_CHECK_LIBRARY_DIRS
      /opt/local/lib
      /opt/local/lib/ufsparse # Mac OS X
      /usr/local/homebrew/lib # Mac OS X
      /usr/local/lib
-     /usr/lib)
+     /usr/lib
+     /home/s24pjoha_hpc/SuiteSparse_install/lib64)
 # Additional suffixes to try appending to each search path.
 list(APPEND SUITESPARSE_CHECK_PATH_SUFFIXES
      suitesparse) # Windows/Ubuntu
@@ -320,21 +323,18 @@ endmacro()
 # of all variables that must be defined for SuiteSparse to be considered found.
 unset(SUITESPARSE_FOUND_REQUIRED_VARS)
 
-# BLAS.
-find_package(BLAS QUIET)
-if (NOT BLAS_FOUND)
-  suitesparse_report_not_found(
-          "Did not find BLAS library (required for SuiteSparse).")
-endif (NOT BLAS_FOUND)
-list(APPEND SUITESPARSE_FOUND_REQUIRED_VARS BLAS_FOUND)
+# OpenBLAS via CMake config package.
+set(OpenBLAS_DIR "/opt/software/easybuild-INTEL/software/OpenBLAS/0.3.20-GCC-11.3.0/lib/cmake/openblas")
 
-# LAPACK.
-find_package(LAPACK QUIET)
-if (NOT LAPACK_FOUND)
+find_package(OpenBLAS CONFIG REQUIRED)
+
+if (NOT OpenBLAS_FOUND)
   suitesparse_report_not_found(
-          "Did not find LAPACK library (required for SuiteSparse).")
-endif (NOT LAPACK_FOUND)
-list(APPEND SUITESPARSE_FOUND_REQUIRED_VARS LAPACK_FOUND)
+          "Did not find OpenBLAS library (required for SuiteSparse).")
+endif()
+
+list(APPEND SUITESPARSE_FOUND_REQUIRED_VARS OpenBLAS_FOUND)
+
 
 suitesparse_find_component(AMD REQUIRED FILES amd.h LIBRARIES amd)
 suitesparse_find_component(CAMD REQUIRED FILES camd.h LIBRARIES camd)
@@ -523,8 +523,7 @@ if (SUITESPARSE_FOUND)
        ${CAMD_LIBRARY}
        ${COLAMD_LIBRARY}
        ${AMD_LIBRARY}
-       ${LAPACK_LIBRARIES}
-       ${BLAS_LIBRARIES})
+       ${OPENBLAS_LIBRARY})
   if (SUITESPARSE_CONFIG_FOUND)
     list(APPEND SUITESPARSE_LIBRARIES
          ${SUITESPARSE_CONFIG_LIBRARY})

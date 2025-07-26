@@ -3,6 +3,7 @@
 #include <goast/QuadMesh/QuadTopology.h>
 #include <cmath>
 #include <goast/SQP/Utils/SparseMat.h>
+#include <optional>
 
 class SkippingBdryHalfEdgeIterator{
     private:
@@ -210,7 +211,7 @@ class VarsIdx{
          const QuadMeshTopologySaver &_quadTopol;
  
      private:
-         std::map<std::string, size_t> _idx;
+         std::map<std::string, int> _idx;
  
          /*
          Ordering of the dofs: 
@@ -325,7 +326,7 @@ class VarsIdx{
              return vars.segment(_idx.at("reweighted_rulings_2") + 3*i, 3);
          }
  
-         RealType operator[](const std::string& key) const {
+         size_t operator[](const std::string& key) const {
              return _idx.at(key);
          }
  };
@@ -343,10 +344,8 @@ class ConstraintIdx{
      private:
          std::map<std::string,size_t> _cons_idx;
      public:
-         ConstraintIdx(StripHandler<ConfiguratorType> &stripHandle, const QuadMeshTopologySaver &quadTopol, OptionalBoundaryData bdryData = std::nullopt)
+         ConstraintIdx(StripHandler<ConfiguratorType> &stripHandle, const QuadMeshTopologySaver &quadTopol)
          {
-             
-             size_t num_bdryOpt = bdryData.has_value() ? bdryData.value().first.size() : 0;
  
              // index handling
              size_t num_vertices = quadTopol.getNumVertices();
@@ -375,8 +374,7 @@ class ConstraintIdx{
  
              _cons_idx["vertex_1"] = 0;
              _cons_idx["vertex_2"] = _cons_idx["vertex_1"] + num_constraints_vert_1;
-             _cons_idx["bdry_opt"] = _cons_idx["vertex_2"] + num_constraints_vert_2;
-             _cons_idx["edge_vec_1"] = _cons_idx["bdry_opt"] + 3*num_bdryOpt;
+             _cons_idx["edge_vec_1"] = _cons_idx["vertex_2"] + num_constraints_vert_2;
              _cons_idx["edge_vec_2"] = _cons_idx["edge_vec_1"] + num_constraints_edge_vec_1;
              _cons_idx["normal_1"] = _cons_idx["edge_vec_2"] + num_constraints_edge_vec_2;
              _cons_idx["normal_2"] = _cons_idx["normal_1"] + num_constraints_normal_1;
@@ -394,7 +392,6 @@ class ConstraintIdx{
          size_t operator[](const std::string& key) const {
              if (key == "vertex_1"||
                  key == "vertex_2"||
-                 key == "bdry_opt"||
                  key == "edge_vec_1"||
                  key == "edge_vec_2"||
                  key == "normal_1"||
@@ -414,14 +411,12 @@ class ConstraintIdx{
          }
  };
  
-
 template<typename ConfiguratorType>
 struct constraint_weights{
     typedef typename ConfiguratorType::RealType RealType;
 
     RealType vertex_1 = 1.0;
     RealType vertex_2 = 1.0;
-    RealType bdry_opt = 1.0;
     RealType edge_vec_1 = 1.0;
     RealType edge_vec_2 = 1.0;
     RealType normal_1 = 1.0;
@@ -438,7 +433,6 @@ struct constraint_weights{
     RealType operator[](const std::string& key) const {
         if (key == "vertex_1") return vertex_1;
         else if (key == "vertex_2") return vertex_2;
-        else if (key == "bdry_opt") return bdry_opt;
         else if (key == "edge_vec_1") return edge_vec_1;
         else if (key == "edge_vec_2") return edge_vec_2;
         else if (key == "normal_1") return normal_1;
@@ -467,7 +461,7 @@ struct constraint_weights{
         triplets.reserve(num_constraints);
 
         std::vector<std::pair<std::string, std::string>> constraints = {
-            {"vertex_1", "vertex_2"}, {"vertex_2", "bdry_opt"}, {"bdry_opt", "edge_vec_1"},
+            {"vertex_1", "vertex_2"}, {"vertex_2", "edge_vec_1"},
             {"edge_vec_1", "edge_vec_2"}, {"edge_vec_2", "normal_1"}, {"normal_1", "normal_2"},
             {"normal_2", "normal_3"}, {"normal_3", "ruling_0"}, {"ruling_0", "ruling_1"},
             {"ruling_1", "ruling_2"}, {"ruling_2", "dev"}, {"dev", "fair_v"},
@@ -491,8 +485,6 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
     typedef typename ConfiguratorType::VecType VecType;
     typedef typename ConfiguratorType::SparseMatrixType MatrixType;
     typedef typename ConfiguratorType::FullMatrixType FullMatrixType;
-    // used to store the boundary indices and corresponding values
-    typedef typename std::optional<std::pair<std::vector<int>, VectorType>> OptionalBoundaryData;
 
     private:
         const QuadMeshTopologySaver &_quadTopol;
@@ -510,17 +502,11 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
         // as well as the constraint gradients into the matrix
         ConstraintIdx<ConfiguratorType> _cons_idx;
 
-        // boundary data, i.e. boundary indices in _bdryMask
-        // and the prescribed point vectors in _bdryVals
-        // the boundary mask is ordered as: first x, then y, then z. All x indices ordered according to point indices.
-        OptionalBoundaryData _bdryData;
-
     public:
         Constraint(const QuadMeshTopologySaver &quadTopol, 
                    StripHandler<ConfiguratorType> &stripHandle,
                    ConstraintIdx<ConfiguratorType> &constraintIdx,
-                   VarsIdx<ConfiguratorType> &varsIdx,
-                   OptionalBoundaryData bdryData = std::nullopt):
+                   VarsIdx<ConfiguratorType> &varsIdx):
               _quadTopol(quadTopol),
               _num_vertices(quadTopol.getNumVertices()),
               _num_faces(quadTopol.getNumFaces()),
@@ -529,18 +515,9 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
               _stripHandle(stripHandle),
               _it_face(_quadTopol),
               _it_he(_quadTopol),
-              _bdryData(bdryData),
               _vars_idx(varsIdx),
               _cons_idx(constraintIdx)
         {
-
-            if(_bdryData.has_value())
-            {
-                if(3*_bdryData.value().first.size() != _bdryData.value().second.size())
-                {
-                    std::cerr << "Boundary data does not match in size"<<std::endl;
-                }
-            }
         }
 
     void initialize_vars(const VectorType &geom, VectorType &Dest) const {
@@ -554,7 +531,7 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
         // 2. vertices are initialized with the input geometry
         Dest.segment(_vars_idx["vertices"],3*_num_vertices) = geom;
         // 3. weights are initialized with 1
-        Dest.segment(_vars_idx["weights"],_num_vertices) = 0.5*VectorType::Ones(_num_vertices);
+        Dest.segment(_vars_idx["weights"],_num_vertices) = VectorType::Ones(_num_vertices);
         // 4. reweighted vertices are initialized with the input geometry
         Dest.segment(_vars_idx["reweighted_vertices"],3*_num_vertices) = geom;
         // 5. initialize reweighted edges:
@@ -650,27 +627,6 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
             Dest.segment(_cons_idx["vertex_2"] + 3*i, 3) = _vars_idx.reweighted_vertex(vars, i) - _vars_idx.vertex_weight(vars, i)*_vars_idx.vertex(vars, i);
         }
 
-    }
-
-    void get_constraint_bdry_opt(const VectorType &vars, VectorType &Dest) const{
-        
-        size_t num_constraints = _cons_idx["num_cons"];
-
-        if(Dest.size() != num_constraints){
-            Dest.resize(num_constraints);
-        }
-
-        if(!_bdryData.has_value())
-        {
-            // boundary mask is not set, so just return
-            return; 
-        }
-
-        for(int i = 0; i < _bdryData.value().first.size(); i++){
-            auto vertex_now = _vars_idx.vertex(vars, _bdryData.value().first[i]);
-            auto vertex_pos = _bdryData.value().second.segment(3*i,3);
-            Dest.segment(_cons_idx["bdry_opt"] + 3*i,3) = vertex_now - vertex_pos;
-        }
     }
 
     void get_constraint_edge_vec_1(const VectorType &vars, VectorType &Dest)const {
@@ -957,11 +913,15 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
 
     void apply(const VectorType &vars, VectorType &Dest) const override
 {
+    if(vars.size() != _vars_idx["num_dofs"]){
+        std::cout<<"num dofs: "<<_vars_idx["num_dofs"]<<std::endl;
+        std::cout<<"vars size: "<<vars.size()<<std::endl;
+        throw std::runtime_error("The size of the input vector does not match the number of degrees of freedom.");
+    }
     Dest.setZero();
     
     get_constraint_vertex_1(vars, Dest);
     get_constraint_vertex_2(vars, Dest);
-    get_constraint_bdry_opt(vars, Dest);
     get_constraint_edge_vec_1(vars, Dest);
     get_constraint_edge_vec_2(vars, Dest);
     get_constraint_normal_1(vars, Dest);
@@ -984,8 +944,6 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
     typedef typename ConfiguratorType::VecType VecType;
     typedef typename ConfiguratorType::SparseMatrixType MatrixType;
     typedef typename ConfiguratorType::FullMatrixType FullMatrixType;
-     // used to store the boundary indices and corresponding values
-    typedef typename std::optional<std::pair<std::vector<int>, VectorType>> OptionalBoundaryData;
 
     private:
         typedef typename std::vector<Eigen::Triplet<RealType>> TripletVectorType;
@@ -1000,8 +958,6 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
         mutable SkippingBdryHalfEdgeIterator _it_he;
         mutable StripHandler<ConfiguratorType> _stripHandle;
 
-        OptionalBoundaryData _bdryData;
-
         // Serves to access the current vector of input variables at the right positions
         VarsIdx<ConfiguratorType> _vars_idx;
         ConstraintIdx<ConfiguratorType> _cons_idx;
@@ -1010,8 +966,7 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
         ConstraintGrad(QuadMeshTopologySaver &quadTopol, 
                     StripHandler<ConfiguratorType> &stripHandle,
                     ConstraintIdx<ConfiguratorType> &constraintIdx,
-                    VarsIdx<ConfiguratorType> &varsIdx,
-                    OptionalBoundaryData bdryData = std::nullopt):
+                    VarsIdx<ConfiguratorType> &varsIdx):
           _quadTopol(quadTopol),
           _num_vertices(quadTopol.getNumVertices()),
           _num_faces(quadTopol.getNumFaces()),
@@ -1022,18 +977,34 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
           _stripHandle(stripHandle),
           _it_face(quadTopol),
           _it_he(quadTopol),
-          _bdryData(bdryData),
           _vars_idx(varsIdx),
           _cons_idx(constraintIdx)
         {
+        }
 
-            if(_bdryData.has_value())
-            {
-                if(3*_bdryData.value().first.size() != _bdryData.value().second.size())
-                {
-                    std::cerr << "Boundary data does not match in size"<<std::endl;
-                }
+        void apply(const VectorType &vars, MatrixType &Dest) const override{
+
+            size_t num_dofs = _vars_idx["num_dofs"];
+            size_t num_constraints = _cons_idx["num_cons"];
+
+            if(Dest.rows() != num_constraints || Dest.cols() != num_dofs){
+                Dest.resize(num_constraints, num_dofs);
             }
+
+            auto Id = MatrixType(3,3);
+            Id.setIdentity();
+
+            std::vector<Eigen::Triplet<RealType>> triplet;
+
+            for(int i = 0; i < _num_vertices; i++){
+                RealType w_i = _vars_idx.vertex_weight(vars, i);
+                VectorType vec = -_vars_idx.vertex(vars, i);
+                MatrixType vec_mat = vectorToSparseMat(vec);
+                assignSparseBlockInplace(Dest,-w_i*Id,_cons_idx["vertex_2"] + 3*i,3*i + _vars_idx["vertices"],triplet);
+                assignSparseBlockInplace(Dest,vec_mat,_cons_idx["vertex_2"] + 3*i,i + _vars_idx["weights"],triplet);
+                assignSparseBlockInplace(Dest,Id,_cons_idx["vertex_2"] +3*i,3*i + _vars_idx["reweighted_vertices"],triplet);
+            }
+
         }
 
         void get_constraintgrad_vertex_1(const VectorType &vars, MatrixType &Dest) const {
@@ -1101,47 +1072,6 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
                 assignSparseMatBlockTriplet(Id,_cons_idx["vertex_2"] +3*i,3*i + _vars_idx["reweighted_vertices"],triplet);
             }
 
-        }
-
-        void get_constraingrad_bdry_opt(const VectorType &vars, MatrixType &Dest) const{
-            
-            size_t num_dofs = _vars_idx["num_dofs"];
-            size_t num_constraints = _cons_idx["num_cons"];
-
-            if(Dest.rows() != num_constraints || Dest.cols() != num_dofs){
-                Dest.resize(num_constraints, num_dofs);
-            }
-
-            if(!_bdryData.has_value())
-            {
-                // boundary mask is not set, so just return
-                return; 
-            }
-
-            auto Id = MatrixType(3,3);
-            Id.setIdentity();
-
-            std::vector<Eigen::Triplet<RealType>> triplet;
-
-            for(int i = 0; i < _bdryData.value().first.size(); i++){
-                assignSparseBlockInplace(Dest,Id, _cons_idx["bdry_opt"] + 3*i,_vars_idx["vertices"] + 3*_bdryData.value().first[i],triplet);
-            }
-        }
-
-        void get_constraintgrad_bdry_opt_triplet(const VectorType &vars, TripletVectorType &triplet) const{
-            
-            if(!_bdryData.has_value())
-            {
-                // boundary mask is not set, so just return
-                return; 
-            }
-
-            auto Id = MatrixType(3,3);
-            Id.setIdentity();
-
-            for(int i = 0; i < _bdryData.value().first.size(); i++){
-                assignSparseMatBlockTriplet(Id, _cons_idx["bdry_opt"] + 3*i,_vars_idx["vertices"] + 3*_bdryData.value().first[i],triplet);
-            }
         }
 
         void get_constraintgrad_edge_vec_1(const VectorType &vars, MatrixType &Dest)const {
@@ -1986,7 +1916,7 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
         }
 
 
-        void apply(const VectorType &vars, MatrixType &Dest) const override
+        void apply_all(const VectorType &vars, MatrixType &Dest) const
         {
             size_t num_dofs = _vars_idx["num_dofs"];
             // Change num_constraints back later !
@@ -2001,7 +1931,6 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
             TripletVectorType triplet;
             size_t num_vertex_1_triplets = 2*_num_vertices;
             size_t num_vertex_2_triplets = 21*_num_vertices;
-            size_t num_bdry_opt_triplets = _bdryData.has_value() ? 3*_bdryData.value().first.size() : 0;
             size_t num_edge_vec_1_triplets = 57*_num_faces;
             size_t num_edge_vec_2_triplets = 57*_num_faces;
             size_t num_normal_1_triplets = 6*_num_faces;
@@ -2017,7 +1946,6 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
 
             triplet.reserve(num_vertex_1_triplets +
                             num_vertex_2_triplets +
-                            num_bdry_opt_triplets +
                             num_edge_vec_1_triplets +
                             num_edge_vec_2_triplets +
                             num_normal_1_triplets +
@@ -2034,7 +1962,6 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
             // 2*num_vertices for vertex_2 constraint
             get_constraintgrad_vertex_1_triplet(vars, triplet);
             get_constraintgrad_vertex_2_triplet(vars, triplet);
-            get_constraintgrad_bdry_opt_triplet(vars, triplet);
             get_constraintgrad_edge_vec_1_triplet(vars, triplet);
             get_constraintgrad_edge_vec_2_triplet(vars, triplet);
             get_constraintgrad_normal_1_triplet(vars, triplet);
@@ -2052,6 +1979,1040 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
         }
 
     };
+
+template <typename ConfiguratorType>
+class ConstraintHessian : public BaseOp<typename ConfiguratorType::VectorType, GenericTensor<typename ConfiguratorType::SparseMatrixType>>{
+    protected:
+        typedef typename ConfiguratorType::RealType RealType;
+        typedef typename ConfiguratorType::VectorType VectorType;
+        typedef typename ConfiguratorType::VecType VecType;
+        typedef typename ConfiguratorType::SparseMatrixType MatrixType;
+        typedef typename ConfiguratorType::FullMatrixType FullMatrixType;
+        typedef GenericTensor<typename ConfiguratorType::SparseMatrixType> GenericTensorType;
+
+    private:
+        typedef typename std::vector<Eigen::Triplet<RealType>> TripletVectorType;
+        QuadMeshTopologySaver &_quadTopol;
+        size_t _num_vertices;
+        size_t _num_faces;
+        size_t _num_edges;
+        size_t _num_halfedges;
+        size_t _num_bdry_faces;
+        size_t _num_bdry_halfedges;
+        mutable SkippingBdryFaceIterator _it_face;
+        mutable SkippingBdryHalfEdgeIterator _it_he;
+        mutable StripHandler<ConfiguratorType> _stripHandle;
+
+        // Serves to access the current vector of input variables at the right positions
+        VarsIdx<ConfiguratorType> _vars_idx;
+        ConstraintIdx<ConfiguratorType> _cons_idx;
+
+    public:
+        ConstraintHessian(QuadMeshTopologySaver &quadTopol, 
+            StripHandler<ConfiguratorType> &stripHandle,
+            ConstraintIdx<ConfiguratorType> &constraintIdx,
+            VarsIdx<ConfiguratorType> &varsIdx)
+            : _quadTopol(quadTopol),
+              _num_vertices(quadTopol.getNumVertices()),
+              _num_faces(quadTopol.getNumFaces()),
+              _num_edges(quadTopol.getNumEdges()),
+              _num_halfedges(2*_num_edges),
+              _num_bdry_faces(quadTopol.getBdryFaces().size()),
+              _num_bdry_halfedges(quadTopol.getBdryHalfEdges().size()),
+              _stripHandle(stripHandle),
+              _it_face(_quadTopol),
+              _it_he(_quadTopol),
+              _vars_idx(varsIdx),
+              _cons_idx(constraintIdx)
+              {}
+
+        void apply(const VectorType &vars, GenericTensorType &Dest) const override
+        {
+            std::vector<TripletVectorType> triplet_vector;
+            Dest.resize(3*_quadTopol.getNumVertices(), _vars_idx["num_dofs"], _vars_idx["num_dofs"]);
+            triplet_vector.resize(3*_quadTopol.getNumVertices());
+            for(int i = 0; i < Dest.size(); i++)
+            {
+                Dest[i].resize(_vars_idx["num_dofs"], _vars_idx["num_dofs"]);
+                Dest[i].setZero();
+                triplet_vector[i].reserve(2);
+            }
+            for(int i = 0; i < 3*_num_vertices; i++)
+            {
+                // \partial_{}
+                RealType weight = _vars_idx.vertex_weight(vars, i / 3);
+                triplet_vector[i].push_back(Eigen::Triplet<RealType>(_vars_idx["vertices"] + i, _vars_idx["weights"] + i/3, -1.0));
+                triplet_vector[i].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + i/3, _vars_idx["vertices"] + i, -1.0));
+            }
+
+            for(int i = 0; i < Dest.size(); i++)
+            {
+                Dest[i].setFromTriplets(triplet_vector[i].begin(), triplet_vector[i].end());
+            }
+        }
+
+        void get_constrainthess_vertex_1_triplet(const VectorType &vars, std::vector<TripletVectorType> triplet_vector) const
+        {
+            for(int i = 0; i < _num_vertices; i++){
+                // \partial_{\omega_i} \partial \omega_{i}
+                triplet_vector[_cons_idx["vertex_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["dummy_weights"] + i, _vars_idx["dummy_weights"] + i, -2.0));
+            }
+        }
+
+        void get_constrainthess_vertex_2_triplet(const VectorType &vars, std::vector<TripletVectorType> triplet_vector) const
+        {
+            for(int i = 0; i < 3*_num_vertices; i++)
+            {
+                // \partial_{}
+                RealType weight = _vars_idx.vertex_weight(vars, i / 3);
+                triplet_vector[_cons_idx["vertex_2"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["vertices"] + i, _vars_idx["weights"] + i/3, -1.0));
+                triplet_vector[_cons_idx["vertex_2"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + i/3, _vars_idx["vertices"] + i, -1.0));
+            }
+        }
+
+        void get_constrainthess_edge_vec_1_triplet(const VectorType &vars, std::vector<TripletVectorType> triplet_vector) const
+        {
+            for(int i = 0; i < 3*_num_faces; i++)
+            {
+                int faceIdx = i/3;
+                int component = i % 3;
+
+                // First, obtain first vertex idces of the face
+                int node_0 = _quadTopol.getNodeOfQuad(faceIdx,0);
+                int node_1 = _quadTopol.getNodeOfQuad(faceIdx,1);
+                int node_2 = _quadTopol.getNodeOfQuad(faceIdx,2);
+                int node_3 = _quadTopol.getNodeOfQuad(faceIdx,3);
+
+                // -(w_0 + w_1)*(\Tilde{v}_2 + \Tilde{v}_3) + (w_2 + w_3)*(\Tilde{v}_0 + \Tilde{v}_1)
+
+                // \partial_{w_0} \partial_{\Tilde{v_2}}
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_0, _vars_idx["reweighted_vertices"] + 3*node_2 + component, -1.0));
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_vertices"] + 3*node_2 + component, _vars_idx["weights"] + node_0, -1.0));
+                // \partial_{w_0} \partial_{\Tilde{v_3}}
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_0, _vars_idx["reweighted_vertices"] + 3*node_3 + component, -1.0));
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_vertices"] + 3*node_3 + component, _vars_idx["weights"] + node_0, -1.0));
+                // \partial_{w_1} \partial_{\Tilde{v_2}}
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_1, _vars_idx["reweighted_vertices"] + 3*node_2 + component, -1.0));
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_vertices"] + 3*node_2 + component, _vars_idx["weights"] + node_1, -1.0));
+                // \partial_{w_1} \partial_{\Tilde{v_3}}
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_1, _vars_idx["reweighted_vertices"] + 3*node_3 + component, -1.0));
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_vertices"] + 3*node_3 + component, _vars_idx["weights"] + node_1, -1.0));
+
+                // Now, the other term
+                // \partial_{w_2} \partial_{\Tilde{v_1}}
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_2, _vars_idx["reweighted_vertices"] + 3*node_1 + component, 1.0));
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_vertices"] + 3*node_1 + component, _vars_idx["weights"] + node_2, 1.0));
+                // \partial_{w_2} \partial_{\Tilde{v_0}}
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_2, _vars_idx["reweighted_vertices"] + 3*node_0 + component, 1.0));
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_vertices"] + 3*node_0 + component, _vars_idx["weights"] + node_2, 1.0));
+                // \partial_{w_3} \partial_{\Tilde{v_1}}
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_3, _vars_idx["reweighted_vertices"] + 3*node_1 + component, 1.0));
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_vertices"] + 3*node_1 + component, _vars_idx["weights"] + node_3, 1.0));
+                // \partial_{w_3} \partial_{\Tilde{v_0}}
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_3, _vars_idx["reweighted_vertices"] + 3*node_0 + component, 1.0));
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_vertices"] + 3*node_0 + component, _vars_idx["weights"] + node_3, 1.0));
+            }
+        }
+
+        void get_constrainthess_edge_vec_2_triplet(const VectorType &vars, std::vector<TripletVectorType> triplet_vector) const
+        {
+            for(int i = 0; i < 3*_num_faces; i++)
+            {
+                int faceIdx = i/3;
+                int component = i % 3;
+
+                // First, obtain first vertex idces of the face
+                int node_0 = _quadTopol.getNodeOfQuad(faceIdx,0);
+                int node_1 = _quadTopol.getNodeOfQuad(faceIdx,1);
+                int node_2 = _quadTopol.getNodeOfQuad(faceIdx,2);
+                int node_3 = _quadTopol.getNodeOfQuad(faceIdx,3);
+
+                // \partial_{w_1} \partial_{\Tilde{v_0}}
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_1, _vars_idx["reweighted_vertices"] + 3*node_0 + component, -1.0));
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_vertices"] + 3*node_0 + component, _vars_idx["weights"] + node_1, -1.0));
+                //\partial_{w_1} \partial_{\Tilde{v_3}}
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_1, _vars_idx["reweighted_vertices"] + 3*node_3 + component, -1.0));
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_vertices"] + 3*node_3 + component, _vars_idx["weights"] + node_1, -1.0));
+                // \partial_{w_2} \partial_{\Tilde{v_0}}
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_2, _vars_idx["reweighted_vertices"] + 3*node_0 + component, -1.0));
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_vertices"] + 3*node_0 + component, _vars_idx["weights"] + node_2, -1.0));
+                // \partial_{w_2} \partial_{\Tilde{v_3}}
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_2, _vars_idx["reweighted_vertices"] + 3*node_3 + component, -1.0));
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_vertices"] + 3*node_3 + component, _vars_idx["weights"] + node_2, -1.0));
+
+                // Now, the other term
+                // \partial_{w_0} \partial_{\Tilde{v_2}}
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_0, _vars_idx["reweighted_vertices"] + 3*node_2 + component, 1.0));
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_vertices"] + 3*node_2 + component, _vars_idx["weights"] + node_0, 1.0));
+                // \partial_{w_0} \partial_{\Tilde{v_1}}
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_0, _vars_idx["reweighted_vertices"] + 3*node_1 + component, 1.0));
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_vertices"] + 3*node_1 + component, _vars_idx["weights"] + node_0, 1.0));
+                // \partial_{w_3} \partial_{\Tilde{v_2}}
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_3, _vars_idx["reweighted_vertices"] + 3*node_2 + component, 1.0));
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_vertices"] + 3*node_2 + component, _vars_idx["weights"] + node_3, 1.0));
+                // \partial_{w_3} \partial_{\Tilde{v_1}}
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_3, _vars_idx["reweighted_vertices"] + 3*node_1 + component, 1.0));
+                triplet_vector[_cons_idx["edge_vec_1"] + i].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_vertices"] + 3*node_1 + component, _vars_idx["weights"] + node_3, 1.0));
+            }
+        }
+
+        void get_constrainthess_normal_1_triplet(const VectorType &vars, std::vector<TripletVectorType> triplet_vector) const
+        {
+            for(int i = 0; i < 3*_num_faces; i++)
+            {
+                int faceIdx = i /3;
+                int component = i % 3;
+
+                triplet_vector[_cons_idx["normal_1"]].push_back(Eigen::Triplet<RealType>(_vars_idx["normals"] + i, _vars_idx["reweighted_edges_1"] + i, 1.0));
+                triplet_vector[_cons_idx["normal_1"]].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_edges_1"] + i, _vars_idx["normals"] + i, 1.0));
+            }
+        }
+
+        void get_constrainthess_normal_2_triplet(const VectorType &vars, std::vector<TripletVectorType> triplet_vector) const
+        {
+            for(int i = 0; i < 3*_num_faces; i++)
+            {
+                int faceIdx = i /3;
+                int component = i % 3;
+
+                triplet_vector[_cons_idx["normal_2"]].push_back(Eigen::Triplet<RealType>(_vars_idx["normals"] + i, _vars_idx["reweighted_edges_2"] + i, 1.0));
+                triplet_vector[_cons_idx["normal_2"]].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_edges_2"] + i, _vars_idx["normals"] + i, 1.0));
+            }
+        }
+
+        void get_constrainthess_normal_3_triplet(const VectorType &vars, std::vector<TripletVectorType> triplet_vector) const
+        {
+            for(int i = 0; i < 3*_num_faces; i++)
+            {
+                int faceIdx = i /3;
+                int component = i % 3;
+
+                triplet_vector[_cons_idx["normal_3"]].push_back(Eigen::Triplet<RealType>(_vars_idx["normals"] + i, _vars_idx["normals"] + i, 1.0));
+                triplet_vector[_cons_idx["normal_3"]].push_back(Eigen::Triplet<RealType>(_vars_idx["normals"] + i, _vars_idx["normals"] + i, 1.0));
+            }
+        }
+
+        void get_constrainthess_ruling_0_triplet(const VectorType &vars, std::vector<TripletVectorType> triplet_vector) const{
+            size_t num_dofs = _vars_idx["num_dofs"];
+            size_t num_constraints = _cons_idx["num_cons"];
+
+            _it_he.reset();
+
+            for(_it_he; _it_he.valid();_it_he++)
+            {
+                int i = _it_he.idx();
+                int i_nobdry = _it_he.idx_nobdry();
+
+                int face1 = _quadTopol.getFaceOfHalfEdge(i, 0);
+                int face2 = _quadTopol.getFaceOfHalfEdge(i, 1);
+
+                // first component r_x = (n_1)_y * (n_2)_z - (n_1)_z * (n_2)_y -> WARNING ALL HAS NEGATIVE SIGN IN CONSTRAINT
+                // differentiate w.r.t. first summand
+                triplet_vector[_cons_idx["ruling_0"] + 3*i].push_back(Eigen::Triplet<RealType>(_vars_idx["normals"] + 3*face1 + 1, _vars_idx["normals"] + 3*face2 + 2, -1.0));
+                triplet_vector[_cons_idx["ruling_0"] + 3*i].push_back(Eigen::Triplet<RealType>(_vars_idx["normals"] + 3*face2 + 2, _vars_idx["normals"] + 3*face1 + 1, -1.0));
+            
+                // differentiate w.r.t. second summand
+                triplet_vector[_cons_idx["ruling_0"] + 3*i].push_back(Eigen::Triplet<RealType>(_vars_idx["normals"] + 3*face1 + 2, _vars_idx["normals"] + 3*face2 + 1, 1.0));
+                triplet_vector[_cons_idx["ruling_0"] + 3*i].push_back(Eigen::Triplet<RealType>(_vars_idx["normals"] + 3*face2 + 1, _vars_idx["normals"] + 3*face1 + 2, 1.0));
+            
+                // second component r_y = (n_1)_z * (n_2)_x - (n_1)_x * (n_2)_z
+                // differentiate w.r.t. first summand
+                triplet_vector[_cons_idx["ruling_0"] + 3*i + 1].push_back(Eigen::Triplet<RealType>(_vars_idx["normals"] + 3*face1 + 2, _vars_idx["normals"] + 3*face2 + 0, -1.0));
+                triplet_vector[_cons_idx["ruling_0"] + 3*i + 1].push_back(Eigen::Triplet<RealType>(_vars_idx["normals"] + 3*face2 + 0, _vars_idx["normals"] + 3*face1 + 2, -1.0));
+
+                // differentiate w.r.t. second summand
+                triplet_vector[_cons_idx["ruling_0"] + 3*i + 1].push_back(Eigen::Triplet<RealType>(_vars_idx["normals"] + 3*face1 + 0, _vars_idx["normals"] + 3*face2 + 2, 1.0));
+                triplet_vector[_cons_idx["ruling_0"] + 3*i + 1].push_back(Eigen::Triplet<RealType>(_vars_idx["normals"] + 3*face2 + 2, _vars_idx["normals"] + 3*face1 + 0, 1.0));
+            
+                // third component r_z = (n_1)_x * (n_2)_y - (n_1)_y * (n_2)_x
+                // differentiate w.r.t. first summand
+                triplet_vector[_cons_idx["ruling_0"] + 3*i + 2].push_back(Eigen::Triplet<RealType>(_vars_idx["normals"] + 3*face1 + 0, _vars_idx["normals"] + 3*face2 + 1, -1.0));
+                triplet_vector[_cons_idx["ruling_0"] + 3*i + 2].push_back(Eigen::Triplet<RealType>(_vars_idx["normals"] + 3*face2 + 1, _vars_idx["normals"] + 3*face1 + 0, -1.0));
+                // differentiate w.r.t. second summand
+                triplet_vector[_cons_idx["ruling_0"] + 3*i + 2].push_back(Eigen::Triplet<RealType>(_vars_idx["normals"] + 3*face1 + 1, _vars_idx["normals"] + 3*face2 + 0, 1.0));
+                triplet_vector[_cons_idx["ruling_0"] + 3*i + 2].push_back(Eigen::Triplet<RealType>(_vars_idx["normals"] + 3*face2 + 0, _vars_idx["normals"] + 3*face1 + 1, 1.0));
+            }
+        }
+
+        void get_constrainthess_ruling_1_triplet(const VectorType &vars, std::vector<TripletVectorType> triplet_vector) const
+        {
+            _it_he.reset();
+            _it_face.reset();
+
+            for(_it_face; _it_face.valid(); _it_face++){
+
+                int i = _it_face.idx();
+                int i_nobdry = _it_face.idx_nobdry();
+
+                int node_0 = _quadTopol.getNodeOfQuad(i,0);
+                int node_1 = _quadTopol.getNodeOfQuad(i,1);
+                int node_2 = _quadTopol.getNodeOfQuad(i,2);
+                int node_3 = _quadTopol.getNodeOfQuad(i,3);
+
+                int heh_01 = _quadTopol.getHalfEdgeOfQuad(i,0);
+                int heh_12 = _quadTopol.getHalfEdgeOfQuad(i,1);
+                int heh_23 = _quadTopol.getHalfEdgeOfQuad(i,2);
+                int heh_30 = _quadTopol.getHalfEdgeOfQuad(i,3);
+
+                // -[(w_1 + w_2)*r_{12} + (w_3 + w_0)*(-r_{30})]
+                // \partial_{w_1} \partial r_{12}
+                triplet_vector[_cons_idx["ruling_1"] + 3*i_nobdry].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_1, _vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_12), -1.0));
+                triplet_vector[_cons_idx["ruling_1"] + 3*i_nobdry + 1].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_1, _vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_12) + 1, -1.0));
+                triplet_vector[_cons_idx["ruling_1"] + 3*i_nobdry + 2].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_1, _vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_12) + 2, -1.0));
+                
+                triplet_vector[_cons_idx["ruling_1"] + 3*i_nobdry].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_12), _vars_idx["weights"] + node_1, -1.0));
+                triplet_vector[_cons_idx["ruling_1"] + 3*i_nobdry + 1].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_12) + 1, _vars_idx["weights"] + node_1, -1.0));
+                triplet_vector[_cons_idx["ruling_1"] + 3*i_nobdry + 2].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_12) + 2, _vars_idx["weights"] + node_1, -1.0));
+                // \partial_{w_2} \partial r_{12}
+                triplet_vector[_cons_idx["ruling_1"] + 3*i_nobdry].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_2, _vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_12), -1.0));
+                triplet_vector[_cons_idx["ruling_1"] + 3*i_nobdry + 1].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_2, _vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_12) + 1, -1.0));
+                triplet_vector[_cons_idx["ruling_1"] + 3*i_nobdry + 2].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_2, _vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_12) + 2, -1.0));
+
+                triplet_vector[_cons_idx["ruling_1"] + 3*i_nobdry].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_12), _vars_idx["weights"] + node_2, -1.0));
+                triplet_vector[_cons_idx["ruling_1"] + 3*i_nobdry + 1].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_12) + 1, _vars_idx["weights"] + node_2, -1.0));
+                triplet_vector[_cons_idx["ruling_1"] + 3*i_nobdry + 2].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_12) + 2, _vars_idx["weights"] + node_2, -1.0));
+                // \partial_{w_3} \partial r_{30}
+                triplet_vector[_cons_idx["ruling_1"] + 3*i_nobdry].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_3, _vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_30), 1.0));
+                triplet_vector[_cons_idx["ruling_1"] + 3*i_nobdry + 1].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_3, _vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_30) + 1, 1.0));
+                triplet_vector[_cons_idx["ruling_1"] + 3*i_nobdry + 2].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_3, _vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_30) + 2, 1.0));
+                
+                triplet_vector[_cons_idx["ruling_1"] + 3*i_nobdry].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_30), _vars_idx["weights"] + node_3, 1.0));
+                triplet_vector[_cons_idx["ruling_1"] + 3*i_nobdry + 1].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_30) + 1, _vars_idx["weights"] + node_3, 1.0));
+                triplet_vector[_cons_idx["ruling_1"] + 3*i_nobdry + 2].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_30) + 2, _vars_idx["weights"] + node_3, 1.0));
+                // \partial_{w_0} \partial r_{30}
+                triplet_vector[_cons_idx["ruling_1"] + 3*i_nobdry].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_0, _vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_30), 1.0));
+                triplet_vector[_cons_idx["ruling_1"] + 3*i_nobdry + 1].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_0, _vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_30) + 1, 1.0));
+                triplet_vector[_cons_idx["ruling_1"] + 3*i_nobdry + 2].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_0, _vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_30) + 2, 1.0));
+                
+                triplet_vector[_cons_idx["ruling_1"] + 3*i_nobdry].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_30), _vars_idx["weights"] + node_0, 1.0));
+                triplet_vector[_cons_idx["ruling_1"] + 3*i_nobdry + 1].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_30) + 1, _vars_idx["weights"] + node_0, 1.0));
+                triplet_vector[_cons_idx["ruling_1"] + 3*i_nobdry + 2].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_30) + 2, _vars_idx["weights"] + node_0, 1.0));
+            }
+        }
+
+        void get_constrainthess_ruling_2_triplet(const VectorType &vars, std::vector<TripletVectorType> triplet_vector) const
+        {
+            _it_he.reset();
+            _it_face.reset();
+
+            for(_it_face; _it_face.valid(); _it_face++){
+
+                int i = _it_face.idx();
+                int i_nobdry = _it_face.idx_nobdry();
+
+                int node_0 = _quadTopol.getNodeOfQuad(i,0);
+                int node_1 = _quadTopol.getNodeOfQuad(i,1);
+                int node_2 = _quadTopol.getNodeOfQuad(i,2);
+                int node_3 = _quadTopol.getNodeOfQuad(i,3);
+
+                int heh_01 = _quadTopol.getHalfEdgeOfQuad(i,0);
+                int heh_12 = _quadTopol.getHalfEdgeOfQuad(i,1);
+                int heh_23 = _quadTopol.getHalfEdgeOfQuad(i,2);
+                int heh_30 = _quadTopol.getHalfEdgeOfQuad(i,3);
+
+                // -[(w_0 + w_1)*r_{01} + (w_2 + w_3)*(-r_{23})]
+                // \partial_{w_0} \partial r_{01}
+                triplet_vector[_cons_idx["ruling_2"] + 3*i_nobdry].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_0, _vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_01), -1.0));
+                triplet_vector[_cons_idx["ruling_2"] + 3*i_nobdry + 1].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_0, _vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_01) + 1, -1.0));
+                triplet_vector[_cons_idx["ruling_2"] + 3*i_nobdry + 2].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_0, _vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_01) + 2, -1.0));
+                triplet_vector[_cons_idx["ruling_2"] + 3*i_nobdry].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_01), _vars_idx["weights"] + node_0, -1.0));
+                triplet_vector[_cons_idx["ruling_2"] + 3*i_nobdry + 1].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_01) + 1, _vars_idx["weights"] + node_0, -1.0));
+                triplet_vector[_cons_idx["ruling_2"] + 3*i_nobdry + 2].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_01) + 2, _vars_idx["weights"] + node_0, -1.0));
+                // \partial_{w_1} \partial r_{01}
+                triplet_vector[_cons_idx["ruling_2"] + 3*i_nobdry].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_1, _vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_01), -1.0));
+                triplet_vector[_cons_idx["ruling_2"] + 3*i_nobdry + 1].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_1, _vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_01) + 1, -1.0));
+                triplet_vector[_cons_idx["ruling_2"] + 3*i_nobdry + 2].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_1, _vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_01) + 2, -1.0));
+                triplet_vector[_cons_idx["ruling_2"] + 3*i_nobdry].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_01), _vars_idx["weights"] + node_1, -1.0));
+                triplet_vector[_cons_idx["ruling_2"] + 3*i_nobdry + 1].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_01) + 1, _vars_idx["weights"] + node_1, -1.0));
+                triplet_vector[_cons_idx["ruling_2"] + 3*i_nobdry + 2].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_01) + 2, _vars_idx["weights"] + node_1, -1.0));
+                // \partial_{w_2} \partial r_{23}
+                triplet_vector[_cons_idx["ruling_2"] + 3*i_nobdry].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_2, _vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_23), 1.0));
+                triplet_vector[_cons_idx["ruling_2"] + 3*i_nobdry + 1].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_2, _vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_23) + 1, 1.0));
+                triplet_vector[_cons_idx["ruling_2"] + 3*i_nobdry + 2].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_2, _vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_23) + 2, 1.0));
+                triplet_vector[_cons_idx["ruling_2"] + 3*i_nobdry].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_23), _vars_idx["weights"] + node_2, 1.0));
+                triplet_vector[_cons_idx["ruling_2"] + 3*i_nobdry + 1].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_23) + 1, _vars_idx["weights"] + node_2, 1.0));
+                triplet_vector[_cons_idx["ruling_2"] + 3*i_nobdry + 2].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_23) + 2, _vars_idx["weights"] + node_2, 1.0));
+                // \partial_{w_3} \partial r_{23}
+                triplet_vector[_cons_idx["ruling_2"] + 3*i_nobdry].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_3, _vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_23), 1.0));
+                triplet_vector[_cons_idx["ruling_2"] + 3*i_nobdry + 1].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_3, _vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_23) + 1, 1.0));
+                triplet_vector[_cons_idx["ruling_2"] + 3*i_nobdry + 2].push_back(Eigen::Triplet<RealType>(_vars_idx["weights"] + node_3, _vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_23) + 2, 1.0));
+                triplet_vector[_cons_idx["ruling_2"] + 3*i_nobdry].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_23), _vars_idx["weights"] + node_3, 1.0));
+                triplet_vector[_cons_idx["ruling_2"] + 3*i_nobdry + 1].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_23) + 1, _vars_idx["weights"] + node_3, 1.0));
+                triplet_vector[_cons_idx["ruling_2"] + 3*i_nobdry + 2].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings"] + 3*_it_he.to_nbdry(heh_23) + 2, _vars_idx["weights"] + node_3, 1.0));
+            }
+        }
+
+        void get_constrainthess_dev(const VectorType &vars, std::vector<TripletVectorType> triplet_vector) const
+        {
+            _it_face.reset();
+
+            for(_it_face; _it_face.valid(); _it_face++){
+                int i = _it_face.idx();
+                int i_nobdry = _it_face.idx_nobdry();
+
+                // differentiate w.r.t. components of vector product
+                // (rwr_1)_{y}*(rwr_2)_{z} - (rwr_1)_{z}*(rwr_2)_{y}
+                // first term
+                triplet_vector[_cons_idx["dev"] + 3*i_nobdry].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings_1"] + 3*i_nobdry + 1, _vars_idx["reweighted_rulings_2"] + 3*i_nobdry + 2, 1.0));
+                triplet_vector[_cons_idx["dev"] + 3*i_nobdry].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings_2"] + 3*i_nobdry + 2, _vars_idx["reweighted_rulings_1"] + 3*i_nobdry + 1, 1.0));
+                // second term
+                triplet_vector[_cons_idx["dev"] + 3*i_nobdry].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings_1"] + 3*i_nobdry + 2, _vars_idx["reweighted_rulings_2"] + 3*i_nobdry + 1, -1.0));
+                triplet_vector[_cons_idx["dev"] + 3*i_nobdry].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings_2"] + 3*i_nobdry + 1, _vars_idx["reweighted_rulings_1"] + 3*i_nobdry + 2, -1.0));
+                // (rwr_1)_{z}*(rwr_2)_{x} - (rwr_1)_{x}*(rwr_2)_{z}
+                // first term
+                triplet_vector[_cons_idx["dev"] + 3*i_nobdry + 1].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings_1"] + 3*i_nobdry + 2, _vars_idx["reweighted_rulings_2"] + 3*i_nobdry + 0, 1.0));
+                triplet_vector[_cons_idx["dev"] + 3*i_nobdry + 1].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings_2"] + 3*i_nobdry + 0, _vars_idx["reweighted_rulings_1"] + 3*i_nobdry + 2, 1.0));
+                // second term
+                triplet_vector[_cons_idx["dev"] + 3*i_nobdry + 1].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings_1"] + 3*i_nobdry + 0, _vars_idx["reweighted_rulings_2"] + 3*i_nobdry + 2, -1.0));
+                triplet_vector[_cons_idx["dev"] + 3*i_nobdry + 1].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings_2"] + 3*i_nobdry + 2, _vars_idx["reweighted_rulings_1"] + 3*i_nobdry + 0, -1.0));
+                // (rwr_1)_{x}*(rwr_2)_{y} - (rwr_1)_{y}*(rwr_2)_{x}
+                // first term
+                triplet_vector[_cons_idx["dev"] + 3*i_nobdry + 2].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings_1"] + 3*i_nobdry + 0, _vars_idx["reweighted_rulings_2"] + 3*i_nobdry + 1, 1.0));
+                triplet_vector[_cons_idx["dev"] + 3*i_nobdry + 2].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings_2"] + 3*i_nobdry + 1, _vars_idx["reweighted_rulings_1"] + 3*i_nobdry + 0, 1.0));
+                // second term
+                triplet_vector[_cons_idx["dev"] + 3*i_nobdry + 2].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings_1"] + 3*i_nobdry + 1, _vars_idx["reweighted_rulings_2"] + 3*i_nobdry + 0, -1.0));
+                triplet_vector[_cons_idx["dev"] + 3*i_nobdry + 2].push_back(Eigen::Triplet<RealType>(_vars_idx["reweighted_rulings_2"] + 3*i_nobdry + 0, _vars_idx["reweighted_rulings_1"] + 3*i_nobdry + 1, -1.0));
+            }
+        }
+
+        void get_constrainthess_fair_v(const VectorType &vars, std::vector<TripletVectorType> triplet_vector) const
+        {
+           // the fairness constraint is linear, so dont need to do anything here
+        }
+
+        void get_constrainthess_fair_n(const VectorType &vars, std::vector<TripletVectorType> triplet_vector) const
+        {
+            // the fairness constraint is linear, so dont need to do anything here
+        }
+
+        void get_constrainthess_fair_r(const VectorType &vars, std::vector<TripletVectorType> triplet_vector) const
+        {
+            // the fairness constraint is linear, so dont need to do anything here
+        }
+        // The hessian of the constraint as 3-dimensional tensor, but without
+        void apply_all(const VectorType &vars, GenericTensorType &Dest) const
+        {
+            std::vector<TripletVectorType> triplet_vector(_cons_idx["num_cons"]);
+            get_constrainthess_vertex_1_triplet(vars, triplet_vector);
+            get_constrainthess_vertex_2_triplet(vars, triplet_vector);
+            get_constrainthess_edge_vec_1_triplet(vars, triplet_vector);
+            get_constrainthess_edge_vec_2_triplet(vars, triplet_vector);
+            get_constrainthess_normal_1_triplet(vars, triplet_vector);
+            get_constrainthess_normal_2_triplet(vars, triplet_vector);
+            get_constrainthess_normal_3_triplet(vars, triplet_vector);
+            get_constrainthess_ruling_0_triplet(vars, triplet_vector);
+            get_constrainthess_ruling_1_triplet(vars, triplet_vector);
+            get_constrainthess_ruling_2_triplet(vars, triplet_vector);
+            get_constrainthess_dev(vars, triplet_vector);
+            get_constrainthess_fair_v(vars, triplet_vector);
+            get_constrainthess_fair_n(vars, triplet_vector);
+            get_constrainthess_fair_r(vars, triplet_vector);
+
+            for(int i = 0; i < _cons_idx["num_cons"]; i++){
+                Dest.setFromTriplets(triplet_vector);
+            }
+        }
+    };
+
+/*
+template <typename ConfiguratorType>
+class VarsIdxReduced{
+    typedef typename ConfiguratorType::RealType RealType;
+    typedef typename ConfiguratorType::VectorType VectorType;
+    typedef typename ConfiguratorType::VecType VecType;
+    typedef typename ConfiguratorType::SparseMatrixType MatrixType;
+    typedef typename ConfiguratorType::FullMatrixType FullMatrixType;
+
+    const int _num_vertices;
+    const int _num_faces;
+    const int _num_edges;
+    const int _num_halfedges;
+    const int _num_bdryHalfEdges;
+    const int _num_bdryFaces;
+    const QuadMeshTopologySaver &_quadTopol;
+
+    std::map<std::string, int> _idx;
+
+public:
+    VarsIdxReduced(const QuadMeshTopologySaver &quadTopol)
+    : _num_vertices(quadTopol.getNumVertices()),
+      _num_faces(quadTopol.getNumFaces()),
+      _num_edges(quadTopol.getNumEdges()),
+      _num_halfedges(quadTopol.getNumHalfEdges()),
+      _num_bdryHalfEdges(quadTopol.getBdryHalfEdges().size()),
+      _num_bdryFaces(quadTopol.getBdryFaces().size()),                  
+      _quadTopol(quadTopol)
+
+{
+    _idx["vertices"] = 0;
+    _idx["dummy_weights"] = 3*_num_vertices;
+    _idx["weights"] = 4*_num_vertices;
+    _idx["num_dofs"] = 5*_num_vertices;
+}
+
+RealType dummy_weight(const VectorType &vars, size_t i) const {
+    if(i >= _num_vertices){
+        std::cerr << "Index out of bounds for dummy weights"<<std::endl;
+    }
+    return vars[_idx.at("dummy_weights") + i];
+}
+
+VectorType vertex(const VectorType &vars, size_t i) const {
+    if(i >= _num_vertices){
+        std::cerr << "Index out of bounds for vertices"<<std::endl;
+    }
+    return vars.segment(_idx.at("vertices") + 3*i,3);
+}
+
+RealType vertex_weight(const VectorType &vars, size_t i) const{
+    if(i >= _num_vertices){
+        std::cerr << "Index out of bounds for vertex weights"<<std::endl;
+    }
+    return vars[_idx.at("weights") + i];
+}
+};*/
+
+template<typename ConfiguratorType>
+void export_normals_2(const QuadMeshTopologySaver &quadTopol, const VectorType normal_pos, VectorType normals, const std::string &filepath)
+{
+    std::ofstream stream;
+    stream.open(filepath);
+    // Write all the normal positions
+    for(int i = 0; i < quadTopol.getNumFaces(); i++)
+    {
+        auto middle_pos = normal_pos.segment(3*i, 3);
+        stream << middle_pos[0] << " " << middle_pos[1] << " " << middle_pos[2] << std::endl;
+    }
+    // Write all the normals
+    for(int i = 0; i < quadTopol.getNumFaces(); i++)
+    {
+        auto normal = normals.segment(3*i, 3);
+        stream << normal[0] << " " << normal[1] << " " << normal[2] << std::endl;
+    }
+    stream.close();
+}
+
+
+template <typename ConfiguratorType>
+class ConstraintSqrdReduced : public BaseOp<typename ConfiguratorType::VectorType, typename ConfiguratorType::RealType>{
+    typedef typename ConfiguratorType::RealType RealType;
+    typedef typename ConfiguratorType::VectorType VectorType;
+    typedef typename ConfiguratorType::VecType VecType;
+    typedef typename ConfiguratorType::SparseMatrixType MatrixType;
+    typedef typename ConfiguratorType::FullMatrixType FullMatrixType;
+
+    private:
+        const QuadMeshTopologySaver &_quadTopol;
+        size_t _num_vertices;
+        size_t _num_faces;
+        size_t _num_edges;
+        size_t _num_halfedges;
+        mutable SkippingBdryFaceIterator _it_face;
+
+        mutable VectorType normals;
+
+    public:
+        ConstraintSqrdReduced(const QuadMeshTopologySaver &quadTopol):
+                _quadTopol(quadTopol),
+                _num_vertices(quadTopol.getNumVertices()),
+                _num_faces(quadTopol.getNumFaces()),
+                _num_edges(quadTopol.getNumEdges()),
+                _num_halfedges(2*_num_edges),
+                _it_face(_quadTopol)
+        {
+            normals.resize(3*_num_faces);
+            normals.setZero();
+        }
+    
+        void apply(const VectorType &vertices, RealType &Dest) const override
+        {
+
+            normals.setZero();
+
+            // Iterate over all the faces
+            for(int i = 0; i < _num_faces; i++)
+            {
+
+                // Get the indices of the vertices of the face
+                int node_0 = _quadTopol.getNodeOfQuad(i,0);
+                int node_1 = _quadTopol.getNodeOfQuad(i,1);
+                int node_2 = _quadTopol.getNodeOfQuad(i,2);
+                int node_3 = _quadTopol.getNodeOfQuad(i,3);
+
+                // Get the weights of the vertices
+                RealType w_0 = 1.0;//_vars_idx.vertex_weight(vars, node_0);
+                RealType w_1 = 1.0;//_vars_idx.vertex_weight(vars, node_1);
+                RealType w_2 = 1.0;//_vars_idx.vertex_weight(vars, node_2);
+                RealType w_3 = 1.0;//_vars_idx.vertex_weight(vars, node_3);
+
+                VectorType v_0 = vertices.segment(3*node_0, 3);
+                VectorType v_1 = vertices.segment(3*node_1, 3);
+                VectorType v_2 = vertices.segment(3*node_2, 3);
+                VectorType v_3 = vertices.segment(3*node_3, 3);
+
+                // Calculate the reweighted vertices
+                VectorType rw_v_0 = v_0 * w_0;
+                VectorType rw_v_1 = v_1 * w_1;
+                VectorType rw_v_2 = v_2 * w_2;
+                VectorType rw_v_3 = v_3 * w_3;
+
+                // Calculate the reweighted edges
+                Eigen::Vector3d rw_e_02 = ((w_0 + w_1)*(rw_v_2 + rw_v_3) - (w_2 + w_3)*(rw_v_0 + rw_v_1)).template head<3>();
+                Eigen::Vector3d rw_e_13 = ((w_1 + w_2)*(rw_v_0 + rw_v_3) - (w_0 + w_3)*(rw_v_1 + rw_v_2)).template head<3>();
+
+                // Calculate the face normals with consistent orientation
+                Eigen::Vector3d face_normal = rw_e_02.cross(rw_e_13);
+                face_normal = face_normal / face_normal.norm();
+                
+                normals.segment(3*i, 3) = face_normal;
+            }   
+
+            VectorType middle_pos(3 * _num_faces);
+            middle_pos.setZero();
+            for(int i = 0; i < _num_faces; i++)
+            {
+                // Get the indices of the vertices of the face
+                int node_0 = _quadTopol.getNodeOfQuad(i,0);
+                int node_1 = _quadTopol.getNodeOfQuad(i,1);
+                int node_2 = _quadTopol.getNodeOfQuad(i,2);
+                int node_3 = _quadTopol.getNodeOfQuad(i,3);
+
+                // Calculate the middle position of the face
+                VectorType v_0 = vertices.segment(3*node_0, 3);
+                VectorType v_1 = vertices.segment(3*node_1, 3);
+                VectorType v_2 = vertices.segment(3*node_2, 3);
+                VectorType v_3 = vertices.segment(3*node_3, 3);
+
+                middle_pos.segment(3*i, 3) = (v_0 + v_1 + v_2 + v_3) / 4.0;
+            }
+
+            std::string filepath = "normals.txt";
+            export_normals_2<ConfiguratorType>(_quadTopol, middle_pos, normals, filepath);
+
+            // Next, compute the reweighted rulings
+            _it_face.reset();
+            for(_it_face; _it_face.valid(); _it_face++)
+            {
+                int i = _it_face.idx();
+                int i_nbdry = _it_face.idx_nobdry();
+
+                // First, iterate over edges of the face
+                int he_0 = _quadTopol.getHalfEdgeOfQuad(i,0);
+                int he_1 = _quadTopol.getHalfEdgeOfQuad(i,1);
+                int he_2 = _quadTopol.getHalfEdgeOfQuad(i,2);
+                int he_3 = _quadTopol.getHalfEdgeOfQuad(i,3);
+
+                int face_0 = _quadTopol.getFaceOfHalfEdge(he_0, 1);
+                int face_1 = _quadTopol.getFaceOfHalfEdge(he_1, 1);
+                int face_2 = _quadTopol.getFaceOfHalfEdge(he_2, 1);
+                int face_3 = _quadTopol.getFaceOfHalfEdge(he_3, 1);
+
+                VectorType ruling_01, ruling_12, ruling_23, ruling_30;
+                
+                Eigen::Vector3d n_i      = normals.segment(3 * i, 3).template head<3>();
+                Eigen::Vector3d n_face0  = normals.segment(3 * face_0, 3).template head<3>();
+                Eigen::Vector3d n_face1  = normals.segment(3 * face_1, 3).template head<3>();
+                Eigen::Vector3d n_face2  = normals.segment(3 * face_2, 3).template head<3>();
+                Eigen::Vector3d n_face3  = normals.segment(3 * face_3, 3).template head<3>();
+
+                ruling_01 = n_i.cross(n_face0);
+                ruling_12 = n_i.cross(n_face1);
+                ruling_23 = n_i.cross(n_face2);
+                ruling_30 = n_i.cross(n_face3);
+
+                // Get the weights again
+                RealType w_0 = 1.0;//_vars_idx.vertex_weight(vars, node_0);
+                RealType w_1 = 1.0;//_vars_idx.vertex_weight(vars, node_1);
+                RealType w_2 = 1.0;//_vars_idx.vertex_weight(vars, node_2);
+                RealType w_3 = 1.0;//_vars_idx.vertex_weight(vars, node_3);
+
+                // Calculate the reweighted rulings
+                Eigen::Vector3d rw_ruling_13 = (w_1 + w_2)*ruling_12 + (w_0 + w_3)*ruling_30;
+                Eigen::Vector3d rw_ruling_02 = (w_0 + w_1)*ruling_01 + (w_2 + w_3)*ruling_23;
+
+                // Now, finally calculate the developability constraint
+                Dest += (rw_ruling_13.cross(rw_ruling_02)).squaredNorm();
+            }
+        }
+};
+
+FullMatrixType operator%(const Eigen::Vector3d &v, const FullMatrixType &v_2)
+{
+    assert(v_2.rows() == 3 && v_2.cols() == 3);
+    FullMatrixType result(3,3);
+    Eigen::Vector3d v_2_col0 = v_2.col(0);
+    Eigen::Vector3d v_2_col1 = v_2.col(1);
+    Eigen::Vector3d v_2_col2 = v_2.col(2);
+    result.setZero();
+    result.col(0) = v.cross(v_2_col0);
+    result.col(1) = v.cross(v_2_col1);
+    result.col(2) = v.cross(v_2_col2);
+    return result;
+}
+
+FullMatrixType operator%(const FullMatrixType &v_2, const Eigen::Vector3d &v)
+{
+    assert(v_2.rows() == 3 && v_2.cols() == 3);
+    FullMatrixType result(3,3);
+    Eigen::Vector3d v_2_col0 = v_2.col(0);
+    Eigen::Vector3d v_2_col1 = v_2.col(1);
+    Eigen::Vector3d v_2_col2 = v_2.col(2);
+    result.setZero();
+    result.col(0) = v_2_col0.cross(v);
+    result.col(1) = v_2_col1.cross(v);
+    result.col(2) = v_2_col2.cross(v);
+    return result;
+}
+
+template <typename ConfiguratorType>
+class ConstraintSqrdReducedGradient : public BaseOp<typename ConfiguratorType::VectorType, typename ConfiguratorType::VectorType>{
+    protected:
+        typedef typename ConfiguratorType::RealType RealType;
+        typedef typename ConfiguratorType::VectorType VectorType;
+        typedef typename ConfiguratorType::VecType VecType;
+        typedef typename ConfiguratorType::SparseMatrixType MatrixType;
+        typedef typename ConfiguratorType::FullMatrixType FullMatrixType;
+
+        const QuadMeshTopologySaver &_quadTopol;
+        size_t _num_vertices;
+        size_t _num_faces;
+        size_t _num_edges;
+        size_t _num_halfedges;
+        size_t _num_bdryHalfEdges;
+        size_t _num_bdryFaces;
+
+        //VarsIdxReduced<ConfiguratorType> &_vars_idx;
+        mutable SkippingBdryFaceIterator _it_face;
+
+        mutable VectorType normals;
+        mutable FullMatrixType dnormal_dv;
+
+    public:
+        ConstraintSqrdReducedGradient(QuadMeshTopologySaver &quadTopol):
+            _quadTopol(quadTopol),
+            _num_vertices(quadTopol.getNumVertices()),
+            _num_faces(quadTopol.getNumFaces()),
+            _num_edges(quadTopol.getNumEdges()),
+            _num_halfedges(2*_num_edges),
+            _num_bdryHalfEdges(quadTopol.getBdryHalfEdges().size()),
+            _num_bdryFaces(quadTopol.getBdryFaces().size()),
+            _it_face(_quadTopol)
+            {
+                normals.resize(3*_num_faces);
+                normals.setZero();
+
+                dnormal_dv.resize(3*_num_faces, 3*_num_vertices);
+                dnormal_dv.setZero();
+            }
+
+        void apply(const VectorType &vertices, VectorType &Dest) const override
+        {
+            size_t num_dofs = 3*_quadTopol.getNumVertices();
+
+            if(Dest.size() != num_dofs){
+                Dest.resize(num_dofs);
+            }
+
+            Dest.setZero();
+
+            // We only have a derivative of developability constraint w.r.t. vertices
+            
+            // First, calculate all normal vectors
+            normals.setZero();
+            dnormal_dv.setZero();
+
+            // Iterate over all the faces
+            for(int i = 0; i < _num_faces; i++)
+            {
+
+                // Get the indices of the vertices of the face
+                int node_0 = _quadTopol.getNodeOfQuad(i,0);
+                int node_1 = _quadTopol.getNodeOfQuad(i,1);
+                int node_2 = _quadTopol.getNodeOfQuad(i,2);
+                int node_3 = _quadTopol.getNodeOfQuad(i,3);
+
+                // Get the weights of the vertices
+                RealType w_0 = 1.0;//_vars_idx.vertex_weight(vars, node_0);
+                RealType w_1 = 1.0;//_vars_idx.vertex_weight(vars, node_1);
+                RealType w_2 = 1.0;//_vars_idx.vertex_weight(vars, node_2);
+                RealType w_3 = 1.0;//_vars_idx.vertex_weight(vars, node_3);
+
+                Eigen::Vector3d v_0 = vertices.segment(3*node_0, 3).template head<3>();
+                Eigen::Vector3d v_1 = vertices.segment(3*node_1, 3).template head<3>();
+                Eigen::Vector3d v_2 = vertices.segment(3*node_2, 3).template head<3>();
+                Eigen::Vector3d v_3 = vertices.segment(3*node_3, 3).template head<3>();
+
+                // Calculate the reweighted vertices
+                VectorType rw_v_0 = v_0 * w_0;
+                VectorType rw_v_1 = v_1 * w_1;
+                VectorType rw_v_2 = v_2 * w_2;
+                VectorType rw_v_3 = v_3 * w_3;
+
+                // Calculate the reweighted edges
+                Eigen::Vector3d rw_e_02 = (w_0 + w_1)*(rw_v_2 + rw_v_3) - (w_2 + w_3)*(rw_v_0 + rw_v_1);
+                Eigen::Vector3d rw_e_13 = (w_1 + w_2)*(rw_v_0 + rw_v_3) - (w_0 + w_3)*(rw_v_1 + rw_v_2);
+
+                // Calculate the face normals with consistent orientation
+                VectorType face_normal = rw_e_02.cross(rw_e_13);
+                face_normal = face_normal / face_normal.norm();
+                
+                normals.segment(3*i, 3) = face_normal;
+
+                // Calculate the normal derivatives for the face
+                FullMatrixType A(3,3);
+                A.row(0) = rw_e_02;
+                A.row(1) = rw_e_13;
+                A.row(2) = face_normal;
+
+                // Calculate dn_dv_0, ..., dn_dv_3
+                // First, calculate dn_dv_0
+                FullMatrixType rhs_0(3,3);
+                rhs_0.setZero();
+                rhs_0.row(0) = -face_normal;
+                rhs_0.row(1) = face_normal;
+
+                FullMatrixType dn_dv_0 = A.colPivHouseholderQr().solve(rhs_0);
+
+                // Now, calculate dn_dv_1
+                FullMatrixType rhs_1(3,3);
+                rhs_1.setZero();
+                rhs_1.row(0) = -face_normal;
+                rhs_1.row(1) = -face_normal;
+
+                // Calculate dn_dv_2
+                FullMatrixType dn_dv_1 = A.colPivHouseholderQr().solve(rhs_1);
+
+                // Now, calculate dn_dv_2
+                FullMatrixType rhs_2(3,3);
+                rhs_2.setZero();
+                rhs_2.row(0) = face_normal;
+                rhs_2.row(1) = -face_normal;
+                FullMatrixType dn_dv_2 = A.colPivHouseholderQr().solve(rhs_2);
+
+                // Now, calculate dn_dv_3
+                FullMatrixType rhs_3(3,3);
+                rhs_3.setZero();
+                rhs_3.row(0) = face_normal;
+                rhs_3.row(1) = face_normal;
+                FullMatrixType dn_dv_3 = A.colPivHouseholderQr().solve(rhs_3);
+
+                dnormal_dv.block(3*i, 3*node_0, 3, 3) = dn_dv_0;
+                dnormal_dv.block(3*i, 3*node_1, 3, 3) = dn_dv_1;
+                dnormal_dv.block(3*i, 3*node_2, 3, 3) = dn_dv_2;
+                dnormal_dv.block(3*i, 3*node_3, 3, 3) = dn_dv_3;
+            }   
+
+            _it_face.reset();
+            for(_it_face; _it_face.valid(); _it_face++)
+            {
+                int i = _it_face.idx();
+
+                // Calculate the derivatives of all adjacent ruling vectors
+                int he_0 = _quadTopol.getHalfEdgeOfQuad(i,0);
+                int he_1 = _quadTopol.getHalfEdgeOfQuad(i,1);
+                int he_2 = _quadTopol.getHalfEdgeOfQuad(i,2);
+                int he_3 = _quadTopol.getHalfEdgeOfQuad(i,3);
+
+                int face_0 = _quadTopol.getFaceOfHalfEdge(he_0, 1);
+                int face_1 = _quadTopol.getFaceOfHalfEdge(he_1, 1);
+                int face_2 = _quadTopol.getFaceOfHalfEdge(he_2, 1);
+                int face_3 = _quadTopol.getFaceOfHalfEdge(he_3, 1);
+
+                // All nodes of the original face
+                int node_i_0 = _quadTopol.getNodeOfQuad(i, 0);
+                int node_i_1 = _quadTopol.getNodeOfQuad(i, 1);
+                int node_i_2 = _quadTopol.getNodeOfQuad(i, 2);
+                int node_i_3 = _quadTopol.getNodeOfQuad(i, 3);
+
+                // Nodes of face zero without nodes of face i
+                int start_node_0, start_node_1, start_node_2, start_node_3 = 0;
+                for(int j = 0; j < 4; j++)
+                {
+                    if(_quadTopol.getNodeOfQuad(face_0, j) == node_i_0)
+                    {
+                        start_node_0 = j;
+                    }
+                    if(_quadTopol.getNodeOfQuad(face_0, j) == node_i_1)
+                    {
+                        start_node_1 = j;
+                    }
+                    if(_quadTopol.getNodeOfQuad(face_0, j) == node_i_2)
+                    {
+                        start_node_2 = j;
+                    }
+                    if(_quadTopol.getNodeOfQuad(face_0, j) == node_i_3)
+                    {
+                        start_node_3 = j;
+                    }
+                }
+
+                // ensure that the node indices always stay in [0,3]
+                int node_0_0 = _quadTopol.getNodeOfQuad(face_0, ((start_node_0 + 1)%4 + 4)%4);
+                int node_0_1 = _quadTopol.getNodeOfQuad(face_0, ((start_node_0 + 2)%4 + 4)%4);
+
+                // Nodes of face one without nodes of face i
+                int node_1_0 = _quadTopol.getNodeOfQuad(face_1, ((start_node_1 + 1)%4 + 4)%4);
+                int node_1_1 = _quadTopol.getNodeOfQuad(face_1, ((start_node_1 + 2)%4 + 4)%4);
+
+                // All nodes of face two
+                int node_2_0 = _quadTopol.getNodeOfQuad(face_2, ((start_node_2 + 1)%4 + 4)%4);
+                int node_2_1 = _quadTopol.getNodeOfQuad(face_2, ((start_node_2 + 2)%4 + 4)%4);
+
+                // All nodes of face three
+                int node_3_0 = _quadTopol.getNodeOfQuad(face_3, ((start_node_3 + 1)%4 + 4)%4);
+                int node_3_1 = _quadTopol.getNodeOfQuad(face_3, ((start_node_3 + 2)%4 + 4)%4);
+
+                // Halfedge 0. First index is the face index, then the local index.
+                // dr_he_0_dv_i_0 -> derivative of halfedge 0 w.r.t. vertex 0 of face i
+                Eigen::Vector3d normal_i = normals.segment(3*i, 3).template head<3>();
+                Eigen::Vector3d normal_0 = normals.segment(3*face_0, 3).template head<3>();
+                Eigen::Vector3d normal_1 = normals.segment(3*face_1, 3).template head<3>();
+                Eigen::Vector3d normal_2 = normals.segment(3*face_2, 3). template head<3>();
+                Eigen::Vector3d normal_3 = normals.segment(3*face_3, 3).template head<3>();
+
+                // Halfedge 0
+                FullMatrixType dr_he_0_dv_i_0 = normal_i%(dnormal_dv.block(3*face_0, 3*node_i_0, 3, 3)) +
+                                                normal_0%(dnormal_dv.block(3*i, 3*node_i_0, 3,3));
+
+                FullMatrixType dr_he_0_dv_i_1 = normal_i%(dnormal_dv.block(3*face_0, 3*node_i_1, 3,3)) +
+                                                normal_0%(dnormal_dv.block(3*i, 3*node_i_1, 3, 3));
+
+                FullMatrixType dr_he_0_dv_i_2 = //0 + //normals.segment(3*i, 3).cross(dnormal_dv.block(3*face_0, 3*node_i_2, 3)) +
+                                                normal_0%(dnormal_dv.block(3*i, 3*node_i_2, 3, 3));
+
+                FullMatrixType dr_he_0_dv_i_3 = //0 + //normals.segment(3*i, 3).cross(dnormal_dv.block(3*face_0, 3*node_i_3, 3)) +
+                                                normal_0%(dnormal_dv.block(3*i, 3*node_i_3, 3, 3));
+
+                FullMatrixType dr_he_0_dv_0_0 = normal_i%(dnormal_dv.block(3*face_0, 3*node_0_0, 3,3));
+                                                //0; //normals.segment(3*face_0, 3).cross(dnormal_dv.block(3*i, 3*node_0_0, 3));
+
+                FullMatrixType dr_he_0_dv_0_1 = normal_i%(dnormal_dv.block(3*face_0, 3*node_0_1, 3,3));
+                                                //0; //normals.segment(3*face_0, 3).cross(dnormal_dv.block(3*i, 3*node_0_1, 3));
+
+                // Halfedge 1
+                FullMatrixType dr_he_1_dv_i_0 = //0 + //normals.segment(3*i, 3).cross(dnormal_dv.block(3*face_1, 3*node_i_0, 3)) + 
+                                                normal_1%(dnormal_dv.block(3*i, 3*node_i_0, 3, 3));
+
+                FullMatrixType dr_he_1_dv_i_1 = normal_i%(dnormal_dv.block(3*face_1, 3*node_i_1, 3, 3)) +
+                                                normal_1%(dnormal_dv.block(3*i, 3*node_i_1, 3, 3));
+
+                FullMatrixType dr_he_1_dv_i_2 = normal_i%(dnormal_dv.block(3*face_1, 3*node_i_2, 3, 3)) +
+                                                normal_1%(dnormal_dv.block(3*i, 3*node_i_2, 3, 3));
+
+                FullMatrixType dr_he_1_dv_i_3 = //0 + //normals.segment(3*i, 3).cross(dnormal_dv.block(3*face_1, 3*node_i_3, 3)) +
+                                                normal_1%(dnormal_dv.block(3*i, 3*node_i_3, 3, 3));
+
+                FullMatrixType dr_he_1_dv_1_0 = normal_i%(dnormal_dv.block(3*face_1, 3*node_1_0, 3, 3));
+                                                //0; //normals.segment(3*face_1, 3).cross(dnormal_dv.block(3*i, 3*node_1_0, 3));
+
+                FullMatrixType dr_he_1_dv_1_1 = normal_i%(dnormal_dv.block(3*face_1, 3*node_1_1, 3, 3));
+                                                //0; //normals.segment(3*face_1, 3).cross(dnormal_dv.block(3*i, 3*node_1_1, 3));
+                
+                // Halfedge 2
+                FullMatrixType dr_he_2_dv_i_0 = //0 + //normals.segment(3*i, 3).cross(dnormal_dv.block(3*face_2, 3*node_i_0, 3)) +
+                                                normal_2%(dnormal_dv.block(3*i, 3*node_i_0, 3, 3));
+
+                FullMatrixType dr_he_2_dv_i_1 = //0 + //normals.segment(3*i, 3).cross(dnormal_dv.block(3*face_2, 3*node_i_1, 3)) +
+                                                normal_2%(dnormal_dv.block(3*i, 3*node_i_1, 3, 3));
+
+                FullMatrixType dr_he_2_dv_i_2 = normal_i%(dnormal_dv.block(3*face_2, 3*node_i_2, 3, 3)) +
+                                                normal_2%(dnormal_dv.block(3*i, 3*node_i_2, 3, 3));
+
+                FullMatrixType dr_he_2_dv_i_3 = normal_i%(dnormal_dv.block(3*face_2, 3*node_i_3, 3, 3)) +
+                                                normal_2%(dnormal_dv.block(3*i, 3*node_i_3, 3, 3));
+
+                FullMatrixType dr_he_2_dv_2_0 = normal_i%(dnormal_dv.block(3*face_2, 3*node_2_0, 3, 3));
+                                                //0; //normals.segment(3*face_2, 3).cross(dnormal_dv.block(3*i, 3*node_2_0, 3));
+
+                FullMatrixType dr_he_2_dv_2_1 = normal_i%(dnormal_dv.block(3*face_2, 3*node_2_1, 3, 3));
+                                                //0; //normals.segment(3*face_2, 3).cross(dnormal_dv.block(3*i, 3*node_2_1, 3));
+                
+                // Halfedge 3
+                FullMatrixType dr_he_3_dv_i_0 = normal_i%(dnormal_dv.block(3*face_3, 3*node_i_0, 3, 3)) +
+                                                normal_3%(dnormal_dv.block(3*i, 3*node_i_0, 3, 3));
+
+                FullMatrixType dr_he_3_dv_i_1 = //0 + //normals.segment(3*i, 3).cross(dnormal_dv.block(3*face_3, 3*node_i_1, 3)) +
+                                                normal_3%(dnormal_dv.block(3*i, 3*node_i_1, 3, 3));
+
+                FullMatrixType dr_he_3_dv_i_2 = //0 + //normals.segment(3*i, 3).cross(dnormal_dv.block(3*face_3, 3*node_i_2, 3)) +
+                                                normal_3%(dnormal_dv.block(3*i, 3*node_i_2, 3, 3));
+
+                FullMatrixType dr_he_3_dv_i_3 = normal_i%(dnormal_dv.block(3*face_3, 3*node_i_3, 3, 3)) +
+                                                normal_3%(dnormal_dv.block(3*i, 3*node_i_3, 3, 3));
+
+                FullMatrixType dr_he_3_dv_3_0 = normal_i%(dnormal_dv.block(3*face_3, 3*node_3_0, 3, 3));
+                                                //0; //normals.segment(3*face_3, 3).cross(dnormal_dv.block(3*i, 3*node_3_0, 3));
+
+                FullMatrixType dr_he_3_dv_3_1 = normal_i%(dnormal_dv.block(3*face_3, 3*node_3_1, 3, 3));
+                                                //0; //normals.segment(3*face_3, 3).cross(dnormal_dv.block(3*i, 3*node_3_1, 3));
+
+
+                // Now, we consider the derivatives of the reweighted rulings
+                FullMatrixType drw_13_dv_i_0 = 2*dr_he_1_dv_i_0 - 2*dr_he_3_dv_i_0;
+                FullMatrixType drw_13_dv_i_1 = 2*dr_he_1_dv_i_1 - 2*dr_he_3_dv_i_1;
+                FullMatrixType drw_13_dv_i_2 = 2*dr_he_1_dv_i_2 - 2*dr_he_3_dv_i_2;
+                FullMatrixType drw_13_dv_i_3 = 2*dr_he_1_dv_i_3 - 2*dr_he_3_dv_i_3;
+                FullMatrixType drw_13_vd_1_0 = 2*dr_he_1_dv_1_0;
+                FullMatrixType drw_13_vd_1_1 = 2*dr_he_1_dv_1_1;
+                FullMatrixType drw_13_vd_3_0 = -2*dr_he_3_dv_3_0;
+                FullMatrixType drw_13_vd_3_1 = -2*dr_he_3_dv_3_1;
+
+                FullMatrixType drw_02_dv_i_0 = 2*dr_he_0_dv_i_0 - 2*dr_he_2_dv_i_0;
+                FullMatrixType drw_02_dv_i_1 = 2*dr_he_0_dv_i_1 - 2*dr_he_2_dv_i_1;
+                FullMatrixType drw_02_dv_i_2 = 2*dr_he_0_dv_i_2 - 2*dr_he_2_dv_i_2;
+                FullMatrixType drw_02_dv_i_3 = 2*dr_he_0_dv_i_3 - 2*dr_he_2_dv_i_3;
+                FullMatrixType drw_02_vd_0_0 = 2*dr_he_0_dv_0_0;
+                FullMatrixType drw_02_vd_0_1 = 2*dr_he_0_dv_0_1;
+                FullMatrixType drw_02_vd_2_0 = -2*dr_he_2_dv_2_0;
+                FullMatrixType drw_02_vd_2_1 = -2*dr_he_2_dv_2_1;
+
+                // Now, finally calculate the developability constraint gradient
+                // Compute the reweighted rulings themselves
+                Eigen::Vector3d ruling_01 = normal_i.cross(normal_0);
+                Eigen::Vector3d ruling_12 = normal_i.cross(normal_1);
+                Eigen::Vector3d ruling_23 = normal_i.cross(normal_2);
+                Eigen::Vector3d ruling_30 = normal_i.cross(normal_3);
+
+                // Get the weights again
+                RealType w_0 = 1.0;//_vars_idx.vertex_weight(vars, node_0);
+                RealType w_1 = 1.0;//_vars_idx.vertex_weight(vars, node_1);
+                RealType w_2 = 1.0;//_vars_idx.vertex_weight(vars, node_2);
+                RealType w_3 = 1.0;//_vars_idx.vertex_weight(vars, node_3);
+
+                // Calculate the reweighted rulings
+                Eigen::Vector3d rw_ruling_13 = (w_1 + w_2)*ruling_12 + (w_0 + w_3)*ruling_30;
+                Eigen::Vector3d rw_ruling_02 = (w_0 + w_1)*ruling_01 + (w_2 + w_3)*ruling_23;
+
+                Eigen::Vector3d rw_rulings_cross = rw_ruling_13.cross(rw_ruling_02);
+
+                //std::cout<<"Three"<<(drw_13_dv_i_0%(rw_ruling_02) + rw_ruling_13%(drw_02_dv_i_0)).rows()<<"; "<<((drw_13_dv_i_0%(rw_ruling_02) + rw_ruling_13%(drw_02_dv_i_0)).cols())<<std::endl;
+                Dest.segment(3*node_i_0, 3) += 2*((drw_13_dv_i_0%(rw_ruling_02) + rw_ruling_13%(drw_02_dv_i_0)).transpose()*rw_rulings_cross);
+                // Derivative w.r.t. i_1
+                Dest.segment(3*node_i_1, 3) += 2*((drw_13_dv_i_1%(rw_ruling_02) + rw_ruling_13%(drw_02_dv_i_1)).transpose()*rw_rulings_cross);
+                // Derivative w.r.t. i_2
+                Dest.segment(3*node_i_2, 3) += 2*((drw_13_dv_i_2%(rw_ruling_02) + rw_ruling_13%(drw_02_dv_i_2)).transpose()*rw_rulings_cross);
+                // Derivative w.r.t. i_3
+                Dest.segment(3*node_i_3, 3) += 2*((drw_13_dv_i_3%(rw_ruling_02) + rw_ruling_13%(drw_02_dv_i_3)).transpose()*rw_rulings_cross);
+                // Derivative w.r.t. 0_0
+                Dest.segment(3*node_0_0, 3) += 2*((rw_ruling_13%(drw_02_vd_0_0)).transpose()*rw_rulings_cross);
+                // Derivative w.r.t. 0_1
+                Dest.segment(3*node_0_1, 3) += 2*((rw_ruling_13%(drw_02_vd_0_1)).transpose()*rw_rulings_cross);
+                // Derivative w.r.t. 1_0
+                Dest.segment(3*node_1_0, 3) += 2*((drw_13_vd_1_0%(rw_ruling_02)).transpose()*rw_rulings_cross);
+                // Derivative w.r.t. 1_1
+                Dest.segment(3*node_1_1, 3) += 2*((drw_13_vd_1_1%(rw_ruling_02)).transpose()*rw_rulings_cross);
+                // Derivative w.r.t. 2_0
+                Dest.segment(3*node_2_0, 3) += 2*((rw_ruling_13%(drw_02_vd_2_0)).transpose()*rw_rulings_cross);
+                // Derivative w.r.t. 2_1
+                Dest.segment(3*node_2_1, 3) += 2*((rw_ruling_13%(drw_02_vd_2_1)).transpose()*rw_rulings_cross);
+                // Derivative w.r.t. 3_0
+                Dest.segment(3*node_3_0, 3) += 2*((rw_ruling_02%(drw_13_vd_3_0)).transpose()*rw_rulings_cross);
+                // Derivative w.r.t. 3_1
+                Dest.segment(3*node_3_1, 3) += 2*((rw_ruling_02%(drw_13_vd_3_1)).transpose()*rw_rulings_cross);
+            }
+        }
+
+};
 
 // Now, write a function to easily export the Gauss map image as plot
 // Needs to be able to access 

@@ -1,3 +1,8 @@
+#define EIGEN_USE_BLAS
+#define EIGEN_USE_LAPACK
+
+#define OPENBLAS_VERBOSE 1
+
 /* 
  Simulating a fold that results from bending a plate with clamped 
  boundary conditions. Only NonlinearMembraneEnergy and SimpleBendingEnergy are used.
@@ -13,12 +18,15 @@
 #include <chrono>
 #include <ctime>
 #include <string>
+#include <unordered_set>
+#include <goast/Smoothers.h>
+#include <goast/SQP/DOFHandling/FoldDofs.h>
+#include <goast/SQP.h>
 
 #include <goast/Core.h>
 #include <goast/DiscreteShells.h>
 #include <typeinfo>
-
-#include <goast/SQP/Algorithm/CostFunctional.h>
+#include <math.h>
 
 //==============================================================================================================
 typedef DefaultConfigurator::VectorType VectorType;
@@ -33,246 +41,172 @@ typedef DefaultConfigurator::RealType RealType;
  * 
  */
 
+bool is_near(RealType coord, RealType value, RealType tol = 1e-6)
+{
+    return std::abs(coord - value) < tol;
+}
 
 int main(int argc, char *argv[])
 {
+
 try{
 
     std::cerr << "=================================================================================" << std::endl;
     std::cerr << "SIMPLE ARC FOLD SIMULATION WITH BENDING AND MEMBRANE ENERGIES" << std::endl;
     std::cerr << "=================================================================================" << std::endl << std::endl;
-    
+
+    Eigen::setNbThreads(8);
+
 // load flat plate and prepare the arc crease
     TriMesh plate;
-    OpenMesh::IO::read_mesh(plate, "../../data/plate/rectangle_criss_cross.ply");
+    OpenMesh::IO::read_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/data/plate/paperCrissCross.ply");
     MeshTopologySaver plateTopol( plate );
-    VectorType plateGeomRef; // plateGeomRef is the geometry without the arc crease in the mesh
-    VectorType plateGeomInitial;
+    std::cout<<"num vertices: "<<plateTopol.getNumVertices()<<std::endl;
+    VectorType plateGeomRef, plateGeomDef, plateGeomInitial; // plateGeomRef is the geometry without the arc crease in the mesh
     getGeometry(plate,plateGeomRef);
+    getGeometry(plate,plateGeomDef);
     getGeometry(plate,plateGeomInitial);
 
-    // Also select all the vertices with x > 1.0 in the undeformed geometry
+    // Fix all coordinates of the boundary
+    std::vector<int> bdryMaskRef;
+
+    RealType t_0 = 0.25;//0.8084239959716796; // Initial value of the parameter t
+    // Select the vertices with y = 1.0 (topVertices)
     // We will make a Gravitational Force act on them in order to achieve a flipping effect
+    std::vector<int> topVertices;
     std::vector<int> upperVertices;
-    std::vector<int> foldVertices;
     for( int i = 0; i < plateTopol.getNumVertices(); i++ ){
         VecType coords;
         getXYZCoord<VectorType, VecType>( plateGeomRef, coords, i);
+        RealType x,y,z;
+        x = coords[0];
+        y = coords[1];
+        z = coords[2];
 
-        if(coords[0] > 1.0){
+        if(y > 0.25){
             upperVertices.push_back(i);
         }
 
-        // we will use the fold vertices to modify the shape functions -> modify the stiffness matrix
-        // in order to be able to regularize the mesh better using the Dirichlet minimization
-        // In particular, we want a better mesh regularity at the fold
-        if(coords[0] == 1.0){
-            foldVertices.push_back(i);
+        if(is_near(y, 1.0) || is_near(y, 0.0) || is_near(x, 0.0) || is_near(x, 1.0)){
+            bdryMaskRef.push_back(i);
+            if(is_near(y,1.0))
+            {
+                topVertices.push_back(i);
+            }
+            continue;
+        }
+
+        if(is_near(y,0.25)){
+            bdryMaskRef.push_back(i);
+            coords[1] += t_0*(0.25 - std::pow(coords[0] - 0.5, 2.0));
+            setXYZCoord<VectorType, VecType>(plateGeomRef, coords, i);
+            continue;
         }
     }
 
-    // first, set the bending edge weights for the edge at x = 0.5
-    // Next, set the edge weights along the crease to zero
-    VectorType edge_weights = VectorType::Ones(plateTopol.getNumEdges());
-
-    // Just for checking, we will cover the fold edges red
-    plate.request_edge_colors();
-    plate.request_vertex_colors();
-
-    for(int edgeIdx = 0; edgeIdx < plateTopol.getNumEdges(); edgeIdx++){
-        int node_i = plateTopol.getAdjacentNodeOfEdge(edgeIdx,0);
-        int node_j = plateTopol.getAdjacentNodeOfEdge(edgeIdx,1);
-
-        VecType coords_i, coords_j;
-        getXYZCoord<VectorType, VecType>( plateGeomRef, coords_i, node_i);
-        getXYZCoord<VectorType, VecType>( plateGeomRef, coords_j, node_j);
-
-        // Set the edge weights for the edge at x = 0.5 to zero -> fold
-        if(coords_i[0] == 1.0 && coords_j[0] == 1.0){
-            edge_weights[edgeIdx] = 0;
-            // Set colors for both vertices of the edge
-        plate.set_color(plate.vertex_handle(node_i), OpenMesh::Vec4f(1.0f, 0.0f, 0.0f, 1.0f));  // Red
-        plate.set_color(plate.vertex_handle(node_j), OpenMesh::Vec4f(1.0f, 0.0f, 0.0f, 1.0f));  // Red
-        }
-    }
-
-    // induce the arc crease
-    std::vector<int> bdryMaskDirichlet;
-    for( int i = 0; i < plateTopol.getNumVertices(); i++ ){
-        VecType coords;
-        getXYZCoord<VectorType, VecType>( plateGeomRef, coords, i);
-
-        if(coords[0] == 1.0){
-            bdryMaskDirichlet.push_back(i);
-            coords[0] += (0.25 - std::pow(coords[1] - 0.5, 2.0));
-        }
-
-        if(coords[0] == 0.0 || coords[0] == 2.0 || coords[1] == 0.0 || coords[1] == 1.0){
-            bdryMaskDirichlet.push_back(i);
-        }
-        setXYZCoord<VectorType,VecType>(plateGeomRef, coords, i);
-    }
-
+    // output preliminary meshes
     setGeometry(plate, plateGeomRef);
-    OpenMesh::IO::write_mesh(plate, "plateWithArcCrease.ply");
+    OpenMesh::IO::write_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/reference_mesh_before_smoothing.ply");
 
-    int numBdryNodes = bdryMaskDirichlet.size();
-    std::cerr << "num of bdry nodes for the mesh regularization with Dirichlet Energy = " << numBdryNodes << std::endl;
-    extendBoundaryMask( plateTopol.getNumVertices(), bdryMaskDirichlet );
+    // ----------------- Smooth reference geometry -----------------------------
 
-    // now, solve the Dirichlet Problem on the reference geometry
+    extendBoundaryMask( plateTopol.getNumVertices(), bdryMaskRef );
 
-    // FIRST CONSIDER SOLUTION OF EULER-LAGRANGE-EQUATION
-    std::cerr << "\n\na) OPTIMIZATION BY SOLVING EULER-LAGRANGE EQUATION" << std::endl;
-    // assemble and mask stiffness matrix
-    std::cerr << "Set up system matrix" << std::endl;
-    typename DefaultConfigurator::SparseMatrixType StiffnessMatrix;
-    computeStiffnessMatrix<DefaultConfigurator>( plateTopol, plateGeomInitial, StiffnessMatrix );
+    DirichletSmoother<DefaultConfigurator> smoother(plateGeomInitial, bdryMaskRef, plateTopol);
+    smoother.apply(plateGeomRef,plateGeomRef);
 
-    // Now, scale the shape functions by multiplying every column and row that belongs to a shape 
-    // function from the fold by a factor > 1.0
-    // RealType alpha = -1.0;
+    setGeometry(plate,plateGeomRef);
+    OpenMesh::IO::write_mesh(plate,"/home/s24pjoha_hpc/goast_old_old/goast/build/examples/reference_mesh.ply");
 
-    applyMaskToMajor<typename DefaultConfigurator::SparseMatrixType>( bdryMaskDirichlet, StiffnessMatrix );
+    getGeometry(plate,plateGeomDef);
 
-    // set up right hand side and mask
-    VectorType rhs( plateGeomRef );
-    rhs.setZero();
-    for( int i = 0; i < bdryMaskDirichlet.size(); i++ )
-        rhs[bdryMaskDirichlet[i]] = plateGeomRef[bdryMaskDirichlet[i]];
-
-    // set up linear system and solve
-    std::cerr << "Set up linear system and solve" << std::endl;
-    LinearSolver<DefaultConfigurator> directSolver;
-    VectorType solution;
-    directSolver.prepareSolver( StiffnessMatrix );
-    directSolver.backSubstitute( rhs, solution );
-
-    // get final energy value
-    computeStiffnessMatrix<DefaultConfigurator>( plateTopol, plateGeomInitial, StiffnessMatrix );
-    VectorType temp = StiffnessMatrix * solution;
-    std::cerr << "Final Dirichlet energy = " << 0.5 * temp.dot( solution ) << std::endl;
-
-    // saving
-    setGeometry( plate, solution );
-    getGeometry( plate, plateGeomRef );
-    OpenMesh::IO::write_mesh(plate, "solutionDirichlet_EulerLangrange.ply");
-
-    // NOW CONSIDER SOLUTION BY OPTIMIZING DIRICHLET ENERGY
-    std::cerr << "\n\nb) OPTIMIZATION BY DIRECT MINIMIZATION" << std::endl;
-
-    VectorType plateGeomDef;
-    getGeometry( plate, plateGeomDef );
-
-    OpenMesh::IO::Options opt;
-    opt += OpenMesh::IO::Options::VertexColor;
-
-    if(!OpenMesh::IO::write_mesh(plate, "initPlate.ply", opt)){
-        std::cerr << "Cannot write mesh to file 'initPlate.ply'" << std::endl;
-    }
-
-    // determine boundary mask and deform part of boundary
+    // Fix all coordinates
     std::vector<int> bdryMaskOpt;
-
     // fix all coordinates of the boundary
     std::vector<int> bdryMaskDirichletDef1;
 
     // fix only (x,y) coordinates of the boundary
     std::vector<int> bdryMaskDirichletDef2;
 
-    // fix only x coordinates of the boundary
+    // fix only y coordinates of the boundary
     std::vector<int> bdryMaskDirichletDef3;
 
     for( int i = 0; i < plateTopol.getNumVertices(); i++ ){
         VecType coords;
-        getXYZCoord<VectorType, VecType>( plateGeomDef, coords, i);
+        getXYZCoord<VectorType, VecType>(plateGeomInitial,coords,i);
+        RealType x,y,z;
+        x = coords[0];
+        y = coords[1];
+        z = coords[2];
 
-        if( coords[0] <= 1.0 && (coords[1] == 0.0 || coords[1] == 1.0) ){
+        if( y <= 0.25 + 1e-4 && (is_near(x,0.0) || is_near(x,1.0)) ){
             bdryMaskOpt.push_back( i );
             bdryMaskDirichletDef1.push_back( i );
             // deform part of boundary
-            if(coords[1] == 0.0){
-                coords[1] += 0.2;
-                coords[2] += 0.15;
+            if(is_near(x,0.0)){
+                coords[0] += 0.1;
+                coords[2] += 0.1;
             }
             else{
-                coords[1] -= 0.2;
-                coords[2] += 0.15;
+                coords[0] -= 0.1;
+                coords[2] += 0.1;
             }
+            setXYZCoord<VectorType, VecType>( plateGeomDef, coords, i);
+            continue;
         }
-        if(coords[0] >= 1.2){
+        if(coords[1] >= 0.4){
             bdryMaskDirichletDef2.push_back(i);
+            continue;
         }
-        if(coords[0] == 0.0){
+        if(coords[1] == 0.0){
             bdryMaskDirichletDef3.push_back(i);
+            continue;
         }
 
-        
-        setXYZCoord<VectorType, VecType>( plateGeomDef, coords, i);
+        if(is_near(y,0.25)){
+            coords[1] += t_0*(0.25 - std::pow(coords[0] - 0.5, 2.0));
+            setXYZCoord<VectorType, VecType>( plateGeomDef, coords, i);
+            continue;
+        }
     }
 
     setGeometry( plate, plateGeomDef );
-    OpenMesh::IO::write_mesh(plate, "plateWithDeformedBoundary.ply");
+    OpenMesh::IO::write_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/plateWithDeformedBoundary.ply");
 
-    // CONSTRUCTION WORK STARTIN HERE CAUTION
-
-    int numBdryNodesDef = bdryMaskDirichletDef1.size() + bdryMaskDirichletDef2.size() + bdryMaskDirichletDef3.size();
-     std::cout<<"Individual sizes: "<<bdryMaskDirichletDef1.size()<<" "<<bdryMaskDirichletDef2.size()<<" "<<bdryMaskDirichletDef3.size()<<std::endl;
-    std::cerr << "num of bdry nodes for the mesh regularization with Dirichlet Energy = " << numBdryNodesDef << std::endl;
     extendBoundaryMask( plateTopol.getNumVertices(), bdryMaskDirichletDef1 );
     
     // want to only fix (x,y) coordinates of the boundary
     std::vector<int> active = (std::vector<int>){1,1,0};
     extendBoundaryMaskPartial( plateTopol.getNumVertices(), bdryMaskDirichletDef2 , active);
 
-    std::vector<int> active2 = (std::vector<int>){1,0,0};
+    std::vector<int> active2 = (std::vector<int>){0,1,0};
     extendBoundaryMaskPartial( plateTopol.getNumVertices(), bdryMaskDirichletDef3 , active2);
 
     // append to the Dirichlet bdry mask
     bdryMaskDirichletDef1.insert(bdryMaskDirichletDef1.end(), bdryMaskDirichletDef2.begin(), bdryMaskDirichletDef2.end());
     bdryMaskDirichletDef1.insert(bdryMaskDirichletDef1.end(), bdryMaskDirichletDef3.begin(), bdryMaskDirichletDef3.end());
 
-    // now, solve the Dirichlet Problem on the reference geometry
-
-    // FIRST CONSIDER SOLUTION OF EULER-LAGRANGE-EQUATION
-    std::cerr << "\n\na) OPTIMIZATION BY SOLVING EULER-LAGRANGE EQUATION" << std::endl;
-
-    std::cerr << "Set up system matrix" << std::endl;
-    typename DefaultConfigurator::SparseMatrixType StiffnessMatrixDef;
-
-    computeStiffnessMatrix<DefaultConfigurator>( plateTopol, plateGeomInitial, StiffnessMatrixDef );
-    // assemble and mask stiffness matrix
-    applyMaskToMajor<typename DefaultConfigurator::SparseMatrixType>( bdryMaskDirichletDef1, StiffnessMatrixDef );
-
-    // set up right hand side and mask
-    VectorType rhsDef( plateGeomDef );
-    rhsDef.setZero();
-    for( int i = 0; i < bdryMaskDirichletDef1.size(); i++ )
-        rhsDef[bdryMaskDirichletDef1[i]] = plateGeomDef[bdryMaskDirichletDef1[i]];
-
-    // set up linear system and solve
-    std::cerr << "Set up linear system and solve" << std::endl;
-    LinearSolver<DefaultConfigurator> directSolverDef;
-    VectorType solutionDef;
-    directSolverDef.prepareSolver( StiffnessMatrixDef );
-    directSolverDef.backSubstitute( rhsDef, solutionDef );
-
-    // get final energy value
-    computeStiffnessMatrix<DefaultConfigurator>( plateTopol, plateGeomInitial, StiffnessMatrixDef );
-    VectorType tempDef = StiffnessMatrixDef * solutionDef;
-    std::cerr << "Final Dirichlet energy = " << 0.5 * tempDef.dot( solutionDef ) << std::endl;
-
-    // saving
-    setGeometry( plate, solutionDef );
+    DirichletSmoother<DefaultConfigurator> dirichletSmoother( plateGeomDef, bdryMaskDirichletDef1, plateTopol );
+    dirichletSmoother.apply( plateGeomDef, plateGeomDef );
     getGeometry( plate, plateGeomDef );
-    OpenMesh::IO::write_mesh(plate, "solutionDirichlet_EulerLangrange_2.ply");
+    OpenMesh::IO::write_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/smoothed_initial_plate.ply");
 
-    std::cerr << "num of bdry nodes for Optimization of SimpleBending + Membrane = " << bdryMaskOpt.size() << std::endl;
     extendBoundaryMask( plateTopol.getNumVertices(), bdryMaskOpt );
+   
+    auto foldDofsPtr = std::make_shared<FoldDofsArcLine<DefaultConfigurator>>(plateTopol,plateGeomInitial, plateGeomInitial, bdryMaskRef);
+
+    std::vector<int> foldVertices;
+    foldDofsPtr -> getFoldVertices(foldVertices);
+
+    VectorType edge_weights = VectorType::Zero(plateTopol.getNumEdges());
+    foldDofsPtr->getEdgeWeights(edge_weights);
+
+    size_t nFoldDOFs = foldDofsPtr->getNumDofs();
+    size_t nVertexDOFs = 3*plateTopol.getNumVertices();
 
     // save initialization
     setGeometry( plate, plateGeomDef );
-    OpenMesh::IO::write_mesh(plate, "initPlate_rectangle2.ply");
+    OpenMesh::IO::write_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/initPlate_rectangle2.ply");
 
     SimpleBendingEnergy<DefaultConfigurator> E_bend( plateTopol, plateGeomRef, true , edge_weights);
     SimpleBendingGradientDef<DefaultConfigurator> DE_bend( plateTopol, plateGeomRef , edge_weights);
@@ -302,8 +236,7 @@ try{
 
     RealType factor_membrane = 10000.0;
     RealType factor_bending = 1.0;
-    // 1000 looks good, but has self intersections. Maybe 300 is better
-    RealType factor_gravity = 250.0;
+    RealType factor_gravity = 500.0;
 
     VectorType factors(3);
     factors[0] = factor_membrane;
@@ -326,24 +259,19 @@ try{
     NLS.setBoundaryMask( bdryMaskOpt );
     NLS.solve( initialization, plateGeomDef );
 
-    std::vector<int> topVertices;
-    for(int i = 0; i < plateTopol.getNumVertices(); i++){
-        VecType coords;
-        getXYZCoord<VectorType, VecType>(plateGeomInitial, coords, i);
-        if(std::abs(coords[0] - 2.0) < 1e-4){
-            topVertices.push_back(i);
-        }
-    }
-
-    CostFunctional<DefaultConfigurator> costFunctional(topVertices);
-    RealType costFunctional_val;
-    costFunctional.apply(plateGeomDef, costFunctional_val);
-    std::cout<<"Cost Functional Value: "<<costFunctional_val<<std::endl;
-    std::cout<<"Adjusted cost functional val: "<<costFunctional_val/2.0<<std::endl;
-
     // saving
     setGeometry( plate, plateGeomDef );
-    OpenMesh::IO::write_mesh(plate, "bendingFoldSol_withNewton2.ply");
+    // slightly inaccurate saving of the geometry
+    OpenMesh::IO::write_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/bendingFoldSol_withNewton_scaled_2.ply");
+    printVectorToFile( plateGeomDef, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/bendingFoldSol_withNewton_scaled_2.txt" , 15);
+    printVectorToFile( plateGeomRef, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/final_reference.txt" , 15);
+
+    std::cout<<"Final gradient norm: "<<std::endl;
+    VectorType Constraint_test;
+    DE_tot.apply(plateGeomDef, Constraint_test);
+    applyMaskToVector( bdryMaskOpt, Constraint_test );
+    std::cout<<Constraint_test.norm()<<std::endl;
+
     }
     catch ( BasicException &el ){
         std::cerr << std::endl << "ERROR!! CAUGHT FOLLOWING EXECEPTION: " << std::endl << el.getMessage() << std::endl << std::flush;

@@ -48,7 +48,7 @@ normals = []
 n = None
 
 # Open the file and read it line by line
-with open('normals.txt', 'r') as file:
+with open('/home/s24pjoha_hpc/goast_old_old/goast/build/examples/normals.txt', 'r') as file:
     n = sum(1 for _ in file)
 
     # Reset file pointer to the beginning

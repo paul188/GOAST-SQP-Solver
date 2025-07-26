@@ -25,7 +25,17 @@
 # Copyright (c) 2009 Benoit Jacob <jacob.benoit.1@gmail.com>
 # Redistribution and use is allowed according to the terms of the 2-clause BSD license.
 
-set(EIGEN3_INCLUDE_DIR_HINTS "/usr/include/eigen3" "/usr/local/include/eigen3")
+set(EIGEN3_INCLUDE_DIR_HINTS
+    "/opt/software/easybuild-INTEL/software/Eigen/3.4.0-GCCcore-13.3.0/include"
+    "/usr/include/eigen3"
+    "/usr/local/include/eigen3"
+)
+
+include_directories(
+    /opt/software/easybuild-INTEL/software/Eigen/3.4.0-GCCcore-13.3.0/include/eigen3
+    /usr/include/eigen3
+    /usr/local/include/eigen3
+)
 
 if(NOT Eigen3_FIND_VERSION)
   if(NOT Eigen3_FIND_VERSION_MAJOR)
@@ -80,15 +90,16 @@ else ()
   find_package(Eigen3 ${Eigen3_FIND_VERSION} NO_MODULE QUIET)
 
   if(NOT EIGEN3_INCLUDE_DIR)
-    find_path(EIGEN3_INCLUDE_DIR NAMES signature_of_eigen3_matrix_library
-            HINTS
-            ENV EIGEN3_ROOT
-            ENV EIGEN3_ROOT_DIR
-            PATHS
-            ${CMAKE_INSTALL_PREFIX}/include
-            ${KDE4_INCLUDE_DIR}
-            PATH_SUFFIXES eigen3 eigen
-            )
+    find_path(EIGEN3_INCLUDE_DIR NAMES Eigen/Core
+              HINTS
+              ENV EIGEN3_ROOT
+              ENV EIGEN3_ROOT_DIR
+              PATHS
+              "/opt/software/easybuild-INTEL/software/Eigen/3.4.0-GCCcore-11.3.0/include"
+              ${CMAKE_INSTALL_PREFIX}/include
+              ${KDE4_INCLUDE_DIR}
+              PATH_SUFFIXES eigen3 eigen
+              )
   endif()
 
   if(EIGEN3_INCLUDE_DIR)

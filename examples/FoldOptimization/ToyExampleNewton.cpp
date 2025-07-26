@@ -171,20 +171,7 @@ try{
 
     // saving
     setGeometry( plate, plateGeomDef );
-    OpenMesh::IO::write_mesh(plate, "bendingFoldSol_withNewton2.ply");
-
-    CostFunctional<DefaultConfigurator> costFunctional(foldVertices);
-    RealType cost = 0.0;
-    costFunctional.apply(plateGeomDef, cost);
-    std::cout<<"Cost Functional value: "<<std::setprecision(12)<<cost<<std::endl;
-    ElasticEnergyFactory<DefaultConfigurator> factory(factors, plateTopol, edge_weights);
-    BoundaryDOFS<DefaultConfigurator> boundaryDOFs(bdryMaskOpt, 3*plateTopol.getNumVertices(), foldVertices.size());
-    ProblemDOFs<DefaultConfigurator> problemDOFs(VectorType::Zero(foldVertices.size()), plateGeomDef, foldDofsPtr, DfoldDofsPtr);
-    VectorType DE_val;
-    factory.produceDE_vertex(problemDOFs,DE_val);
-    boundaryDOFs.transformToReducedSpace(DE_val);
-
-    std::cout<<std::setprecision(12)<<norm_l1(DE_val)<<std::endl;
+    OpenMesh::IO::write_mesh(plate, "bendingFoldSol_withNewton2.ply");;
 
   } 
   catch ( BasicException &el ){

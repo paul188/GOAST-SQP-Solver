@@ -217,7 +217,7 @@ try{
     std::sort(bdryMaskRef_1.begin(), bdryMaskRef_1.end());
 
     // Now, rotate the fold
-    FoldDofsCrossInterpolation<DefaultConfigurator> foldDofs( plateTopol, plateGeomInitial, plateGeomInitial, bdryMaskRef_1 , scaling_piece_1, scaling_piece_2, scaling_piece_3, scaling_piece_4);
+    FoldDofsCrossInterpolation<DefaultConfigurator> foldDofs( plateTopol, plateGeomInitial, plateGeomInitial, bdryMaskRef_1);
     std::vector<int> foldVertices;
     foldDofs.getFoldVertices(foldVertices);
     VectorType t_0(2);

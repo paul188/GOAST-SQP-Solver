@@ -20,6 +20,8 @@
 #include <goast/Core/LocalMeshGeometry.h>
 #include <goast/Core/Topology.h>
 #include <goast/Core/DeformationInterface.h>
+#include <fstream>
+#include <iostream>
 
 //#define DEBUGMODE
 
@@ -55,6 +57,8 @@ protected:
   const bool _activeShellIsDeformed;
   const VectorType _weight;
 
+  mutable std::ofstream _stream;
+
 public:
 
   SimpleBendingEnergy( const MeshTopologySaver& topology,
@@ -64,7 +68,12 @@ public:
   : _topology( topology), 
     _inactiveGeometry(InactiveGeometry), 
     _activeShellIsDeformed( ActiveShellIsDeformed),
-    _weight(Weight){}
+    _weight(Weight)
+    {
+      for(int i = 0; i < _topology.getNumEdges(); i++){
+        std::cout<< "Weight for edge " << i << ": " << _weight[i] << std::endl;
+      }
+    }
 
     SimpleBendingEnergy( const MeshTopologySaver& topology,
                        const VectorType& InactiveGeometry,
@@ -74,10 +83,22 @@ public:
     _inactiveGeometry(InactiveGeometry),
     _weight(VectorType::Constant(_topology.getNumEdges(),Weight)), 
     _activeShellIsDeformed( ActiveShellIsDeformed)
-    {}
+    {
+      _stream.open( "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/SimpleBendingEnergy.log");
+      if( !_stream.is_open() ){
+        std::cerr << "Could not open SimpleBendingEnergy.log for writing!" << std::endl;
+        throw BasicException("SimpleBendingEnergy: Could not open log file!");
+      }
+
+      for(int i = 0; i < _topology.getNumEdges(); i++){
+        std::cout<< "Weight for edge " << i << ": " << _weight[i] << std::endl;
+      }
+    }
 
   // energy evaluation
   void apply( const VectorType& ActiveGeometry, RealType & Dest ) const {
+
+    _stream.open( "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/SimpleBendingEnergy.log");
 
     if( ActiveGeometry.size() != _inactiveGeometry.size() ){
       std::cerr << "size of active = " << ActiveGeometry.size() << " vs. size of inactive = " << _inactiveGeometry.size() << std::endl;
@@ -97,7 +118,10 @@ public:
     for ( int edgeIdx = 0; edgeIdx < _topology.getNumEdges(); ++edgeIdx ){
       
       if( !(_topology.isEdgeValid(edgeIdx)) )
-	continue;
+      {
+        _stream << 0 <<std::endl;
+	      continue;
+      }
 
       int pi( _topology.getAdjacentNodeOfEdge(edgeIdx,0) ),
           pj( _topology.getAdjacentNodeOfEdge(edgeIdx,1) ),
@@ -105,8 +129,10 @@ public:
           pl( _topology.getOppositeNodeOfEdge(edgeIdx,1) );
 
       // no bending at boundary edges
-      if( std::min( pl, pk) < 0 )
+      if( std::min( pl, pk) < 0 ){
+        _stream << 0 <<std::endl;
         continue;
+    }
 
       // set up vertices and edges
       VecType Pi, Pj, Pk, Pl, temp;
@@ -137,6 +163,9 @@ public:
       delTheta -= getDihedralAngle( Pi, Pj, Pk, Pl );      
       // CAUTION We omitted a factor 3 here!
       Dest += _weight[edgeIdx] * delTheta * delTheta * elengthSqr / vol;
+      RealType contribution = _weight[edgeIdx] * delTheta * delTheta * elengthSqr / vol;
+      _stream << contribution << std::endl;
+      //std::cout<<"edge idx: "<< edgeIdx<<"edge weight: "<<_weight[edgeIdx]<<" contribution: "<<contribution<<std::endl;
       
 #ifdef DEBUGMODE
       if( std::isnan( Dest ) ){
@@ -153,6 +182,7 @@ public:
       }
 #endif
     }
+    _stream.close();
   }
 
   void setWeight(const VectorType& Eta)

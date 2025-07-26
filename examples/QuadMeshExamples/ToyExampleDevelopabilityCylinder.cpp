@@ -1,5 +1,4 @@
-#include "Levenberg_Marquardt.h"
-#include "Constraints.h"
+#include <goast/Developability/Developability.h>
 #include <goast/Core.h>
 #include <random>
 #include <iostream>
@@ -62,19 +61,18 @@ int main()
 
         std::pair<std::vector<int>, VectorType> bdryData = std::make_pair(bdryMask,bdryCoords);
 
-        ConstraintIdx<DefaultConfigurator> constraintIdx(stripHandle, quadTopol, bdryData);
+        ConstraintIdx<DefaultConfigurator> constraintIdx(stripHandle, quadTopol);
         VarsIdx<DefaultConfigurator> variablesIdx(quadTopol);
 
         // --------------------- INITIALIZE CONSTRAINT WEIGHTS --------------------------------
 
           constraint_weights<DefaultConfigurator> weights;
-          weights.fair_v = 0.5;//50.0;
-          weights.fair_n = 0.5;//10.0;
+          weights.fair_v = 50.0;
+          weights.fair_n = 10.0;
           weights.fair_r = 0.0;
           weights.ruling_0 = 10.0;
           weights.ruling_1 = 10.0;
           weights.ruling_2 = 10.0;
-          weights.bdry_opt = 100000.0;
           weights.dev = 1000.0;
 
         MatrixType weights_mat;
@@ -84,8 +82,9 @@ int main()
 
         // -------------------------- SETUP Constraint and ConstraintGrad ----------------------------
 
-        Constraint<DefaultConfigurator> constraint(quadTopol,stripHandle, constraintIdx, variablesIdx, bdryData);
-        ConstraintGrad<DefaultConfigurator> constraintGrad(quadTopol,stripHandle, constraintIdx, variablesIdx, bdryData);
+        Constraint<DefaultConfigurator> constraint(quadTopol,stripHandle, constraintIdx, variablesIdx);
+        ConstraintGrad<DefaultConfigurator> constraintGrad(quadTopol,stripHandle, constraintIdx, variablesIdx);
+        BoundaryDOFS_quad<DefaultConfigurator> bdryDOFs(bdryMask, num_vertices, variablesIdx);
 
         // -------------------------- INITIALIZE THE VARIABLES --------------------------------------------
         VectorType init = VectorType::Zero(variablesIdx["num_dofs"]);
@@ -93,7 +92,7 @@ int main()
 
 
         LevenbergMarquardtParams<DefaultConfigurator> pars;
-        LMAlgorithm<DefaultConfigurator> lm(pars, constraint, constraintGrad, variablesIdx["num_dofs"], constraintIdx["num_cons"]);
+        LMAlgorithm<DefaultConfigurator> lm(pars, constraint, constraintGrad, bdryDOFs, variablesIdx["num_dofs"], constraintIdx["num_cons"]);
 
         //std::string filepath_begin = "/home/paul_johannssen/Desktop/masterarbeit/goast_old/examples/QuadMeshExamples/plotting/gauss_image_data_begin.txt";
         //plot_gauss_image(quadTopol,view, filepath_begin);
@@ -104,9 +103,9 @@ int main()
         VectorType DestGeom = Dest.segment(variablesIdx["vertices"],3*num_vertices);
         QuadMeshTopologySaver::setGeometry(mesh, DestGeom);
         OpenMesh::IO::write_mesh(mesh, "result_developability.ply");
-        std::string normals_file = "/home/paul_johannssen/Desktop/masterarbeit/goast/examples/QuadMeshExamples/plotting/normals.txt";
+        std::string normals_file = "/home/paul_johannssen/Desktop/masterarbeit/goast_old/examples/QuadMeshExamples/plotting/normals.txt";
         export_normals(quadTopol,Dest, variablesIdx, normals_file);
-        std::string rw_rulings_file = "/home/paul_johannssen/Desktop/masterarbeit/goast/examples/QuadMeshExamples/plotting/rw_rulings.txt";
+        std::string rw_rulings_file = "/home/paul_johannssen/Desktop/masterarbeit/goast_old/examples/QuadMeshExamples/plotting/rw_rulings.txt";
         export_rw_rulings(quadTopol,Dest, variablesIdx, rw_rulings_file);
 
     }catch(std::exception &e){

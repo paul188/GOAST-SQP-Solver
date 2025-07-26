@@ -203,9 +203,9 @@ try{
 
     std::vector<int> foldVertices;
 
-    auto foldDofs = FoldDofsSkewedCross<DefaultConfigurator>(plateTopol,plateGeomInitial, plateGeomRef, bdryMaskRef_1, scaling_piece_1, scaling_piece_2, scaling_piece_3, scaling_piece_4);
+    auto foldDofs = FoldDofsSkewedCross<DefaultConfigurator>(plateTopol,plateGeomInitial, plateGeomRef, bdryMaskRef_1);
     foldDofs.getFoldVertices(foldVertices);
-    auto DfoldDofs = FoldDofsSkewedCrossGradient<DefaultConfigurator>(plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices, scaling_piece_1, scaling_piece_2, scaling_piece_3, scaling_piece_4);
+    auto DfoldDofs = FoldDofsSkewedCrossGradient<DefaultConfigurator>(plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices); 
 
     // TEST THE FOLD DOFS ACTION
     VectorType translate_vec = VectorType::Ones(foldDofs.getNumDofs());

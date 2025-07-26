@@ -139,7 +139,7 @@ public:
     return zoomQuadratic( CurrentPosition, CurrentGradient, DescentDir, OldTau, CurrentEnergy );
   }
 
-  // Armijo timestepping, i.e. E[p + tau*d] < E[p] + _sigma * tau * <DE[p], d>
+<  // Armijo timestepping, i.e. E[p + tau*d] < E[p] + _sigma * tau * <DE[p], d>
   RealType getTimestepWidthWithArmijoLineSearch( const VectorType &CurrentPosition,
                                                  const VectorType &CurrentGradient,
                                                  const VectorType &DescentDir,

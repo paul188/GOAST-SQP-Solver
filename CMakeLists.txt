@@ -6,11 +6,11 @@ project(GOAST VERSION 0.1)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-link_directories(/usr/lib)
-
 ################################################################################
 # general settings
 ################################################################################
+
+set(pybind11_DIR "/opt/software/easybuild-INTEL/software/pybind11/2.9.2-GCCcore-11.3.0/share/cmake/pybind11")
 
 # where to find the modules
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules)
@@ -19,6 +19,38 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules)
 # Library CMake include
 ################################################################################
 include(cmake/GOAST.cmake)
+
+include_directories($ENV{CPATH})
+link_directories($ENV{LIBRARY_PATH})
+
+# This pulled in the imported target Eigen3::Eigen
+include_directories(
+    /opt/software/easybuild-INTEL/software/Eigen/3.4.0-GCCcore-13.3.0/include/eigen3
+    /usr/include/eigen3
+    /usr/local/include/eigen3
+)
+
+
+target_link_libraries(GOAST INTERFACE /home/s24pjoha_hpc/openmesh/OpenMesh-11.0.0/lib/libOpenMeshCore.a)
+target_link_libraries(GOAST INTERFACE /home/s24pjoha_hpc/openmesh/OpenMesh-11.0.0/lib/libOpenMeshTools.a)
+
+#set(CMAKE_PREFIX_PATH "/opt/software/easybuild-INTEL/software/Eigen/3.4.0-GCCcore-11.3.0/share/eigen3/cmake" ${CMAKE_PREFIX_PATH})
+#find_package(Eigen3 REQUIRED)
+
+# Then link Eigen to your targets that need it, e.g.
+#target_link_libraries(GOAST INTERFACE Eigen3::Eigen)
+
+target_include_directories(GOAST INTERFACE /home/s24pjoha_hpc/openmesh/OpenMesh-11.0.0/include)
+
+target_include_directories(GOAST INTERFACE /home/s24pjoha_hpc/SuiteSparse/include)
+
+#target_link_libraries(GOAST INTERFACE /home/s24pjoha_hpc/SuiteSparse/lib)
+
+#target_include_directories(GOAST INTERFACE /home/s24pjoha_hpc/SuiteSparse_install/include)
+
+#target_include_directories(GOAST INTERFACE /home/s24pjoha_hpc/SuiteSparse_install/include/suitesparse)
+
+#target_link_libraries(GOAST INTERFACE /home/s24pjoha_hpc/SuiteSparse_install/lib64)
 
 # Find Python package
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
@@ -31,19 +63,22 @@ target_include_directories(GOAST INTERFACE
     ${Python3_NumPy_INCLUDE_DIRS}
 )
 
+set(CMAKE_PREFIX_PATH "/opt/software/easybuild-INTEL/software/OpenBLAS/0.3.20-GCC-11.3.0/lib/cmake/openblas" CACHE PATH "")
 
-include_directories(/usr/include)
+# Add the OpenBLAS library directory
+link_directories(/opt/software/easybuild-INTEL/software/OpenBLAS/0.3.27-GCC-13.3.0/lib)
 
-set(BLA_VENDOR OpenBLAS)
-set(BLAS_LIBRARIES "/usr/lib/x86_64-linux-gnu/libopenblas.so")
-set(LAPACK_LIBRARIES "/usr/lib/x86_64-linux-gnu/libopenblas.so")  # OpenBLAS includes LAPACK
-find_package(BLAS REQUIRED)
-find_package(LAPACK REQUIRED)
-if(BLAS_FOUND AND LAPACK_FOUND)
-    message("OpenBLAS and Lapack found.")
-    target_link_libraries(GOAST INTERFACE ${BLAS_LIBRARIES})
-    target_link_libraries(GOAST INTERFACE ${LAPACK_LIBRARIES})
-endif(BLAS_FOUND AND LAPACK_FOUND)
+# If you want to be precise and portable:
+find_library(OPENBLAS_LIB NAMES openblas
+PATHS /opt/software/easybuild-INTEL/software/OpenBLAS/0.3.27-GCC-13.3.0/lib)
+
+if (NOT OPENBLAS_LIB)
+    message(FATAL_ERROR "OpenBLAS library not found!")
+endif()
+
+# Link against it
+target_link_libraries(GOAST INTERFACE ${OPENBLAS_LIB})
+
 
 if(MSVC)
     add_compile_options("/fp:strict" "/arch:AVX2" "/openmp")
