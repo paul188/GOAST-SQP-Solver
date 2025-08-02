@@ -263,6 +263,9 @@ try{
         setXYZCoord<VectorType,VecType>(plateGeomRef, coords, i);
     }
 
+    setGeometry(plate, plateGeomRef);
+    OpenMesh::IO::write_mesh(plate, "reference_mesh_before_smoothing.ply", opt);
+
     //dirichlet
     int numBdryNodesDirichlet = bdryMaskDirichlet.size();
     std::cerr << "num of bdry nodes for the mesh regularization with Dirichlet Energy = " << numBdryNodesDirichlet << std::endl;

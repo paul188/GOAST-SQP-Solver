@@ -161,11 +161,11 @@ int main()
         //setGeometry(centroid_base_mesh, centroidDeformedGeometry);
 
         ConstraintSqrdReduced<DefaultConfigurator> constraintSqrdReduced(quadTopol);
-        VectorType squared_dev_energy;
+        RealType squared_dev_energy;
         constraintSqrdReduced.apply(quadDeformedGeometry, squared_dev_energy);
         std::cout<<"Squared developability energy: "<<squared_dev_energy<<std::endl;
 
-        MatrixType squared_dev_gradient;
+        VectorType squared_dev_gradient;
         ConstraintSqrdReducedGradient<DefaultConfigurator> constraintSqrdReducedGradient(quadTopol);
         constraintSqrdReducedGradient.apply(quadDeformedGeometry, squared_dev_gradient);
         std::cout<<"Squared developability gradient: "<<squared_dev_gradient.norm()<<std::endl;
@@ -204,6 +204,7 @@ int main()
         // set outer optimization parameters
         OptimizationParameters<DefaultConfigurator> optPars;
         optPars.setGradientIterations( 200 );
+        optPars.setBFGSIterations( 1000 );
         optPars.setQuietMode( SHOW_ALL );
 
         VectorType init = VectorType::Zero(varsIdx["num_dofs"]);
@@ -233,6 +234,10 @@ int main()
         GradientDescent<DefaultConfigurator> GD( E_tot, DE_tot, optPars);
         GD.setBoundaryMask( bdryMask );
         GD.solve( init_centroid, result_centroid );
+
+        QuasiNewtonBFGS<DefaultConfigurator> BFGS( E_tot, DE_tot, optPars);
+        BFGS.setBoundaryMask( bdryMask );
+        BFGS.solve( result_centroid, result_centroid );
         
         VectorType result_centroid_geometry = result_centroid.segment(variablesIdx["vertices"], 3*centroidTopol.getNumVertices());
 

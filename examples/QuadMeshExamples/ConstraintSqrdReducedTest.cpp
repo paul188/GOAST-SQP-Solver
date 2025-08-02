@@ -59,20 +59,14 @@ try{
 
     VectorType test_input = geom;
     
-    VectorType dest;
-    MatrixType Dest;
+    RealType dest;
+    VectorType Dest;
 
     constraint.apply(test_input,dest);
     constraintGrad.apply(test_input,Dest);
 
-    Eigen::Vector3d node_1 = geom.segment(3*14, 3).template head<3>();
-    Eigen::Vector3d node_2 = geom.segment(0, 3).template head<3>();
-
-    std::cout << "Node 1: " << node_1.transpose() << std::endl;
-    std::cout << "Node 2: " << node_2.transpose() << std::endl;
-
-    //ScalarValuedDerivativeTester<DefaultConfigurator> tester(constraint,constraintGrad,0.01,50);
-    VectorValuedDerivativeTester<DefaultConfigurator> tester(constraint, constraintGrad,0.01, Dest.rows());
+    ScalarValuedDerivativeTester<DefaultConfigurator> tester(constraint,constraintGrad,0.01,50);
+    //VectorValuedDerivativeTester<DefaultConfigurator> tester(constraint, constraintGrad,0.01, Dest.rows());
     tester.plotAllDirections(test_input,"deriv_test/");
 
 }catch(std::exception &e){

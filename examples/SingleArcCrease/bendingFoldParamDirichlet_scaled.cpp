@@ -302,7 +302,7 @@ try{
     VectorType initialization = plateGeomDef;
 
     std::cerr<< "Startting Newton Linesearch..."<<std::endl;
-    LineSearchNewton<DefaultConfigurator> NLS( E_tot, DE_tot, D2E_tot, optPars,);
+    LineSearchNewton<DefaultConfigurator> NLS( E_tot, DE_tot, D2E_tot, optPars);
     NLS.setBoundaryMask( bdryMaskOpt );
     NLS.solve( initialization, plateGeomDef );
 

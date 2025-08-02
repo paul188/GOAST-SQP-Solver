@@ -92,6 +92,9 @@ try{
         }
     }
 
+    setGeometry( plate, plateGeomDef );
+    OpenMesh::IO::write_mesh(plate, "initPlate_init.ply");
+
     std::vector<int> activeRef_x = (std::vector<int>){0,1,1};
     extendBoundaryMaskPartial( plateTopol.getNumVertices(), bdryMaskDirichletDef_x , activeRef_x);
     extendBoundaryMask( plateTopol.getNumVertices(), bdryMaskDirichletDef_1);

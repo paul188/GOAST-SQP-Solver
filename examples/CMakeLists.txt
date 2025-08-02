@@ -34,6 +34,7 @@ add_executable(bendingSmallArcInterpolation SmallArc/bendingSmallArcInterpolatio
 add_executable(FoldDofsCrossTest FoldOptimization/FoldDofsCrossTest.cpp)
 add_executable(CrossFoldNewton CrossFold/CrossFoldNewton.cpp)
 add_executable(SkewedCrossFold FoldOptimization/SkewedCrossFold.cpp)
+add_executable(bendingFoldQuadDevelopability2 QuadMeshExamples/bendingFoldQuadDevelopability2.cpp)
 
 #add_executable(SimpleFoldOptimization2 FoldOptimization/SimpleFoldOptimization2.cpp)
 #add_executable(SimpleFoldOptimization FoldOptimization/SimpleFoldOptimization.cpp)
@@ -53,6 +54,8 @@ add_executable(ToyExampleFreeArcLine FoldOptimization/ToyExampleFreeArcLine.cpp)
 add_executable(ToyExampleDevelopabilityCylinder QuadMeshExamples/ToyExampleDevelopabilityCylinder.cpp)
 add_executable(SharpCreaseDevelopability QuadMeshExamples/SharpCreaseDevelopability.cpp)
 add_executable(CrossFoldInterpolationTest FoldOptimization/CrossFoldInterpolationTest.cpp)
+
+target_link_libraries(bendingFoldQuadDevelopability2 PRIVATE GOAST::GOAST)
 
 target_link_libraries(plotBendingContributions PRIVATE GOAST::GOAST)
 

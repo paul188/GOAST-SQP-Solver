@@ -2494,7 +2494,7 @@ void export_normals_2(const QuadMeshTopologySaver &quadTopol, const VectorType n
 
 
 template <typename ConfiguratorType>
-class ConstraintSqrdReduced : public BaseOp<typename ConfiguratorType::VectorType, typename ConfiguratorType::RealType>{
+class ConstraintSqrdReduced : public BaseOp<typename ConfiguratorType::VectorType, typename ConfiguratorType::VectorType>{
     typedef typename ConfiguratorType::RealType RealType;
     typedef typename ConfiguratorType::VectorType VectorType;
     typedef typename ConfiguratorType::VecType VecType;
@@ -2525,10 +2525,11 @@ class ConstraintSqrdReduced : public BaseOp<typename ConfiguratorType::VectorTyp
             normals.setZero();
         }
     
-        void apply(const VectorType &vertices, RealType &Dest) const override
+        void apply(const VectorType &vertices, VectorType &Dest) const override
         {
 
-            Dest = 0.0;
+            Dest.resize(3*(_num_faces - _quadTopol.getNumBdryFaces()));
+            Dest.setZero();
 
             normals.setZero();
 
@@ -2613,7 +2614,8 @@ class ConstraintSqrdReduced : public BaseOp<typename ConfiguratorType::VectorTyp
 
                 // Now, finally calculate the developability constraint
                 VectorType rw_rulings_cross = rw_ruling_13.cross(rw_ruling_02);
-                Dest += rw_rulings_cross.dot(rw_rulings_cross);
+                //Dest += rw_rulings_cross.dot(rw_rulings_cross);
+                Dest.segment(3*i_nbdry, 3) = rw_rulings_cross;
             }
         }
 };
@@ -2634,8 +2636,7 @@ FullMatrixType operator%(const Eigen::Vector3d &v, const FullMatrixType &v_2)
 
 FullMatrixType operator%(const FullMatrixType &v_2, const Eigen::Vector3d &v)
 {
-
-    assert((v_2.rows() == 3) && (v_2.cols() % 3 == 0) );
+    assert(v_2.rows() == 3 && v_2.cols() == 3);
     FullMatrixType result(3,3);
     Eigen::Vector3d v_2_col0 = v_2.col(0);
     Eigen::Vector3d v_2_col1 = v_2.col(1);
@@ -2647,51 +2648,8 @@ FullMatrixType operator%(const FullMatrixType &v_2, const Eigen::Vector3d &v)
     return result;
 }
 
-FullMatrixType operator&(const Eigen::Vector3d &v, const FullMatrixType &v_2)
-{
-    assert((v_2.rows() == 3) && (v_2.cols() % 3 == 0) );
-
-    FullMatrixType result(3, v_2.cols());
-    result.setZero();
-
-    size_t num_vertex_cols = v_2.cols() / 3;
-    for(int i = 0; i < num_vertex_cols; i++)
-    {
-        Eigen::Vector3d v_2_col0 = v_2.col(3*i);
-        Eigen::Vector3d v_2_col1 = v_2.col(3*i + 1);
-        Eigen::Vector3d v_2_col2 = v_2.col(3*i + 2);
-
-        result.col(3*i)     = v.cross(v_2_col0);
-        result.col(3*i + 1) = v.cross(v_2_col1);
-        result.col(3*i + 2) = v.cross(v_2_col2);
-    }
-    return result;
-}
-
-FullMatrixType operator&(const FullMatrixType &v_2, const Eigen::Vector3d &v)
-{
-    assert((v_2.rows() == 3) && (v_2.cols() % 3 == 0) );
-    assert(v_2.cols() % 3 == 0);
-
-    FullMatrixType result(3, v_2.cols());
-    result.setZero();
-
-    size_t num_vertex_cols = v_2.cols() / 3;
-    for(int i = 0; i < num_vertex_cols; i++)
-    {
-        Eigen::Vector3d v_2_col0 = v_2.col(3*i);
-        Eigen::Vector3d v_2_col1 = v_2.col(3*i + 1);
-        Eigen::Vector3d v_2_col2 = v_2.col(3*i + 2);
-
-        result.col(3*i)     = v_2_col0.cross(v);
-        result.col(3*i + 1) = v_2_col1.cross(v);
-        result.col(3*i + 2) = v_2_col2.cross(v);
-    }
-    return result;
-}
-
 template <typename ConfiguratorType>
-class ConstraintSqrdReducedGradient : public BaseOp<typename ConfiguratorType::VectorType, typename ConfiguratorType::VectorType>{
+class ConstraintSqrdReducedGradient : public BaseOp<typename ConfiguratorType::VectorType, typename ConfiguratorType::SparseMatrixType>{
     protected:
         typedef typename ConfiguratorType::RealType RealType;
         typedef typename ConfiguratorType::VectorType VectorType;
@@ -2731,14 +2689,16 @@ class ConstraintSqrdReducedGradient : public BaseOp<typename ConfiguratorType::V
                 dnormal_dv.setZero();
             }
 
-        void apply(const VectorType &vertices,  VectorType &Dest) const override
+        void apply(const VectorType &vertices,  MatrixType &Dest) const override
         {
             size_t num_dofs = 3*_quadTopol.getNumVertices();
 
-            //Dest.resize(3*(_num_faces - _quadTopol.getNumBdryFaces()), num_dofs);
+            Dest.resize(3*(_num_faces - _quadTopol.getNumBdryFaces()), num_dofs);
 
-            Dest.resize(num_dofs);
             Dest.setZero();
+
+            FullMatrixType derivs;
+            derivs.resize(Dest.rows(), num_dofs);
 
             // We only have a derivative of developability constraint w.r.t. vertices
             
@@ -2831,7 +2791,6 @@ class ConstraintSqrdReducedGradient : public BaseOp<typename ConfiguratorType::V
             for(_it_face; _it_face.valid(); _it_face++)
             {
                 int i = _it_face.idx();
-                int i_nbdry = _it_face.idx_nobdry();
 
                 // Calculate the derivatives of all adjacent ruling vectors
                 int he_0 = _quadTopol.getHalfEdgeOfQuad(i,0);
@@ -2996,8 +2955,9 @@ class ConstraintSqrdReducedGradient : public BaseOp<typename ConfiguratorType::V
                 FullMatrixType dr_he_30_dv_3_1 = normal_i%(dnormal_dv.block(3*face_3, 3*node_3_1, 3, 3));
                                                 //0; //normals.segment(3*face_3, 3).cross(dnormal_dv.block(3*i, 3*node_3_1, 3));
 
+
                 // Now, we consider the derivatives of the reweighted rulings
-                /*
+                
                 FullMatrixType drw_13_dv_i_0 = 2*dr_he_12_dv_i_0 - 2*dr_he_30_dv_i_0;
                 FullMatrixType drw_13_dv_i_1 = 2*dr_he_12_dv_i_1 - 2*dr_he_30_dv_i_1;
                 FullMatrixType drw_13_dv_i_2 = 2*dr_he_12_dv_i_2 - 2*dr_he_30_dv_i_2;
@@ -3015,49 +2975,6 @@ class ConstraintSqrdReducedGradient : public BaseOp<typename ConfiguratorType::V
                 FullMatrixType drw_02_dv_0_1 = 2*dr_he_01_dv_0_1;
                 FullMatrixType drw_02_dv_2_0 = -2*dr_he_23_dv_2_0;
                 FullMatrixType drw_02_dv_2_1 = -2*dr_he_23_dv_2_1;
-                */
-
-                FullMatrixType dr_he_01(3, num_dofs);
-                dr_he_01.setZero();
-                dr_he_01.block(0, 3*node_i_0, 3, 3) = dr_he_01_dv_i_0;
-                dr_he_01.block(0, 3*node_i_1, 3, 3) = dr_he_01_dv_i_1;
-                dr_he_01.block(0, 3*node_i_2, 3, 3) = dr_he_01_dv_i_2;
-                dr_he_01.block(0, 3*node_i_3, 3, 3) = dr_he_01_dv_i_3;
-                dr_he_01.block(0, 3*node_0_0, 3, 3) = dr_he_01_dv_0_0;
-                dr_he_01.block(0, 3*node_0_1, 3, 3) = dr_he_01_dv_0_1;
-                
-                FullMatrixType dr_he_12(3, num_dofs);
-                dr_he_12.setZero();
-                dr_he_12.block(0, 3*node_i_0, 3, 3) = dr_he_12_dv_i_0;
-                dr_he_12.block(0, 3*node_i_1, 3, 3) = dr_he_12_dv_i_1;
-                dr_he_12.block(0, 3*node_i_2, 3, 3) = dr_he_12_dv_i_2;
-                dr_he_12.block(0, 3*node_i_3, 3, 3) = dr_he_12_dv_i_3;
-                dr_he_12.block(0, 3*node_1_0, 3, 3) = dr_he_12_dv_1_0;
-                dr_he_12.block(0, 3*node_1_1, 3, 3) = dr_he_12_dv_1_1;
-
-                FullMatrixType dr_he_23(3, num_dofs);
-                dr_he_23.setZero();
-                dr_he_23.block(0, 3*node_i_0, 3, 3) = dr_he_23_dv_i_0;
-                dr_he_23.block(0, 3*node_i_1, 3, 3) = dr_he_23_dv_i_1;
-                dr_he_23.block(0, 3*node_i_2, 3, 3) = dr_he_23_dv_i_2;
-                dr_he_23.block(0, 3*node_i_3, 3, 3) = dr_he_23_dv_i_3;
-                dr_he_23.block(0, 3*node_2_0, 3, 3) = dr_he_23_dv_2_0;
-                dr_he_23.block(0, 3*node_2_1, 3, 3) = dr_he_23_dv_2_1;
-
-                FullMatrixType dr_he_30(3, num_dofs);
-                dr_he_30.setZero();
-                dr_he_30.block(0, 3*node_i_0, 3, 3) = dr_he_30_dv_i_0;
-                dr_he_30.block(0, 3*node_i_1, 3, 3) = dr_he_30_dv_i_1;
-                dr_he_30.block(0, 3*node_i_2, 3, 3) = dr_he_30_dv_i_2;
-                dr_he_30.block(0, 3*node_i_3, 3, 3) = dr_he_30_dv_i_3;
-                dr_he_30.block(0, 3*node_3_0, 3, 3) = dr_he_30_dv_3_0;
-                dr_he_30.block(0, 3*node_3_1, 3, 3) = dr_he_30_dv_3_1;
-
-                FullMatrixType drw_13(3, num_dofs);
-                drw_13 = 2*dr_he_12 - 2*dr_he_30;
-
-                FullMatrixType drw_02(3, num_dofs);
-                drw_02 = 2*dr_he_01 - 2*dr_he_23;
 
                 // Now, finally calculate the developability constraint gradient
                 // Compute the reweighted rulings themselves
@@ -3078,9 +2995,6 @@ class ConstraintSqrdReducedGradient : public BaseOp<typename ConfiguratorType::V
 
                 Eigen::Vector3d rw_rulings_cross = rw_ruling_13.cross(rw_ruling_02);
 
-                FullMatrixType factor_1 = 2 * ((drw_13 & rw_ruling_02) + (rw_ruling_13 & drw_02));
-                Dest += factor_1.transpose() * rw_rulings_cross;
-
                 /*
                 Dest.segment(3*node_i_0, 3) += 2*((drw_13_dv_i_0%(rw_ruling_02) + rw_ruling_13%(drw_02_dv_i_0)).transpose()*rw_rulings_cross);
                 // Derivative w.r.t. i_1
@@ -3090,23 +3004,39 @@ class ConstraintSqrdReducedGradient : public BaseOp<typename ConfiguratorType::V
                 // Derivative w.r.t. i_3
                 Dest.segment(3*node_i_3, 3) += 2*((drw_13_dv_i_3%(rw_ruling_02) + rw_ruling_13%(drw_02_dv_i_3)).transpose()*rw_rulings_cross);
                 // Derivative w.r.t. 0_0
-                Dest.segment(3*node_0_0, 3) += 2*((rw_ruling_13%(drw_02_dv_0_0)).transpose()*rw_rulings_cross);
+                Dest.segment(3*node_0_0, 3) += 2*((rw_ruling_13%(drw_02_vd_0_0)).transpose()*rw_rulings_cross);
                 // Derivative w.r.t. 0_1
-                Dest.segment(3*node_0_1, 3) += 2*((rw_ruling_13%(drw_02_dv_0_1)).transpose()*rw_rulings_cross);
+                Dest.segment(3*node_0_1, 3) += 2*((rw_ruling_13%(drw_02_vd_0_1)).transpose()*rw_rulings_cross);
                 // Derivative w.r.t. 1_0
-                Dest.segment(3*node_1_0, 3) += 2*((drw_13_dv_1_0%(rw_ruling_02)).transpose()*rw_rulings_cross);
+                Dest.segment(3*node_1_0, 3) += 2*((drw_13_vd_1_0%(rw_ruling_02)).transpose()*rw_rulings_cross);
                 // Derivative w.r.t. 1_1
-                Dest.segment(3*node_1_1, 3) += 2*((drw_13_dv_1_1%(rw_ruling_02)).transpose()*rw_rulings_cross);
+                Dest.segment(3*node_1_1, 3) += 2*((drw_13_vd_1_1%(rw_ruling_02)).transpose()*rw_rulings_cross);
                 // Derivative w.r.t. 2_0
-                Dest.segment(3*node_2_0, 3) += 2*((rw_ruling_13%(drw_02_dv_2_0)).transpose()*rw_rulings_cross);
+                Dest.segment(3*node_2_0, 3) += 2*((rw_ruling_13%(drw_02_vd_2_0)).transpose()*rw_rulings_cross);
                 // Derivative w.r.t. 2_1
-                Dest.segment(3*node_2_1, 3) += 2*((rw_ruling_13%(drw_02_dv_2_1)).transpose()*rw_rulings_cross);
+                Dest.segment(3*node_2_1, 3) += 2*((rw_ruling_13%(drw_02_vd_2_1)).transpose()*rw_rulings_cross);
                 // Derivative w.r.t. 3_0
-                Dest.segment(3*node_3_0, 3) += 2*(((drw_13_dv_3_0)%rw_ruling_02).transpose()*rw_rulings_cross);
+                Dest.segment(3*node_3_0, 3) += 2*(((drw_13_vd_3_0)%rw_ruling_02).transpose()*rw_rulings_cross);
                 // Derivative w.r.t. 3_1
-                Dest.segment(3*node_3_1, 3) += 2*(((drw_13_dv_3_1)%rw_ruling_02).transpose()*rw_rulings_cross);
+                Dest.segment(3*node_3_1, 3) += 2*(((drw_13_vd_3_1)%rw_ruling_02).transpose()*rw_rulings_cross);
                 */
+
+                int i_nbdry = _it_face.idx_nobdry();
+
+                derivs.block(3*i_nbdry, 3*node_i_0, 3, 3) += ((drw_13_dv_i_0 % (rw_ruling_02)) + (rw_ruling_13 % (drw_02_dv_i_0)));
+                derivs.block(3*i_nbdry, 3*node_i_1, 3, 3) += ((drw_13_dv_i_1 % (rw_ruling_02)) + (rw_ruling_13 % (drw_02_dv_i_1)));
+                derivs.block(3*i_nbdry, 3*node_i_2, 3, 3) += ((drw_13_dv_i_2 % (rw_ruling_02)) + (rw_ruling_13 % (drw_02_dv_i_2)));   
+                derivs.block(3*i_nbdry, 3*node_i_3, 3, 3) += ((drw_13_dv_i_3 % (rw_ruling_02)) + (rw_ruling_13 % (drw_02_dv_i_3)));
+                derivs.block(3*i_nbdry, 3*node_0_0, 3, 3) += (rw_ruling_13 % (drw_02_dv_0_0));
+                derivs.block(3*i_nbdry, 3*node_0_1, 3, 3) += (rw_ruling_13 % (drw_02_dv_0_1));
+                derivs.block(3*i_nbdry, 3*node_1_0, 3, 3) += (drw_13_dv_1_0 % (rw_ruling_02));
+                derivs.block(3*i_nbdry, 3*node_1_1, 3, 3) += (drw_13_dv_1_1 % (rw_ruling_02));
+                derivs.block(3*i_nbdry, 3*node_2_0, 3, 3) += (rw_ruling_13 % (drw_02_dv_2_0));
+                derivs.block(3*i_nbdry, 3*node_2_1, 3, 3) += (rw_ruling_13 % (drw_02_dv_2_1));
+                derivs.block(3*i_nbdry, 3*node_3_0, 3, 3) += (drw_13_dv_3_0 % (rw_ruling_02));
+                derivs.block(3*i_nbdry, 3*node_3_1, 3, 3) += (drw_13_dv_3_1 % (rw_ruling_02));
             }
+            Dest = derivs.sparseView();
         }
 
 };

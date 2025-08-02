@@ -132,41 +132,58 @@ try{
     // determine boundary mask for optimization
     // and deform part of boundary
     std::vector<int> bdryMaskOpt;
+    std::vector<int> bdryMaskDirichletDef_xy;
     for( int i = 0; i < plateTopol.getNumVertices(); i++ ){
         VecType coords;
         getXYZCoord<VectorType, VecType>( plateGeomInitial, coords, i);
         // fix all outer vertices and move them slightly towards the middle of the square
         if(std::abs(coords[0] - 1.0) < 1e-6 && std::abs(coords[1] - 1.0) < 1e-6){
             bdryMaskOpt.push_back( i );
+            bdryMaskDirichletDef_xy.push_back( i );
             coords[0] -= 0.2;
             coords[1] -= 0.2;
             coords[2] += 0.2;
         }
         else if(std::abs(coords[0]) < 1e-6 && std::abs(coords[1] - 1.0) < 1e-6){
             bdryMaskOpt.push_back( i );
+            bdryMaskDirichletDef_xy.push_back( i );
             coords[0] += 0.2;
             coords[1] -= 0.2;
             coords[2] += 0.2;
         }
         else if(std::abs(coords[0] - 1.0) < 1e-6 && std::abs(coords[1]) < 1e-6){
             bdryMaskOpt.push_back( i );
+            bdryMaskDirichletDef_xy.push_back( i );
             coords[0] -= 0.2;
             coords[1] += 0.2;
             coords[2] += 0.2;
         }
         else if(std::abs(coords[0]) < 1e-6 && std::abs(coords[1]) < 1e-6){
             bdryMaskOpt.push_back( i );
+            bdryMaskDirichletDef_xy.push_back( i );
             coords[0] += 0.2;
             coords[1] += 0.2;
             coords[2] += 0.2;
+        }
+        else if(std::abs(coords[0]  - 0.5) < 0.2 && std::abs(coords[1] - 0.5) < 0.2){
+            bdryMaskDirichletDef_xy.push_back( i );
         }
         setXYZCoord<VectorType, VecType>( plateGeomDef, coords, i);
     }
 
     extendBoundaryMask( plateTopol.getNumVertices(), bdryMaskOpt );
+    std::vector<int> active_xy = (std::vector<int>){1,1,0};
+    extendBoundaryMaskPartial( plateTopol.getNumVertices(), bdryMaskDirichletDef_xy, active_xy);
 
     setGeometry( plate, plateGeomDef );
     OpenMesh::IO::write_mesh(plate, "deformed_mesh.ply");
+
+    // set Dirichlet boundary conditions
+    DirichletSmoother<DefaultConfigurator> dirichletSmoother( plateGeomDef, bdryMaskDirichletDef_xy, plateTopol );
+    dirichletSmoother.apply( plateGeomDef, plateGeomDef );
+
+    setGeometry( plate, plateGeomDef );
+    OpenMesh::IO::write_mesh(plate, "deformed_mesh_after_smoothing.ply");
 
     VectorType edge_weights;
     FoldDofsCross<DefaultConfigurator> foldDofs( plateTopol, plateGeomInitial, plateGeomRef, bdryMaskRef_1);

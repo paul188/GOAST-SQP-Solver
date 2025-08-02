@@ -108,6 +108,7 @@ public:
   // x^{k+1} = x^k - tau * E'[x^k]
   void solve( const VectorType &x_0, VectorType &x_k ) const {
 
+    /*
     std::string _path;
     std::string _path_vert_1;
     std::string _path_vert_2;
@@ -205,7 +206,7 @@ public:
     _outFile_dev = std::ofstream(_path_dev, std::ios::app);  // open in append mode
     if (!_outFile_dev) {
         std::cerr << "Failed to open file for dev.\n";
-    }
+    }*/
 
 
     if ( _maxIterations == 0 )
@@ -282,6 +283,7 @@ public:
       if ( _bdryMask )
         applyMaskToVector( *_bdryMask, currGradient );
       
+      /*
       _outFile << "here"<<std::endl;
       _outFile_vert_1 <<" here"<<std::endl;
       _outFile_vert_2 <<" here"<<std::endl;
@@ -294,6 +296,7 @@ public:
       _outFile_ruling_1 <<" here"<<std::endl;
       _outFile_ruling_2 <<" here"<<std::endl;
       _outFile_dev <<" here"<<std::endl;
+      */
       _E.apply( x_k, energyScalar );
       energyNew = energyScalar;
 
