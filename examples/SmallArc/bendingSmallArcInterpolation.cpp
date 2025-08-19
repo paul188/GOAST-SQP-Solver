@@ -257,6 +257,17 @@ try{
     plate.request_edge_colors();
     plate.request_vertex_colors();
 
+    std::cout<<"Fold vertices: "<<std::endl;
+    for(int i = 0; i < plateTopol.getNumVertices(); i++)
+    {
+        VecType coords;
+        getXYZCoord<VectorType, VecType>( plateGeomInitial, coords, i);
+        if(coords[0] == coords[1] || coords[0] == 1.0 - coords[1]){
+            std::cout<<i<<std::endl;
+        }
+    }
+    std::cout<<"End fold vertices."<<std::endl;
+
     for(int edgeIdx = 0; edgeIdx < plateTopol.getNumEdges(); edgeIdx++){
         int node_i = plateTopol.getAdjacentNodeOfEdge(edgeIdx,0);
         int node_j = plateTopol.getAdjacentNodeOfEdge(edgeIdx,1);

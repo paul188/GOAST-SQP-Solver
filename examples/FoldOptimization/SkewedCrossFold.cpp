@@ -216,7 +216,7 @@ try{
     std::sort(bdryMaskRef_1.begin(), bdryMaskRef_1.end());
 
     // Now, rotate the fold
-    FoldDofsSkewedCross<DefaultConfigurator> foldDofs( plateTopol, plateGeomInitial, plateGeomInitial, bdryMaskRef_1);
+    FoldDofsSkewedCross<DefaultConfigurator> foldDofs( plateTopol, plateGeomInitial, plateGeomInitial, bdryMaskRef_1, scaling_piece_1, scaling_piece_2, scaling_piece_3, scaling_piece_4);
     std::vector<int> foldVertices;
     foldDofs.getFoldVertices(foldVertices);
     //FoldDofsSkewedCrossGradient<DefaultConfigurator> DfoldDofs( plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices, scaling_piece_1, scaling_piece_2, scaling_piece_3, scaling_piece_4);
@@ -376,37 +376,35 @@ try{
     optPars.setQuietMode( SHOW_ALL );
     VectorType initialization = plateGeomDef;
 
+    OpenMesh::IO::read_mesh( plate, "deformed_plate_after_optimization_dirichlet.ply" );
+    getGeometry(plate, plateGeomDef);
+
+    auto foldDofsPtr = std::make_shared<FoldDofsSkewedCross<DefaultConfigurator>>( plateTopol, plateGeomInitial, plateGeomInitial, bdryMaskRef_1, scaling_piece_1, scaling_piece_2, scaling_piece_3, scaling_piece_4);
+    auto DfoldDofsPtr = std::make_shared<FoldDofsSkewedCrossGradient<DefaultConfigurator>>( plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices, scaling_piece_1, scaling_piece_2, scaling_piece_3, scaling_piece_4);
+    RealType t_0 = -0.268649;
+    VectorType t_initial = VectorType::Ones(foldDofs.getNumDofs())*t_0;
+    VectorType vertexDOFS_initial = VectorType::Zero(3*plateTopol.getNumVertices());
+    ProblemDOFs<DefaultConfigurator> problemDOFs(t_initial, vertexDOFS_initial, plateGeomDef, foldDofsPtr, DfoldDofsPtr);
+    plateGeomRef = problemDOFs.getReferenceGeometry();
+    
     std::cerr<< "Startting Newton Linesearch..."<<std::endl;
     LineSearchNewton<DefaultConfigurator> NLS( E_tot, DE_tot, D2E_tot, optPars);
     NLS.setBoundaryMask( bdryMaskOpt );
     NLS.solve( initialization, plateGeomDef );
 
-    VectorType deriv;
-    DE_tot.apply(plateGeomDef, deriv);
-    applyMaskToVector(bdryMaskOpt, deriv);
-    std::cout<<std::setprecision(12)<<"Norm of gradient: "<<deriv.norm()<<std::endl;
-
     setGeometry( plate, plateGeomDef );
-    OpenMesh::IO::write_mesh( plate, "deformed_plate_after_optimization_dirichlet.ply" );
+    OpenMesh::IO::write_mesh( plate, "deformed_plate_new.ply" );
 
+    /*
     VectorType testGeom(plateGeomDef.size());
     OpenMesh::IO::read_mesh( plate, "deformed_plate_after_optimization_dirichlet.ply");
     getGeometry( plate, testGeom );
 
     printVectorToFile(testGeom,"test/test_deformed_2.txt");
     printVectorToFile(plateGeomRef, "test/test_reference_2.txt");
+    */
 
     // Try to recreate the factory object
-    auto foldDofsPtr = std::make_shared<FoldDofsSkewedCross<DefaultConfigurator>>( plateTopol, plateGeomInitial, plateGeomInitial, bdryMaskRef_1);
-    auto DfoldDofsPtr = std::make_shared<FoldDofsSkewedCrossGradient<DefaultConfigurator>>( plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices);
-    RealType t_0 = 0.0;
-    VectorType t_initial = VectorType::Ones(foldDofs.getNumDofs())*t_0;
-    VectorType vertexDOFS_initial = VectorType::Zero(3*plateTopol.getNumVertices());
-    ProblemDOFs<DefaultConfigurator> problemDOFs(t_initial, vertexDOFS_initial, plateGeomDef, foldDofsPtr, DfoldDofsPtr);
-
-    std::cout<< (testGeom - plateGeomDef).norm() << std::endl;
-    DE_tot.apply(plateGeomDef, deriv);
-    applyMaskToVector(bdryMaskOpt, deriv);
 } 
 catch ( BasicException &el ){
       std::cerr << std::endl << "ERROR!! CAUGHT FOLLOWING EXECEPTION: " << std::endl << el.getMessage() << std::endl << std::flush;

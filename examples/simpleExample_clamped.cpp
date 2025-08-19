@@ -19,6 +19,8 @@
 #include <goast/DiscreteShells.h>
 #include <goast/Smoothers.h>
 #include <unordered_set>
+#include <memory>
+#include <unordered_set>
 
 //==============================================================================================================
 typedef DefaultConfigurator::VectorType VectorType;
@@ -44,7 +46,7 @@ try{
     
 // load flat plate [0,1]^2
     TriMesh plate;
-    OpenMesh::IO::read_mesh(plate, "../../data/plate/paperCrissCross.ply");
+    OpenMesh::IO::read_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/data/plate/paperCrissCross.ply");
     MeshTopologySaver plateTopol( plate );
     std::cerr << "num of nodes = " << plateTopol.getNumVertices() << std::endl;
     VectorType plateGeomRef, plateGeomDef, plateGeomInitial;
@@ -161,6 +163,45 @@ try{
 
     std::cerr << "\n\nb) OPTIMIZATION BY DIRECT MINIMIZATION" << std::endl;
 
+    std::vector<int> bdryMaskRef_1;
+    std::vector<int> bdryMaskRef_2;
+    for( int i = 0; i < plateTopol.getNumVertices(); i++ ){
+        VecType coords;
+        getXYZCoord<VectorType, VecType>( plateGeomRef, coords, i);
+        if( std::abs(coords[0]) < 1e-6 || std::abs(coords[0] - 1.0) < 1e-6 ){
+            bdryMaskRef_1.push_back( i );
+        }
+        if(std::abs(coords[0] - 0.5) < 1e-6){
+            bdryMaskRef_1.push_back( i );
+        }
+        if( std::abs(coords[1]) < 1e-6 || std::abs(coords[1] - 1.0) < 1e-6 ){
+            bdryMaskRef_2.push_back( i );
+        }
+
+        setXYZCoord<VectorType, VecType>( plateGeomRef, coords, i);
+    }
+
+    extendBoundaryMask( plateTopol.getNumVertices(), bdryMaskRef_1 );
+    std::vector<int> activeRef_2 = (std::vector<int>){0,1,1};
+    extendBoundaryMaskPartial( plateTopol.getNumVertices(), bdryMaskRef_2 , activeRef_2);
+
+    // Use an unordered_set to remove duplicates
+    std::unordered_set<int> uniqueEntries_ref(bdryMaskRef_1.begin(), bdryMaskRef_1.end());
+    uniqueEntries_ref.insert(bdryMaskRef_2.begin(), bdryMaskRef_2.end());
+
+    // Move the unique elements back to bdryMaskRef_1 in order
+    bdryMaskRef_1.assign(uniqueEntries_ref.begin(), uniqueEntries_ref.end());
+    std::sort(bdryMaskRef_1.begin(), bdryMaskRef_1.end());
+    auto foldDofsPtr = std::make_shared<FoldDofsSimpleLine<DefaultConfigurator>>(plateTopol,plateGeomInitial, plateGeomRef, bdryMaskRef_1);
+
+    std::vector<int> foldVertices;
+    foldDofsPtr -> getFoldVertices(foldVertices);
+
+    auto DfoldDofsPtr = std::make_shared<FoldDofsSimpleLineGradient<DefaultConfigurator>>(plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices);
+    VectorType t_0 = VectorType::Ones(1)*0.0;
+    ProblemDOFs<DefaultConfigurator> problemDOFs(t_0, VectorType::Zero(3*plateTopol.getNumVertices()), plateGeomDef, foldDofsPtr, DfoldDofsPtr);
+    plateGeomRef = problemDOFs.getReferenceGeometry();
+
     SimpleBendingEnergy<DefaultConfigurator> E_bend( plateTopol, plateGeomRef, true , edge_weights);
     SimpleBendingGradientDef<DefaultConfigurator> DE_bend( plateTopol, plateGeomRef , edge_weights);
     SimpleBendingHessianDef<DefaultConfigurator> D2E_bend( plateTopol, plateGeomRef , edge_weights);
@@ -184,6 +225,8 @@ try{
     AdditionGradient<DefaultConfigurator> DE_tot( factors, DE_mem, DE_bend);
     AdditionHessian<DefaultConfigurator> D2E_tot(factors, D2E_mem, D2E_bend);
 
+    printVectorToFile( plateGeomDef, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/plateGeomDef_init.txt" , 15);
+
     // set outer optimization parameters
     OptimizationParameters<DefaultConfigurator> optPars;
     optPars.setGradientIterations( 1000);
@@ -191,6 +234,19 @@ try{
     optPars.setNewtonIterations( 1000 );
     optPars.setQuietMode( SHOW_TERMINATION_INFO );
     VectorType initialization = plateGeomDef;
+
+    std::cout<<"Indices: "<<std::endl;
+
+    for(int i = 0; i < plateTopol.getNumVertices(); i++)
+    {
+        VecType coords;
+        getXYZCoord<VectorType, VecType>( plateGeomDef, coords, i);
+        if(std::abs(coords[0] - 0.5) < 1e-4)
+        {
+            std::cout<<i<<", ";
+        }
+    }
+    std::cout<<std::endl;
 
     std::cerr<< "Start Newton " <<std::endl;
     initialization = plateGeomDef;
@@ -200,7 +256,8 @@ try{
 
     // saving
     setGeometry( plate, plateGeomDef );
-    OpenMesh::IO::write_mesh(plate, "bendingFoldSol_withNewton2.ply");
+    OpenMesh::IO::write_mesh(plate, "new.ply");
+    printVectorToFile( plateGeomDef, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/new.txt" , 15);
 
   } 
   catch ( BasicException &el ){

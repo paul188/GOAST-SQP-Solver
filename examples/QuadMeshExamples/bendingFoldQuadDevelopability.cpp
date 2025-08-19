@@ -35,7 +35,7 @@ int main()
         MeshTopologySaver centroidTopol(centroid_base_mesh);
         VectorType centroidReferenceGeometry;
         getGeometry(centroid_base_mesh, centroidReferenceGeometry);
-        OpenMesh::IO::write_mesh(centroid_base_mesh, "centroid_base.ply");
+        OpenMesh::IO::write_mesh(centroid_base_mesh, "centroid_base_coarse.ply");
 
         // ---------------------  GENERATE MAPS BETWEEN QUAD AND CENTROID TOPOLOGIES ----------------------------
         std::map<int,int> quadToCentroidIdxMap;
@@ -176,7 +176,7 @@ int main()
 
         VectorType factors_elasticity_dev(2);
         factors_elasticity_dev[0] = 1.0; // Elasticity factor
-        factors_elasticity_dev[1] = 0.0; // Developability factor
+        factors_elasticity_dev[1] = 10000.0; // Developability factor
 
         constraint_weights<DefaultConfigurator> weights;
         weights.fair_v = 0.0;//50.0;
@@ -204,7 +204,7 @@ int main()
         // set outer optimization parameters
         OptimizationParameters<DefaultConfigurator> optPars;
         optPars.setGradientIterations( 200 );
-        optPars.setBFGSIterations( 1000 );
+        optPars.setBFGSIterations( 2000 );
         optPars.setQuietMode( SHOW_ALL );
 
         VectorType init = VectorType::Zero(varsIdx["num_dofs"]);

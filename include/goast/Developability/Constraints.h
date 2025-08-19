@@ -843,6 +843,9 @@ class Constraint : public BaseOp<typename ConfiguratorType::VectorType, typename
             int i_nobdry = _it_face.idx_nobdry();
             Dest.segment(_cons_idx["dev"] + 3*i_nobdry,3) = (_vars_idx.reweighted_ruling_1(vars, i_nobdry). template head<3>()).cross(_vars_idx.reweighted_ruling_2(vars, i_nobdry). template head<3>());
         }
+
+        VectorType constraint_dev = Dest.segment(_cons_idx["dev"], 3*(_num_faces - bdryFaces.size()));
+        //std::cout<<"Developability constraint: "<<constraint_dev.norm()<<std::endl;
     }
 
     void get_constraint_fair_v(const VectorType &vars, VectorType &Dest) const
@@ -980,31 +983,6 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
           _vars_idx(varsIdx),
           _cons_idx(constraintIdx)
         {
-        }
-
-        void apply(const VectorType &vars, MatrixType &Dest) const override{
-
-            size_t num_dofs = _vars_idx["num_dofs"];
-            size_t num_constraints = _cons_idx["num_cons"];
-
-            if(Dest.rows() != num_constraints || Dest.cols() != num_dofs){
-                Dest.resize(num_constraints, num_dofs);
-            }
-
-            auto Id = MatrixType(3,3);
-            Id.setIdentity();
-
-            std::vector<Eigen::Triplet<RealType>> triplet;
-
-            for(int i = 0; i < _num_vertices; i++){
-                RealType w_i = _vars_idx.vertex_weight(vars, i);
-                VectorType vec = -_vars_idx.vertex(vars, i);
-                MatrixType vec_mat = vectorToSparseMat(vec);
-                assignSparseBlockInplace(Dest,-w_i*Id,_cons_idx["vertex_2"] + 3*i,3*i + _vars_idx["vertices"],triplet);
-                assignSparseBlockInplace(Dest,vec_mat,_cons_idx["vertex_2"] + 3*i,i + _vars_idx["weights"],triplet);
-                assignSparseBlockInplace(Dest,Id,_cons_idx["vertex_2"] +3*i,3*i + _vars_idx["reweighted_vertices"],triplet);
-            }
-
         }
 
         void get_constraintgrad_vertex_1(const VectorType &vars, MatrixType &Dest) const {
@@ -1916,7 +1894,7 @@ class ConstraintGrad : public BaseOp<typename ConfiguratorType::VectorType, type
         }
 
 
-        void apply_all(const VectorType &vars, MatrixType &Dest) const
+        void apply(const VectorType &vars, MatrixType &Dest) const override
         {
             size_t num_dofs = _vars_idx["num_dofs"];
             // Change num_constraints back later !
@@ -2542,6 +2520,8 @@ class ConstraintSqrdReduced : public BaseOp<typename ConfiguratorType::VectorTyp
                 int node_2 = _quadTopol.getNodeOfQuad(i,2);
                 int node_3 = _quadTopol.getNodeOfQuad(i,3);
 
+                // OLD
+                
                 // Get the weights of the vertices
                 RealType w_0 = 1.0;//_vars_idx.vertex_weight(vars, node_0);
                 RealType w_1 = 1.0;//_vars_idx.vertex_weight(vars, node_1);
@@ -2563,12 +2543,42 @@ class ConstraintSqrdReduced : public BaseOp<typename ConfiguratorType::VectorTyp
                 Eigen::Vector3d rw_e_02 = ((w_0 + w_1)*(rw_v_2 + rw_v_3) - (w_2 + w_3)*(rw_v_0 + rw_v_1)).template head<3>();
                 Eigen::Vector3d rw_e_13 = ((w_1 + w_2)*(rw_v_0 + rw_v_3) - (w_0 + w_3)*(rw_v_1 + rw_v_2)).template head<3>();
 
+                // NEW 
+                // Get the weights of the vertices
+                /*
+                RealType w_0 = 0.5;//_vars_idx.vertex_weight(vars, node_0);
+                RealType w_1 = 0.5;//_vars_idx.vertex_weight(vars, node_1);
+                RealType w_2 = 0.5;//_vars_idx.vertex_weight(vars, node_2);
+                RealType w_3 = 0.5;//_vars_idx.vertex_weight(vars, node_3);
+
+                VectorType v_0 = vertices.segment(3*node_0, 3);
+                VectorType v_1 = vertices.segment(3*node_1, 3);
+                VectorType v_2 = vertices.segment(3*node_2, 3);
+                VectorType v_3 = vertices.segment(3*node_3, 3);
+
+                // Calculate the reweighted vertices
+                VectorType rw_v_0 = v_0 * w_0;
+                VectorType rw_v_1 = v_1 * w_1;
+                VectorType rw_v_2 = v_2 * w_2;
+                VectorType rw_v_3 = v_3 * w_3;
+
+                // Calculate the reweighted edges
+                Eigen::Vector3d rw_e_02 = ((rw_v_2 + rw_v_3) - (rw_v_0 + rw_v_1)).template head<3>();
+                Eigen::Vector3d rw_e_13 = ((rw_v_0 + rw_v_3) - (rw_v_1 + rw_v_2)).template head<3>();
+                */
+
                 // Calculate the face normals with consistent orientation
                 Eigen::Vector3d face_normal = rw_e_02.cross(rw_e_13);
                 face_normal = face_normal / face_normal.norm();
                 
                 normals.segment(3*i, 3) = face_normal;
             }   
+
+            /*
+            for(int i = 0; i < _num_faces; i++)
+            {
+                std::cout<< "Face " << i << ": Normal = " << normals.segment(3*i, 3).transpose() << std::endl;
+            }*/
 
             // Next, compute the reweighted rulings
             _it_face.reset();
@@ -2714,7 +2724,7 @@ class ConstraintSqrdReducedGradient : public BaseOp<typename ConfiguratorType::V
         mutable FullMatrixType dnormal_dv;
 
     public:
-        ConstraintSqrdReducedGradient(QuadMeshTopologySaver &quadTopol):
+        ConstraintSqrdReducedGradient(const QuadMeshTopologySaver &quadTopol):
             _quadTopol(quadTopol),
             _num_vertices(quadTopol.getNumVertices()),
             _num_faces(quadTopol.getNumFaces()),
@@ -3111,6 +3121,165 @@ class ConstraintSqrdReducedGradient : public BaseOp<typename ConfiguratorType::V
 
 };
 
+template<typename ConfiguratorType>
+class EdgeLengthQuadEnergy : public BaseOp<typename ConfiguratorType::VectorType, typename ConfiguratorType::RealType>{
+    protected:
+        typedef typename ConfiguratorType::VectorType VectorType;
+        typedef typename ConfiguratorType::RealType RealType;
+        typedef typename ConfiguratorType::FullMatrixType FullMatrixType;
+
+        const QuadMeshTopologySaver &_quadTopol;
+        const VectorType &_inactiveGeometry;
+
+    public:
+        EdgeLengthQuadEnergy(const QuadMeshTopologySaver &quadTopol,
+                        const VectorType &inactiveGeometry
+                    ) : _quadTopol(quadTopol),
+                        _inactiveGeometry(inactiveGeometry)
+        {}
+
+        void apply(const VectorType &quad_geom, RealType &Dest) const override
+        {
+            Dest = 0.0;
+            // penalize differences in edge lengths
+            for(int i = 0; i < _quadTopol.getNumEdges(); i++)
+            {
+                int node_0 = _quadTopol.getAdjacentNodeOfEdge(i, 0);
+                int node_1 = _quadTopol.getAdjacentNodeOfEdge(i, 1);
+
+                // Get the positions of the nodes
+                Eigen::Vector3d pos_0 = quad_geom.segment(3*node_0, 3);
+                Eigen::Vector3d pos_1 = quad_geom.segment(3*node_1, 3);
+
+                Eigen::Vector3d pos_0_inactive = _inactiveGeometry.segment(3*node_0, 3);
+                Eigen::Vector3d pos_1_inactive = _inactiveGeometry.segment(3*node_1, 3);
+
+                // Calculate the squared edge lengths
+                RealType edge_length = (pos_0 - pos_1).norm();
+                RealType edge_length_inactive = (pos_0_inactive - pos_1_inactive).norm();
+
+                RealType log_diff = (std::log(edge_length) - std::log(edge_length_inactive));
+                Dest += log_diff*log_diff;
+            }
+
+            // penalize differences in face diagonals
+            for(int i = 0; i < _quadTopol.getNumFaces(); i++)
+            {
+                int node_0 = _quadTopol.getNodeOfQuad(i, 0);
+                int node_1 = _quadTopol.getNodeOfQuad(i, 1);
+                int node_2 = _quadTopol.getNodeOfQuad(i, 2);
+                int node_3 = _quadTopol.getNodeOfQuad(i, 3);
+
+                // Get the positions of the nodes
+                Eigen::Vector3d pos_0 = quad_geom.segment(3*node_0, 3);
+                Eigen::Vector3d pos_1 = quad_geom.segment(3*node_1, 3);
+                Eigen::Vector3d pos_2 = quad_geom.segment(3*node_2, 3);
+                Eigen::Vector3d pos_3 = quad_geom.segment(3*node_3, 3);
+
+                Eigen::Vector3d pos_0_inactive = _inactiveGeometry.segment(3*node_0, 3);
+                Eigen::Vector3d pos_1_inactive = _inactiveGeometry.segment(3*node_1, 3);
+                Eigen::Vector3d pos_2_inactive = _inactiveGeometry.segment(3*node_2, 3);
+                Eigen::Vector3d pos_3_inactive = _inactiveGeometry.segment(3*node_3, 3);
+
+                // Calculate the squared face diagonals
+                RealType diag_0 = (pos_0 - pos_2).norm();
+                RealType diag_1 = (pos_1 - pos_3).norm();
+
+                RealType diag_0_inactive = (pos_0_inactive - pos_2_inactive).norm();
+                RealType diag_1_inactive = (pos_1_inactive - pos_3_inactive).norm();
+
+                RealType log_diff_diag_0 = (std::log(diag_0) - std::log(diag_0_inactive));
+                RealType log_diff_diag_1 = (std::log(diag_1) - std::log(diag_1_inactive));
+
+                Dest += log_diff_diag_0*log_diff_diag_0 + log_diff_diag_1*log_diff_diag_1;
+            }
+        }
+};
+
+
+template<typename ConfiguratorType>
+class EdgeLengthQuadEnergyGradient : public BaseOp<typename ConfiguratorType::VectorType, typename ConfiguratorType::VectorType>{
+    protected:
+        typedef typename ConfiguratorType::VectorType VectorType;
+        typedef typename ConfiguratorType::RealType RealType;
+        typedef typename ConfiguratorType::FullMatrixType FullMatrixType;
+
+        const QuadMeshTopologySaver &_quadTopol;
+        const VectorType &_inactiveGeometry;
+
+    public:
+        EdgeLengthQuadEnergyGradient(const QuadMeshTopologySaver &quadTopol,
+                                const VectorType &inactiveGeometry
+                            ) : _quadTopol(quadTopol),
+                                _inactiveGeometry(inactiveGeometry)
+        {}
+
+        void apply(const VectorType &quad_geom, VectorType &Dest) const override
+        {
+            Dest.setZero();
+            if(Dest.size() != quad_geom.size())
+            {
+                Dest.resize(quad_geom.size());
+            }
+            // differentiate penalizations in edge length
+            for(int i = 0; i < _quadTopol.getNumEdges(); i++)
+            {
+                int node_0 = _quadTopol.getAdjacentNodeOfEdge(i, 0);
+                int node_1 = _quadTopol.getAdjacentNodeOfEdge(i, 1);
+
+                Eigen::Vector3d pos_0 = quad_geom.segment(3*node_0, 3);
+                Eigen::Vector3d pos_1 = quad_geom.segment(3*node_1, 3);
+
+                Eigen::Vector3d pos_0_inactive = _inactiveGeometry.segment(3*node_0, 3);
+                Eigen::Vector3d pos_1_inactive = _inactiveGeometry.segment(3*node_1, 3);
+
+                RealType edge_length = (pos_0 - pos_1).norm();
+                RealType edge_length_sqrd = (pos_0 - pos_1).squaredNorm();
+                RealType edge_length_inactive = (pos_0_inactive - pos_1_inactive).norm();
+
+                RealType log_diff = (std::log(edge_length) - std::log(edge_length_inactive));
+
+                Dest.segment(3*node_0, 3) += 2*log_diff*(1.0/edge_length_sqrd)*(pos_0 - pos_1);
+                Dest.segment(3*node_1, 3) += 2*log_diff*(1.0/edge_length_sqrd)*(pos_1 - pos_0);
+            }
+
+            // differentiate penalizations in face diagonals
+            for(int i = 0; i < _quadTopol.getNumFaces(); i++)
+            {
+                int node_0 = _quadTopol.getNodeOfQuad(i, 0);
+                int node_1 = _quadTopol.getNodeOfQuad(i, 1);
+                int node_2 = _quadTopol.getNodeOfQuad(i, 2);
+                int node_3 = _quadTopol.getNodeOfQuad(i, 3);
+
+                Eigen::Vector3d pos_0 = quad_geom.segment(3*node_0, 3);
+                Eigen::Vector3d pos_1 = quad_geom.segment(3*node_1, 3);
+                Eigen::Vector3d pos_2 = quad_geom.segment(3*node_2, 3);
+                Eigen::Vector3d pos_3 = quad_geom.segment(3*node_3, 3);
+
+                Eigen::Vector3d pos_0_inactive = _inactiveGeometry.segment(3*node_0, 3);
+                Eigen::Vector3d pos_1_inactive = _inactiveGeometry.segment(3*node_1, 3);
+                Eigen::Vector3d pos_2_inactive = _inactiveGeometry.segment(3*node_2, 3);
+                Eigen::Vector3d pos_3_inactive = _inactiveGeometry.segment(3*node_3, 3);
+
+                // Calculate the squared face diagonals
+                RealType diag_0 = (pos_0 - pos_2).norm();
+                RealType diag_1 = (pos_1 - pos_3).norm();
+
+                RealType diag_0_inactive = (pos_0_inactive - pos_2_inactive).norm();
+                RealType diag_1_inactive = (pos_1_inactive - pos_3_inactive).norm();
+
+                RealType log_diff_diag_0 = (std::log(diag_0) - std::log(diag_0_inactive));
+                RealType log_diff_diag_1 = (std::log(diag_1) - std::log(diag_1_inactive));
+
+                Dest.segment(3*node_0, 3) += 2*log_diff_diag_0*(1.0/(diag_0*diag_0))*(pos_0 - pos_2);
+                Dest.segment(3*node_2, 3) += 2*log_diff_diag_0*(1.0/(diag_0*diag_0))*(pos_2 - pos_0);
+                Dest.segment(3*node_1, 3) += 2*log_diff_diag_1*(1.0/(diag_1*diag_1))*(pos_1 - pos_3);
+                Dest.segment(3*node_3, 3) += 2*log_diff_diag_1*(1.0/(diag_1*diag_1))*(pos_3 - pos_1);
+            }
+        }
+
+};
+
 // Now, write a function to easily export the Gauss map image as plot
 // Needs to be able to access 
 /*
@@ -3160,6 +3329,7 @@ void export_normals(QuadMeshTopologySaver &quadTopol, VectorType &vars, VarsIdx<
         auto vertex_3 = vars_idx.vertex(vars, vertex_3_idx);
 
         auto middle_pos = 0.25*(vertex_0 + vertex_1 + vertex_2 + vertex_3);
+        std::cout<<"Middle pos: " << middle_pos[0] << " " << middle_pos[1] << " " << middle_pos[2] << std::endl;
         stream << middle_pos[0] << " " << middle_pos[1] << " " << middle_pos[2] << std::endl;
     }
     // Write all the normals

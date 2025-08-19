@@ -49,7 +49,7 @@ try{
     Eigen::setNbThreads(8);
 
     TriMesh plate;
-    OpenMesh::IO::read_mesh(plate, "../../data/plate/paperCrissCross_coarse.ply");
+    OpenMesh::IO::read_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/data/plate/paperCrissCross_coarse.ply");
     MeshTopologySaver plateTopol( plate );
     std::cout<<"num vertices: "<<plateTopol.getNumVertices()<<std::endl;
     VectorType plateGeomRef, plateGeomDef, plateGeomInitial; // plateGeomRef is the geometry without the arc crease in the mesh
@@ -57,7 +57,7 @@ try{
     getGeometry(plate,plateGeomDef);
     getGeometry(plate,plateGeomInitial);
 
-    RealType t_0 = 0.0;
+    RealType t_0 = 1.0;
     RealType tolerance = 1e-4;
 
     // bdryMaskRef_1 fixes x,y,z coordinates in the reference geometry
@@ -271,8 +271,12 @@ try{
     factors[0] = factor_membrane;
     factors[1] = factor_bending;
 
-    OpenMesh::IO::read_mesh(plate, "deformed_plate_after_optimization_dirichlet.ply");
+    std::cout<<"Size before: "<<plateGeomDef.size()<<std::endl;
+
+    OpenMesh::IO::read_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/deformed_plate_after_optimization_dirichlet.ply");
     getGeometry(plate, plateGeomDef);
+
+    std::cout<<"Size after: "<<plateGeomDef.size()<<std::endl;
 
     VectorType edge_weights;
     foldDofsPtr->getEdgeWeights(edge_weights);
@@ -284,11 +288,21 @@ try{
     std::vector<RealType> deviations;
     VectorType t_initial = VectorType::Ones(foldDofsPtr->getNumDofs())*t_0;
     VectorType vertexDOFs_initial = VectorType::Zero(3*plateTopol.getNumVertices());
+    std::cout<<"Sizes: "<<std::endl;
+    std::cout<<vertexDOFs_initial.size()<<std::endl;
+    std::cout<<plateGeomDef.size()<<std::endl;
+    std::cout<<"Sizes end"<<std::endl;
     ProblemDOFs<DefaultConfigurator> problemDOFs(t_initial, vertexDOFs_initial, plateGeomDef, foldDofsPtr, DfoldDofsPtr);
+    problemDOFs.getDeformedGeometry();
+    problemDOFs.getReferenceGeometry();
     SQPLineSearchSolver<DefaultConfigurator> solver(pars, costFunctional, DcostFunctional, std::move(factory), boundaryDOFs, problemDOFs, 20);
-    solver.solve(plateGeomRef, def_geometries, ref_geometries, fold_DOFs);
+
+    std::string filename_def_geometries = "/lustre/scratch/data/s24pjoha_hpc-results/thesis_results/deformed_CrossFoldInterpolationOptimization/";
+    std::string filename_ref_geometries = "/lustre/scratch/data/s24pjoha_hpc-results/thesis_results/reference_CrossFoldInterpolationOptimization/";
+    solver.solve(plateGeomRef, filename_def_geometries, filename_ref_geometries, plate);
     std::string filename;
 
+    /*
     for(int i = 0; i < def_geometries.size(); i++){
         filename = "deformed/plate_" + std::to_string(i) + ".ply";
         setGeometry(plate, def_geometries[i]);
@@ -296,7 +310,7 @@ try{
         setGeometry(plate, ref_geometries[i]);
         filename = "reference/plate_" + std::to_string(i) + ".ply";
         OpenMesh::IO::write_mesh(plate, filename);
-    }
+    }*/
 
 }catch ( BasicException &el ){
     std::cerr << std::endl << "ERROR!! CAUGHT FOLLOWING EXECEPTION: " << std::endl << el.getMessage() << std::endl << std::flush;

@@ -20,9 +20,13 @@ class CostFunctional : public BaseOp<typename ConfiguratorType::VectorType, type
         typedef typename ConfiguratorType::VecType VecType;
 
         const std::vector<int> &_vertices;
+        const size_t _num_vertices;
     
     public:
-        CostFunctional(const std::vector<int> &vertices) : _vertices(vertices) {}
+        CostFunctional(const std::vector<int> &vertices) : _vertices(vertices), _num_vertices(vertices.size()) 
+        {
+            assert(_num_vertices > 0);
+        }
 
         void apply(const VectorType &activeGeometry, RealType &dest) const{
             dest = 0;
@@ -43,9 +47,13 @@ class CostFunctionalGradient : public BaseOp<typename ConfiguratorType::VectorTy
 
         const std::vector<int> &_vertices;
         const MeshTopologySaver &_topology;
+        const size_t _num_vertices;
     
     public:
-        CostFunctionalGradient(const MeshTopologySaver& topology, const std::vector<int> &vertices) : _vertices(vertices), _topology(topology){}
+        CostFunctionalGradient(const MeshTopologySaver& topology, const std::vector<int> &vertices) : _vertices(vertices), _topology(topology), _num_vertices(vertices.size())
+        {
+            assert(_num_vertices > 0);
+        }
 
         void apply(const VectorType &activeGeometry, VectorType &dest) const{
 

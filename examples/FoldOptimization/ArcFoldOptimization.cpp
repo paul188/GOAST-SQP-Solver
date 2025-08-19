@@ -50,7 +50,7 @@ try{
 
 // load flat plate and prepare the arc crease
     TriMesh plate;
-    OpenMesh::IO::read_mesh(plate, "../../data/plate/paperCrissCross.ply");
+    OpenMesh::IO::read_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/data/plate/paperCrissCross.ply");
     MeshTopologySaver plateTopol( plate );
     std::cout<<"num vertices: "<<plateTopol.getNumVertices()<<std::endl;
     VectorType plateGeomRef, plateGeomDef, plateGeomInitial; // plateGeomRef is the geometry without the arc crease in the mesh
@@ -61,7 +61,7 @@ try{
     // Fix all coordinates of the boundary
     std::vector<int> bdryMaskRef;
 
-    RealType t_0 = 0.25;//0.8084239959716796; // Initial value of the parameter t
+    RealType t_0 = 0.4;//0.8084239959716796; // Initial value of the parameter t
     // Select the vertices with y = 1.0 (topVertices)
     // We will make a Gravitational Force act on them in order to achieve a flipping effect
     std::vector<int> topVertices;
@@ -120,6 +120,8 @@ try{
     std::vector<int> foldVertices;
     foldDofsPtr -> getFoldVertices(foldVertices);
 
+    std::cout<<"Num fold vertices: "<<foldVertices.size()<<std::endl;
+
     auto DfoldDofsPtr = std::make_shared<FoldDofsArcLineGradient<DefaultConfigurator>>(plateTopol, bdryMaskRef, plateGeomInitial, foldVertices);
 
     VectorType edge_weights = VectorType::Zero(plateTopol.getNumEdges());
@@ -136,7 +138,7 @@ try{
     
     RealType factor_membrane = 10000.0;
     RealType factor_bending = 1.0;
-    RealType factor_gravity = 500.0;
+    RealType factor_gravity = 0.0;
 
     VectorType factors(3);
     factors[0] = factor_membrane;
@@ -176,9 +178,13 @@ try{
     RealType constraint_norm = DE_test.norm();
     std::cout<<"Constraint norm: "<<constraint_norm<<std::endl;
 
-    solver.solve(plateGeomInitial, def_geometries, ref_geometries, fold_DOFs);
+    const std::string filename_def_geometries = "/lustre/scratch/data/s24pjoha_hpc-results/thesis_results/deformed_ArcFoldOptimization/";
+    const std::string filename_ref_geometries = "/lustre/scratch/data/s24pjoha_hpc-results/thesis_results/reference_ArcFoldOptimization/";
+
+    solver.solve(plateGeomInitial, filename_def_geometries, filename_ref_geometries, plate);
     std::string filename;
 
+    /*
     for(int i = 0; i < def_geometries.size(); i++){
         filename = "deformed/plate_" + std::to_string(i) + ".ply";
         setGeometry(plate, def_geometries[i]);
@@ -186,7 +192,7 @@ try{
         setGeometry(plate, ref_geometries[i]);
         filename = "reference/plate_" + std::to_string(i) + ".ply";
         OpenMesh::IO::write_mesh(plate, filename);
-    }
+    }*/
 
   }catch ( BasicException &el ){
         std::cerr << std::endl << "ERROR!! CAUGHT FOLLOWING EXECEPTION: " << std::endl << el.getMessage() << std::endl << std::flush;

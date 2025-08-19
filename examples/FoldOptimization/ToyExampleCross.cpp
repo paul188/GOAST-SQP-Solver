@@ -27,7 +27,7 @@ try{
 
     // load flat plate [0,1]^2
     TriMesh plate;
-    OpenMesh::IO::read_mesh(plate, "../../data/plate/testMeshCrissCross.ply");
+    OpenMesh::IO::read_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/data/plate/paperCrissCross.ply");
     MeshTopologySaver plateTopol( plate );
     std::cerr << "num of nodes = " << plateTopol.getNumVertices() << std::endl;
     VectorType plateGeomRef, plateGeomDef, plateGeomInitial;
@@ -202,25 +202,33 @@ try{
     factors[0] = factor_membrane;
     factors[1] = factor_bending;
 
+    //readVectorFromFile(plateGeomDef, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/cross_newton.txt");
+
     auto factory = std::make_shared<ElasticEnergyFactory<DefaultConfigurator>>(factors, plateTopol, edge_weights);
     BoundaryDOFS<DefaultConfigurator> boundaryDOFs(bdryMaskOpt, nVertexDOFs, nFoldDOFs);
     // Create the degrees of freedom object
     std::vector<RealType> deviations;
     VectorType vertexDOFs = VectorType::Zero(3*plateTopol.getNumVertices());
-    ProblemDOFs<DefaultConfigurator> problemDOFs(VectorType::Zero(nFoldDOFs), vertexDOFs, plateGeomDef, foldDofsPtr, DfoldDofsPtr);
+    VectorType fold_DOFs_init = VectorType::Ones(2)*(-0.1);
+    ProblemDOFs<DefaultConfigurator> problemDOFs(fold_DOFs_init, vertexDOFs, plateGeomDef, foldDofsPtr, DfoldDofsPtr);
     SQPLineSearchSolver<DefaultConfigurator> solver(pars, costFunctional, DcostFunctional, factory, boundaryDOFs, problemDOFs, 20);
-    solver.solve(plateGeomRef, def_geometries, ref_geometries, fold_DOFs);
+
+    std::string filename_def_geometries = "/lustre/scratch/data/s24pjoha_hpc-results/thesis_results/deformed_ToyExampleCross/";
+    std::string filename_ref_geometries = "/lustre/scratch/data/s24pjoha_hpc-results/thesis_results/reference_ToyExampleCross/";
+
+    solver.solve(plateGeomRef, filename_def_geometries, filename_ref_geometries, plate);
 
     std::string filename;
 
+    /*
     for(int i = 0; i < def_geometries.size(); i++){
-        filename = "deformed/plate_" + std::to_string(i) + ".ply";
+        filename = "/lustre/scratch/data/s24pjoha_hpc-results/thesis_results/deformed_ToyExampleCross_coarse/plate_" + std::to_string(i) + ".ply";
         setGeometry(plate, def_geometries[i]);
         OpenMesh::IO::write_mesh(plate,filename);
         setGeometry(plate, ref_geometries[i]);
-        filename = "reference/plate_" + std::to_string(i) + ".ply";
+        filename = "/lustre/scratch/data/s24pjoha_hpc-results/thesis_results/reference_ToyExampleCross_coarse/plate_" + std::to_string(i) + ".ply";
         OpenMesh::IO::write_mesh(plate, filename);
-    }
+    }*/
 
     std::ofstream outFile("output_mu_nonmonotone.txt");
     if (!outFile) {

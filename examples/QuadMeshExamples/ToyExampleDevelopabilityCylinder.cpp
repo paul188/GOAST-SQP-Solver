@@ -18,7 +18,7 @@ int main()
         // ---------------------- TOPOLOGICAL PREPARATIONS --------------------------------------
 
         MyMesh mesh;
-        OpenMesh::IO::read_mesh(mesh, "../../data/plate/testDevelopabilityCylinder_fine.ply");
+        OpenMesh::IO::read_mesh(mesh, "/home/s24pjoha_hpc/goast_old_old/goast/data/plate/new.ply");
         QuadMeshTopologySaver quadTopol(mesh);
         VectorType geom;
         QuadMeshTopologySaver::getGeometry(mesh,geom);
@@ -39,10 +39,11 @@ int main()
             coords[0] = geom[3*i];
             coords[1] = geom[3*i+1];
             coords[2] = geom[3*i+2];
-            std::cout<<"Vertex this way: "<<i<<": "<<geom[3*i]<<"; "<<geom[3*i +2]<<std::endl;
-            if(std::abs(1.0 + coords[0]) < tolerance || std::abs(1.0 - coords[0]) < tolerance){
-                bdryMask.push_back(i);
-            }
+            bdryMask.push_back(i);
+            //std::cout<<"Vertex this way: "<<i<<": "<<geom[3*i]<<"; "<<geom[3*i +2]<<std::endl;
+            //if(std::abs(1.0 + coords[0]) < tolerance || std::abs(1.0 - coords[0]) < tolerance){
+                //bdryMask.push_back(i);
+            //}
         }
 
         VectorType bdryCoords(3*bdryMask.size());
@@ -67,8 +68,8 @@ int main()
         // --------------------- INITIALIZE CONSTRAINT WEIGHTS --------------------------------
 
           constraint_weights<DefaultConfigurator> weights;
-          weights.fair_v = 50.0;
-          weights.fair_n = 10.0;
+          //weights.fair_v = 50.0;
+          //weights.fair_n = 10.0;
           weights.fair_r = 0.0;
           weights.ruling_0 = 10.0;
           weights.ruling_1 = 10.0;
@@ -88,8 +89,14 @@ int main()
 
         // -------------------------- INITIALIZE THE VARIABLES --------------------------------------------
         VectorType init = VectorType::Zero(variablesIdx["num_dofs"]);
-        constraint.initialize_vars(geom, init);
-
+        init.segment(variablesIdx["vertices"], 3 * num_vertices) = geom;
+        //Initialize all the normals with vectors in the pos z-direction
+        for(int i = 0; i < num_faces; i++)
+        {
+            init[variablesIdx["normals"] + 3*i] = 0.0;
+            init[variablesIdx["normals"] + 3*i +1] = 0.0;
+            init[variablesIdx["normals"] + 3*i +2] = 1.0;
+        }
 
         LevenbergMarquardtParams<DefaultConfigurator> pars;
         LMAlgorithm<DefaultConfigurator> lm(pars, constraint, constraintGrad, bdryDOFs, variablesIdx["num_dofs"], constraintIdx["num_cons"]);
@@ -103,9 +110,17 @@ int main()
         VectorType DestGeom = Dest.segment(variablesIdx["vertices"],3*num_vertices);
         QuadMeshTopologySaver::setGeometry(mesh, DestGeom);
         OpenMesh::IO::write_mesh(mesh, "result_developability.ply");
-        std::string normals_file = "/home/paul_johannssen/Desktop/masterarbeit/goast_old/examples/QuadMeshExamples/plotting/normals.txt";
+
+        std::cout<<"Geometry values: "<<std::endl;
+        for(int i = 0; i < num_vertices; i++)
+        {
+            std::cout<<DestGeom[3*i]<<"; "<<DestGeom[3*i+1]<<"; "<<DestGeom[3*i+2]<<std::endl;
+        }
+        //std::string normals_file = "/home/paul_johannssen/Desktop/masterarbeit/goast_old/examples/QuadMeshExamples/plotting/normals.txt";
+        std::string normals_file = "/home/s24pjoha_hpc/goast_old_old/goast/examples/QuadMeshExamples/plotting/normals.txt";
         export_normals(quadTopol,Dest, variablesIdx, normals_file);
-        std::string rw_rulings_file = "/home/paul_johannssen/Desktop/masterarbeit/goast_old/examples/QuadMeshExamples/plotting/rw_rulings.txt";
+        std::string rw_rulings_file = "/home/s24pjoha_hpc/goast_old_old/goast/examples/QuadMeshExamples/plotting/rw_rulings.txt";
+        //std::string rw_rulings_file = "/home/paul_johannssen/Desktop/masterarbeit/goast_old/examples/QuadMeshExamples/plotting/rw_rulings.txt";
         export_rw_rulings(quadTopol,Dest, variablesIdx, rw_rulings_file);
 
     }catch(std::exception &e){

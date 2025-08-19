@@ -42,7 +42,7 @@ typedef DefaultConfigurator::RealType RealType;
  */
 
 RealType angle = M_PI / 3.0;
-RealType mesh_delta = 0.015625;
+RealType mesh_delta = 2.0*0.015625;
 
 bool is_near(RealType coord, RealType value, RealType tol = 1e-6)
 {
@@ -95,7 +95,7 @@ try{
 // load flat plate and prepare the arc crease
     TriMesh plate;
     //OpenMesh::IO::read_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/data/plate/paperCrissCross.ply");
-    OpenMesh::IO::read_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/refine_1.ply");
+    OpenMesh::IO::read_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/paperCrissCross.ply");
     MeshTopologySaver plateTopol( plate );
     std::cout<<"num vertices: "<<plateTopol.getNumVertices()<<std::endl;
     VectorType plateGeomRef, plateGeomDef, plateGeomInitial; // plateGeomRef is the geometry without the arc crease in the mesh
@@ -142,13 +142,6 @@ try{
         }
     }
 
-    std::cout<<"FoldVertices: "<<std::endl;
-    for(int i = 0; i < foldVertices.size(); i++)
-    {
-        std::cout<<foldVertices[i]<<",  ";
-    }
-    std::cout<<"End fold vertices"<<std::endl;
-
     // output preliminary meshes
     setGeometry(plate, plateGeomRef);
     OpenMesh::IO::write_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/reference_mesh_before_smoothing.ply");
@@ -187,12 +180,8 @@ try{
         y = coords[1];
         z = coords[2];
 
-        if(coords[1] == 0)
-        { 
-            //bdryMaskOpt.push_back(i);
-        }
-
         rotateBoundary(x, y, z, i, bdryMaskOpt);
+
 
         coords[0] = x;
         coords[1] = y;
@@ -252,8 +241,8 @@ try{
     size_t nVertexDOFs = 3*plateTopol.getNumVertices();
 
     // save initialization
-    setGeometry( plate, plateGeomDef );
-    OpenMesh::IO::write_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/initPlate_rectangle2.ply");
+    //setGeometry( plate, plateGeomDef );
+    //OpenMesh::IO::write_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/initPlate_rectangle2.ply");
 
     SimpleBendingEnergy<DefaultConfigurator> E_bend( plateTopol, plateGeomRef, true , edge_weights);
     SimpleBendingGradientDef<DefaultConfigurator> DE_bend( plateTopol, plateGeomRef , edge_weights);
@@ -309,7 +298,7 @@ try{
     // saving
     setGeometry( plate, plateGeomDef );
     // slightly inaccurate saving of the geometry
-    OpenMesh::IO::write_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/bendingFoldSol_withNewton_scaled_2.ply");
+    OpenMesh::IO::write_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/new.ply");
     printVectorToFile( plateGeomDef, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/bendingFoldSol_withNewton_scaled_2.txt" , 15);
     printVectorToFile( plateGeomRef, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/final_reference.txt" , 15);
 

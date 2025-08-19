@@ -208,6 +208,9 @@ try{
     setGeometry( plate, plateGeomDef );
     OpenMesh::IO::write_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/initPlate_rectangle2.ply");
 
+    // Load the previously computed geometry using Gravitational force
+    //readVectorFromFile(plateGeomDef, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/bendingFoldSol_withNewton_scaled_2.txt");
+
     SimpleBendingEnergy<DefaultConfigurator> E_bend( plateTopol, plateGeomRef, true , edge_weights);
     SimpleBendingGradientDef<DefaultConfigurator> DE_bend( plateTopol, plateGeomRef , edge_weights);
     SimpleBendingHessianDef<DefaultConfigurator> D2E_bend( plateTopol, plateGeomRef , edge_weights);
@@ -264,7 +267,7 @@ try{
     // slightly inaccurate saving of the geometry
     OpenMesh::IO::write_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/bendingFoldSol_withNewton_scaled_2.ply");
     printVectorToFile( plateGeomDef, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/bendingFoldSol_withNewton_scaled_2.txt" , 15);
-    printVectorToFile( plateGeomRef, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/final_reference.txt" , 15);
+    //printVectorToFile( plateGeomRef, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/final_reference.txt" , 15);
 
     std::cout<<"Final gradient norm: "<<std::endl;
     VectorType Constraint_test;

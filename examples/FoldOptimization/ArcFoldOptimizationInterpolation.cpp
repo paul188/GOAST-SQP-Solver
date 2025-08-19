@@ -130,15 +130,6 @@ try{
 
     auto DfoldDofsPtr = std::make_shared<FoldDofsArcInterpolation2Gradient<DefaultConfigurator>>(plateTopol, bdryMaskRef, plateGeomInitial, foldVertices, polDegrees, x_points);
 
-    // Test: 
-    std::cout<<"Test"<<std::endl;
-    VectorType testGeom = plateGeomInitial;
-    VectorType dofs(3);
-    dofs[0] = -5.34699373254;
-    dofs[1] = -0.689781754798;
-    dofs[2] = -0.305910351344;
-    foldDofsPtr->apply(dofs,plateGeomInitial);
-
     VectorType edge_weights = VectorType::Zero(plateTopol.getNumEdges());
     foldDofsPtr->getEdgeWeights(edge_weights);
 
@@ -196,13 +187,11 @@ try{
     ProblemDOFs<DefaultConfigurator> problemDOFs(foldDOFs_initial, vertexDOFs_initial, plateGeomDef, foldDofsPtr, DfoldDofsPtr);
     SQPLineSearchSolver<DefaultConfigurator> solver(pars, costFunctional, DcostFunctional, factory, boundaryDOFs, problemDOFs, 20);
 
-    solver.solve(plateGeomInitial, def_geometries, ref_geometries, fold_DOFs);
-    std::string filename;
+    const std::string filename_def_geometries = "/lustre/scratch/data/s24pjoha_hpc-results/thesis_results/deformed_ArcFoldOptimizationInterpolation/";
+    const std::string filename_ref_geometries = "/lustre/scratch/data/s24pjoha_hpc-results/thesis_results/reference_ArcFoldOptimizationInterpolation/";
 
-    std::cout<<"Test:"<<std::endl;
-    setGeometry(plate, plateGeomDef);
-    OpenMesh::IO::write_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/deformed/plate_test.ply");
-    std::cout<<"Test done"<<std::endl;
+    solver.solve(plateGeomInitial, filename_def_geometries, filename_ref_geometries, plate);
+    std::string filename;
 
     for(int i = 0; i < def_geometries.size(); i++){
         filename = "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/deformed/plate_" + std::to_string(i) + ".ply";

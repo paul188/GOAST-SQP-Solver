@@ -1,12 +1,10 @@
+#include <goast/Core.h>
+#include <goast/Developability/Developability.h>
+#include <goast/QuadMesh/QuadTopology.h>
 #include <iostream>
-#include <chrono>
 #include <ctime>
 #include <string>
 #include <vector>
-
-#include <goast/QuadMesh/QuadTopology.h>
-#include <goast/Core.h>
-#include <goast/Developability/Developability.h>
 #include <random>
 
 //==============================================================================================================
@@ -31,6 +29,8 @@ try{
 
     QuadMeshTopologySaver::getGeometry(mesh,geom);
 
+    VectorType quadGeomRef = geom;
+
     // set the boundary
     std::vector<int> bdryMask;
 
@@ -47,15 +47,18 @@ try{
     std::default_random_engine generator;
     std::uniform_real_distribution<double> distribution(-0.05, 0.05); // range: [-0.05, 0.05]
 
-    /*
+    
     for (int i = 0; i < num_vertices; i++)
     {
         geom[3 * i]     += distribution(generator); // x
         geom[3 * i + 1] += distribution(generator); // y
         geom[3 * i + 2] += distribution(generator); // z
-    }*/
-    ConstraintSqrdReduced<DefaultConfigurator> constraint(quadTopol);
-    ConstraintSqrdReducedGradient<DefaultConfigurator> constraintGrad(quadTopol);
+    }
+    //ConstraintSqrdReduced<DefaultConfigurator> constraint(quadTopol);
+    //ConstraintSqrdReducedGradient<DefaultConfigurator> constraintGrad(quadTopol);
+
+    EdgeLengthQuadEnergy<DefaultConfigurator> constraint(quadTopol, quadGeomRef);
+    EdgeLengthQuadEnergyGradient<DefaultConfigurator> constraintGrad(quadTopol, quadGeomRef);
 
     VectorType test_input = geom;
     
@@ -67,7 +70,7 @@ try{
 
     ScalarValuedDerivativeTester<DefaultConfigurator> tester(constraint,constraintGrad,0.01,50);
     //VectorValuedDerivativeTester<DefaultConfigurator> tester(constraint, constraintGrad,0.01, Dest.rows());
-    tester.plotAllDirections(test_input,"deriv_test/");
+    tester.plotAllDirections(test_input,"/lustre/scratch/data/s24pjoha_hpc-results/deriv_test_3/");
 
 }catch(std::exception &e){
     std::cerr << "Exception caught: " << e.what() << std::endl;

@@ -129,15 +129,73 @@ int main()
                 bdryMaskTri.push_back(i);
             }
         }
+
+        VectorType smoothedGeom = centroid_geom;
+
+        /*
+        for(int i = 0; i < centroidTopol.getNumVertices(); i++)
+        {
+            VecType coords;
+            getXYZCoord<VectorType, VecType>(smoothedGeom,coords, i);
+
+            double x = coords[0];
+            double y = coords[1];
+            double z = coords[2];
+
+            double eps = 1e-9;
+            if (y <= x + 0.5 + eps &&
+                y <= 1.5 - x + eps &&
+                y >= 0.5 - x - eps &&
+                y >= x - 0.5 - eps)
+            {
+                coords[2] = 0.2; // flatten
+                bdryMaskTri.push_back(i);
+            }
+
+
+            if((y <= (x + 0.5)) && ((y <= (1.0 - x))) && (y >= (0.5 - x)) && (y >= (x - 0.5)))
+            {
+                coords[2] = 0.2;
+            }
+            setXYZCoord<VectorType, VecType>(smoothedGeom, coords, i);
+        }*/
+
+        for(int i = 0; i < centroidTopol.getNumVertices(); i++)
+        {
+            VecType coords;
+            getXYZCoord<VectorType, VecType>(smoothedGeom,coords, i);
+            coords[1] *= sqrt(1.0 - (0.4*0.4));
+            coords[0] *= sqrt(1.0 - (0.4*0.4));
+            setXYZCoord<VectorType, VecType>(smoothedGeom, coords, i);
+        }
+        /*
+        for(int i = 0; i < centroidTopol.getNumVertices(); i++)
+        {
+            VecType coords;
+            getXYZCoord<VectorType, VecType>(smoothedGeom,coords, i);
+            
+            double x = coords[0];
+            double y = coords[1];
+            double z = coords[2];
+            if(std::abs(x - 0.5) < 0.1 && std::abs(y - 0.5) < 0.1)
+            {
+                coords[2] = 0.4;
+                bdryMaskTri.push_back(i);
+            }
+            setXYZCoord<VectorType, VecType>(smoothedGeom, coords, i);
+        }*/
+
         extendBoundaryMask(centroid_topol.getNumVertices(), bdryMaskTri);
+
+        setGeometry(centroid_mesh, smoothedGeom);
+        OpenMesh::IO::write_mesh(centroid_mesh, "smoothed_centroid_3.ply");
 
         // Now, apply the Dirichlet smoothing
         DirichletSmoother<DefaultConfigurator> dirichletSmoother(centroid_base_geom, bdryMaskTri, centroid_topol);
-        VectorType smoothedGeom = VectorType::Zero(centroid_topol.getNumVertices() * 3);
-        dirichletSmoother.apply(centroid_geom, smoothedGeom);
+        dirichletSmoother.apply(smoothedGeom, smoothedGeom);
 
         setGeometry(centroid_mesh, smoothedGeom);
-        OpenMesh::IO::write_mesh(centroid_mesh, "smoothed_centroid.ply");
+        OpenMesh::IO::write_mesh(centroid_mesh, "smoothed_centroid_2.ply");
 
         // ------------------- TRANSFER SMOOTHED CENTROID GEOMETRY TO QUAD MESH ---------------------
 
@@ -167,9 +225,9 @@ int main()
         // --------------------- INITIALIZE CONSTRAINT WEIGHTS --------------------------------
 
           constraint_weights<DefaultConfigurator> weights;
-          weights.fair_v = 50.0;//50.0;
-          weights.fair_n = 10.0;//10.0;
-          weights.fair_r = 0.0;
+          weights.fair_v = 0.005;//50.0;
+          weights.fair_n = 0.005;//10.0;
+          weights.fair_r = 0.005;
           weights.ruling_0 = 10.0;
           weights.ruling_1 = 10.0;
           weights.ruling_2 = 10.0;
@@ -189,7 +247,6 @@ int main()
         // -------------------------- INITIALIZE THE VARIABLES --------------------------------------------
         VectorType init = VectorType::Zero(variablesIdx["num_dofs"]);
         constraint.initialize_vars(smoothedQuadGeom, init);
-
 
         LevenbergMarquardtParams<DefaultConfigurator> pars;
         LMAlgorithm<DefaultConfigurator> lm(pars, constraint, constraintGrad, bdryDOFs, variablesIdx["num_dofs"], constraintIdx["num_cons"]);

@@ -39,6 +39,7 @@ add_executable(bendingFoldQuadDevelopability2 QuadMeshExamples/bendingFoldQuadDe
 #add_executable(SimpleFoldOptimization2 FoldOptimization/SimpleFoldOptimization2.cpp)
 #add_executable(SimpleFoldOptimization FoldOptimization/SimpleFoldOptimization.cpp)
 #add_executable(QuadMeshTest2 QuadMeshExamples/QuadMeshTest2.cpp)
+add_executable(ArcFoldOptimizationInterpolation2 FoldOptimization/ArcFoldOptimizationInterpolation2.cpp)
 add_executable(ArcFoldOptimization FoldOptimization/ArcFoldOptimization.cpp)
 add_executable(Tester2 FoldOptimization/Tester2.cpp)
 add_executable(ToyExampleCross FoldOptimization/ToyExampleCross.cpp)
@@ -54,6 +55,17 @@ add_executable(ToyExampleFreeArcLine FoldOptimization/ToyExampleFreeArcLine.cpp)
 add_executable(ToyExampleDevelopabilityCylinder QuadMeshExamples/ToyExampleDevelopabilityCylinder.cpp)
 add_executable(SharpCreaseDevelopability QuadMeshExamples/SharpCreaseDevelopability.cpp)
 add_executable(CrossFoldInterpolationTest FoldOptimization/CrossFoldInterpolationTest.cpp)
+add_executable(QuadElasticEnergyTest QuadMeshExamples/QuadElasticEnergyTest.cpp)
+add_executable(bendingFoldQuadReduced QuadMeshExamples/bendingFoldQuadReduced.cpp)
+add_executable(bendingFoldQuadReduced2 QuadMeshExamples/bendingFoldQuadReduced2.cpp)
+
+target_link_libraries(bendingFoldQuadReduced2 PRIVATE GOAST::GOAST)
+
+target_link_libraries(bendingFoldQuadReduced PRIVATE GOAST::GOAST)
+
+target_link_libraries(QuadElasticEnergyTest PRIVATE GOAST::GOAST)
+
+target_link_libraries(ArcFoldOptimizationInterpolation2 PRIVATE GOAST::GOAST)
 
 target_link_libraries(bendingFoldQuadDevelopability2 PRIVATE GOAST::GOAST)
 

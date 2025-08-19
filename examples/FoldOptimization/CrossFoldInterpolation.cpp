@@ -34,7 +34,7 @@ try{
 
     // load flat plate [0,1]^2
     TriMesh plate;
-    OpenMesh::IO::read_mesh(plate, "../../data/plate/paperCrissCross.ply");
+    OpenMesh::IO::read_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/data/plate/paperCrissCross_coarse.ply");
     MeshTopologySaver plateTopol( plate );
     std::cerr << "num of nodes = " << plateTopol.getNumVertices() << std::endl;
     VectorType plateGeomRef, plateGeomDef, plateGeomInitial, plateGeomTest;

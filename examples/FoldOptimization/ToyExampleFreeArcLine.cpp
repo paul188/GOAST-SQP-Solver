@@ -251,9 +251,14 @@ try{
     VectorType vertexDOFs = VectorType::Zero(3*plateTopol.getNumVertices());
     ProblemDOFs<DefaultConfigurator> problemDOFs(VectorType::Ones(foldDofsPtr->getNumDofs())*t_0, vertexDOFs, plateGeomDef, foldDofsPtr, DfoldDofsPtr);
     SQPLineSearchSolver<DefaultConfigurator> solver(pars, costFunctional, DcostFunctional, std::move(factory), boundaryDOFs, problemDOFs, 20);
-    solver.solve(plateGeomRef, def_geometries, ref_geometries, fold_DOFs);
+
+    const std::string filename_def_geometries = "/lustre/scratch/data/s24pjoha_hpc-results/thesis_results/deformed_ToyExampleFreeArcLine/";
+    const std::string filename_ref_geometries = "/lustre/scratch/data/s24pjoha_hpc-results/thesis_results/reference_ToyExampleFreeArcLine/";
+
+    solver.solve(plateGeomRef, filename_def_geometries, filename_ref_geometries, plate);
     std::string filename;
 
+    /*
     for(int i = 0; i < def_geometries.size(); i++){
         filename = "deformed/plate_" + std::to_string(i) + ".ply";
         setGeometry(plate, def_geometries[i]);
@@ -261,7 +266,7 @@ try{
         setGeometry(plate, ref_geometries[i]);
         filename = "reference/plate_" + std::to_string(i) + ".ply";
         OpenMesh::IO::write_mesh(plate, filename);
-    }
+    }*/
 
   }catch ( BasicException &el ){
         std::cerr << std::endl << "ERROR!! CAUGHT FOLLOWING EXECEPTION: " << std::endl << el.getMessage() << std::endl << std::flush;

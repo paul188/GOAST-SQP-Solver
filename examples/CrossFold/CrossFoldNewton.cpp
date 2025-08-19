@@ -27,7 +27,7 @@ try{
 
     // load flat plate [0,1]^2
     TriMesh plate;
-    OpenMesh::IO::read_mesh(plate, "../../data/plate/paperCrissCross.ply");
+    OpenMesh::IO::read_mesh(plate, "../../data/plate/testMeshCrissCross.ply");
     MeshTopologySaver plateTopol( plate );
     std::cerr << "num of nodes = " << plateTopol.getNumVertices() << std::endl;
     VectorType plateGeomRef, plateGeomDef, plateGeomInitial;
@@ -102,6 +102,16 @@ try{
         }
         setXYZCoord<VectorType, VecType>( plateGeomRef, coords, i);
     }
+
+    std::cout<<"Fold vertices"<<std::endl;
+    for(int i = 0; i < plateTopol.getNumVertices(); i++){
+        VecType coords;
+        getXYZCoord<VectorType, VecType>( plateGeomInitial, coords, i);
+        if(std::abs(coords[0] - 0.625) < 1e-6 || std::abs(coords[1] - 0.625) < 1e-6){
+            std::cout<<i<<std::endl;
+        }
+    }
+    std::cout<<"end Fold vertices"<<std::endl;
 
     extendBoundaryMask( plateTopol.getNumVertices(), bdryMaskRef_1 );
 
@@ -179,8 +189,8 @@ try{
     OpenMesh::IO::write_mesh(plate, "deformed_mesh.ply");
 
     // set Dirichlet boundary conditions
-    DirichletSmoother<DefaultConfigurator> dirichletSmoother( plateGeomDef, bdryMaskDirichletDef_xy, plateTopol );
-    dirichletSmoother.apply( plateGeomDef, plateGeomDef );
+    //DirichletSmoother<DefaultConfigurator> dirichletSmoother( plateGeomDef, bdryMaskDirichletDef_xy, plateTopol );
+    //dirichletSmoother.apply( plateGeomDef, plateGeomDef );
 
     setGeometry( plate, plateGeomDef );
     OpenMesh::IO::write_mesh(plate, "deformed_mesh_after_smoothing.ply");
@@ -262,6 +272,8 @@ try{
     // saving
     setGeometry( plate, plateGeomDef );
     OpenMesh::IO::write_mesh(plate, "bendingFoldSol_withNewton_cross.ply");
+    printVectorToFile( plateGeomDef, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/cross_newton.txt" , 15);
+    
     }
     catch ( BasicException &el ){
         std::cerr << std::endl << "ERROR!! CAUGHT FOLLOWING EXECEPTION: " << std::endl << el.getMessage() << std::endl << std::flush;

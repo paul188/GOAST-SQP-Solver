@@ -36,7 +36,8 @@ try{
 
     // load flat plate [0,1]^2
     TriMesh plate;
-    OpenMesh::IO::read_mesh(plate, "../../data/plate/testMesh2.ply");
+    //OpenMesh::IO::read_mesh(plate, "../../data/plate/testMesh2.ply");
+    OpenMesh::IO::read_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/data/plate/paperCrissCross.ply");
     MeshTopologySaver plateTopol( plate );
     std::cerr << "num of nodes = " << plateTopol.getNumVertices() << std::endl;
     VectorType plateGeomRef, plateGeomDef, plateGeomInitial;
@@ -51,14 +52,13 @@ try{
     for( int i = 0; i < plateTopol.getNumVertices(); i++ ){
         VecType coords;
         getXYZCoord<VectorType, VecType>( plateGeomRef, coords, i);
-        if( std::abs(coords[1]) < 1e-6 || std::abs(coords[1] - 4.0) < 1e-10 ){
+        if( std::abs(coords[0]) < 1e-6 || std::abs(coords[0] - 1.0) < 1e-6 ){
             bdryMaskRef_1.push_back( i );
         }
-        if(std::abs(coords[1] - 2.0) < 1e-6){
-            coords[1]+=0.3;
+        if(std::abs(coords[0] - 0.5) < 1e-6){
             bdryMaskRef_1.push_back( i );
         }
-        if( std::abs(coords[0]) < 1e-6 || std::abs(coords[0] - 1.0) < 6 ){
+        if( std::abs(coords[1]) < 1e-6 || std::abs(coords[1] - 1.0) < 1e-6 ){
             bdryMaskRef_2.push_back( i );
         }
 
@@ -71,7 +71,7 @@ try{
     // extend all boundary masks to (x,y,z) coordinates
 
     extendBoundaryMask( plateTopol.getNumVertices(), bdryMaskRef_1 );
-    std::vector<int> activeRef_2 = (std::vector<int>){1,0,1};
+    std::vector<int> activeRef_2 = (std::vector<int>){0,1,1};
     extendBoundaryMaskPartial( plateTopol.getNumVertices(), bdryMaskRef_2 , activeRef_2);
 
     std::vector<VectorType> def_geometries;
@@ -86,49 +86,39 @@ try{
     bdryMaskRef_1.assign(uniqueEntries.begin(), uniqueEntries.end());
     std::sort(bdryMaskRef_1.begin(), bdryMaskRef_1.end());
 
-     // determine boundary mask for optimization
-     // and deform part of boundary
-    std::vector<int> bdryMaskOpt;
-    for( int i = 0; i < plateTopol.getNumVertices(); i++ ){
+    // determine boundary mask for optimization
+    // and deform part of boundary
+    std::vector<int> bdryMaskOpt, bdryMaskDirichletDef_1, bdryMaskDirichletDef_y;
+    for(int i = 0; i < plateTopol.getNumVertices(); i++)
+    {
         VecType coords;
         getXYZCoord<VectorType, VecType>( plateGeomDef, coords, i);
-        /*
-        if( coords[1] <= 0.25 + 1e-6 || coords[1] >= 3.75 - 1e-6 ){ clamped
-        */
-        if( coords[1] == 0.0 || coords[1] == 4.0 ){
-            bdryMaskOpt.push_back( i );
-            if(coords[1] == 0.0){
-                coords[1] += 0.5;
-                coords[2] += 0.2;
-            }
-            else{
-                coords[1] -= 0.5;
-                coords[2] += 0.2;
-            }
+        if(std::abs(coords[0]) < 1e-4)
+        {
+            bdryMaskOpt.push_back(i);
         }
-        
-        setXYZCoord<VectorType, VecType>( plateGeomDef, coords, i);
+        if(std::abs(coords[0] - 1.0) < 1e-4)
+        {
+            bdryMaskOpt.push_back(i);
+        }
     }
 
     extendBoundaryMask( plateTopol.getNumVertices(), bdryMaskOpt );
+
+    //OpenMesh::IO::read_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/new.ply");
+    //getGeometry( plate, plateGeomDef );
+    readVectorFromFile( plateGeomDef, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/new.txt");
 
     auto foldDofsPtr = std::make_shared<FoldDofsSimpleLine<DefaultConfigurator>>(plateTopol,plateGeomInitial, plateGeomRef, bdryMaskRef_1);
 
     std::vector<int> foldVertices;
     foldDofsPtr -> getFoldVertices(foldVertices);
+    std::cout<<"Fold vertices size: "<<foldVertices.size()<<std::endl;
 
     auto DfoldDofsPtr = std::make_shared<FoldDofsSimpleLineGradient<DefaultConfigurator>>(plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices);
 
     VectorType edge_weights = VectorType::Zero(plateTopol.getNumEdges());
     foldDofsPtr->getEdgeWeights(edge_weights);
-
-    for(int i = 0; i < foldVertices.size(); i++){
-        VecType coords;
-        getXYZCoord<VectorType, VecType>( plateGeomDef, coords, foldVertices[i]);
-        coords[1] += 0.16;
-        coords[2] -= 0.5;
-        setXYZCoord<VectorType, VecType>( plateGeomDef, coords, foldVertices[i]);
-    }
 
     size_t nFoldDOFs = foldDofsPtr->getNumDofs();
     size_t nVertexDOFs = 3*plateTopol.getNumVertices();
@@ -147,20 +137,26 @@ try{
     auto factory = std::make_shared<ElasticEnergyFactory<DefaultConfigurator>>(factors, plateTopol, edge_weights);
     BoundaryDOFS<DefaultConfigurator> boundaryDOFs(bdryMaskOpt, nVertexDOFs, nFoldDOFs);
     // Create the degrees of freedom object
-    ProblemDOFs<DefaultConfigurator> problemDOFs(VectorType::Zero(nFoldDOFs), VectorType::Zero(3*plateTopol.getNumVertices()), plateGeomDef, foldDofsPtr, DfoldDofsPtr);
+    VectorType t_0 = VectorType::Ones(1)*0.2;
+    ProblemDOFs<DefaultConfigurator> problemDOFs(t_0, VectorType::Zero(3*plateTopol.getNumVertices()), plateGeomDef, foldDofsPtr, DfoldDofsPtr);
     SQPLineSearchSolver<DefaultConfigurator> solver(pars, costFunctional, DcostFunctional, factory, boundaryDOFs, problemDOFs, 10, true);
-    solver.solve(plateGeomRef, def_geometries, ref_geometries, fold_DOFs);
+
+    const std::string filename_def_geometries = "/lustre/scratch/data/s24pjoha_hpc-results/thesis_results/deformed_ToyExample/";
+    const std::string filename_ref_geometries = "/lustre/scratch/data/s24pjoha_hpc-results/thesis_results/reference_ToyExample/";
+
+    solver.solve(plateGeomRef, filename_def_geometries, filename_ref_geometries, plate);
 
     std::string filename;
 
+    /*
     for(int i = 0; i < def_geometries.size(); i++){
-        filename = "deformed/plate_" + std::to_string(i) + ".ply";
+        filename = "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/deformed_ToyExample_2/plate_" + std::to_string(i) + ".ply";
         setGeometry(plate, def_geometries[i]);
         OpenMesh::IO::write_mesh(plate,filename);
         setGeometry(plate, ref_geometries[i]);
-        filename = "reference/plate_" + std::to_string(i) + ".ply";
+        filename = "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/reference_ToyExample_2/plate_" + std::to_string(i) + ".ply";
         OpenMesh::IO::write_mesh(plate, filename);
-    }
+    }*/
 
   } 
   catch ( BasicException &el ){

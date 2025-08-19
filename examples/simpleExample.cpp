@@ -125,9 +125,6 @@ try{
     }
 
     VectorType v_2 = plateGeomDef;
-    std::cout<<"Norm difference: "<<(v_2 - v_1).norm()<<std::endl;
-
-    std::cout<<"Hello2"<<std::endl;
 
     // save initialization
     setGeometry( plate, plateGeomDef );

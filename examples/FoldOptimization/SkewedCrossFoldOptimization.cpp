@@ -49,16 +49,34 @@ try{
     Eigen::setNbThreads(8);
 
     TriMesh plate;
-    OpenMesh::IO::read_mesh(plate, "../../data/plate/paperCrissCross_coarse.ply");
+    OpenMesh::IO::read_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/data/plate/paperCrissCross_coarse.ply");
     MeshTopologySaver plateTopol( plate );
+    std::cout<<"Hello2"<<std::endl;
     std::cout<<"num vertices: "<<plateTopol.getNumVertices()<<std::endl;
-    VectorType plateGeomRef, plateGeomDef, plateGeomInitial, plateGeomPenalty; // plateGeomRef is the geometry without the arc crease in the mesh
+    VectorType plateGeomRef, plateGeomDef, plateGeomInitial; // plateGeomRef is the geometry without the arc crease in the mesh
     getGeometry(plate,plateGeomRef);
     getGeometry(plate,plateGeomDef);
     getGeometry(plate,plateGeomInitial);
 
-    RealType t_0 = 0.0;
+    RealType t_0 = 0.3;
     RealType tolerance = 1e-4;
+
+    std::cout<<"Fold vertices: "<<std::endl;
+    for(int i = 0; i < plateTopol.getNumVertices(); i++)
+    {
+        VecType coords;
+        getXYZCoord<VectorType, VecType>( plateGeomInitial, coords, i);
+        if(std::abs(coords[0] - 0.5)<tolerance)
+        {
+            std::cout<<i<<std::endl;
+        }
+        if(std::abs(coords[1] - 0.5)<tolerance)
+        {
+            std::cout<<i<<std::endl;
+        }
+    }
+
+    std::cout<<"Hello1"<<std::endl;
 
     // bdryMaskRef_1 fixes x,y,z coordinates in the reference geometry
     std::vector<int> bdryMaskRef_1;
@@ -139,6 +157,10 @@ try{
 
     }
 
+    std::cout<<"Hello2"<<std::endl;
+
+    // store four parts of the boundary that would get squashed together by the rotation
+    std::vector<int> scaling_piece_1, scaling_piece_2, scaling_piece_3, scaling_piece_4;
     for(int i = 0; i < plateTopol.getNumVertices(); i++)
     {
         VecType coords; 
@@ -146,26 +168,31 @@ try{
 
         if((std::abs(coords[0]) < tolerance) && (coords[1] > 0.5 + tolerance) && (coords[1] < 1.0 - tolerance))
         {
+            scaling_piece_1.push_back(i);
             bdryMaskRef_1.push_back(i);
             continue;
         }
         if((std::abs(coords[1] - 1.0) < tolerance) && (coords[0] > 0.5 + tolerance) && (coords[0] < 1.0 - tolerance))
         {
+            scaling_piece_2.push_back(i);
             bdryMaskRef_1.push_back(i);
             continue;
         }
         if(std::abs(coords[0] - 1.0) < tolerance && (coords[1] < 0.5 - tolerance) && (coords[1] > tolerance))
         {
+            scaling_piece_3.push_back(i);
             bdryMaskRef_1.push_back(i);
             continue;
         }
         if(std::abs(coords[1]) < tolerance && (coords[0] < 0.5 - tolerance) && (coords[0] > tolerance))
         {
+            scaling_piece_4.push_back(i);
             bdryMaskRef_1.push_back(i);
             continue;
         }
     }
     
+    std::cout<<"Hello3"<<std::endl;
 
     extendBoundaryMask( plateTopol.getNumVertices(), bdryMaskRef_1 );
     std::vector<int> activeRef_2 = (std::vector<int>){0,1,1};
@@ -240,15 +267,25 @@ try{
 
     }
 
+    std::cout<<"Hello4"<<std::endl;
+
     extendBoundaryMask( plateTopol.getNumVertices(), bdryMaskOpt );
 
-    auto foldDofsPtr = std::make_shared<FoldDofsSkewedCross<DefaultConfigurator>>( plateTopol, plateGeomInitial, plateGeomInitial, bdryMaskRef_1);
+    /*
+    // Now, read the initial deformed plate
+    OpenMesh::IO::read_mesh(plate, "SkewedCrossFoldInitPlate.ply");
+    getGeometry(plate, plateGeomDef);
+    std::cout<<"Plate number of vertices after: "<<plate.n_vertices();
+    */
+
+    auto foldDofsPtr = std::make_shared<FoldDofsSkewedCross<DefaultConfigurator>>( plateTopol, plateGeomInitial, plateGeomInitial, bdryMaskRef_1, scaling_piece_1, scaling_piece_2, scaling_piece_3, scaling_piece_4);
     //FoldDofsSkewedCross<DefaultConfigurator> foldDofs( plateTopol, plateGeomInitial, plateGeomInitial, bdryMaskRef_1 );
     
     std::vector<int> foldVertices;
     foldDofsPtr->getFoldVertices(foldVertices);
+    std::cout<<"Number of fold vertices: "<<foldVertices.size()<<std::endl;
     
-    auto DfoldDofsPtr = std::make_shared<FoldDofsSkewedCrossGradient<DefaultConfigurator>>( plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices);
+    auto DfoldDofsPtr = std::make_shared<FoldDofsSkewedCrossGradient<DefaultConfigurator>>( plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices, scaling_piece_1, scaling_piece_2, scaling_piece_3, scaling_piece_4);
 
     size_t nFoldDOFs = foldDofsPtr->getNumDofs();
     size_t nVertexDOFs = 3*plateTopol.getNumVertices();
@@ -259,10 +296,14 @@ try{
 
     RealType factor_membrane = 10000.0;
     RealType factor_bending = 1.0;
+    RealType factor_gravity = 0.0;
 
     VectorType factors(2);
     factors[0] = factor_membrane;
     factors[1] = factor_bending;
+
+    OpenMesh::IO::read_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/deformed_plate_after_optimization_dirichlet.ply");
+    getGeometry(plate, plateGeomDef);
 
     VectorType edge_weights;
     foldDofsPtr->getEdgeWeights(edge_weights);
@@ -272,13 +313,13 @@ try{
     BoundaryDOFS<DefaultConfigurator> boundaryDOFs(bdryMaskOpt, nVertexDOFs, nFoldDOFs);
     // Create the degrees of freedom object
     std::vector<RealType> deviations;
-    VectorType t_initial = VectorType::Ones(foldDofsPtr->getNumDofs())*t_0;
-    VectorType vertexDOFS_initial = VectorType::Zero(3*plateTopol.getNumVertices());
-    ProblemDOFs<DefaultConfigurator> problemDOFs(t_initial, vertexDOFS_initial, plateGeomDef, foldDofsPtr, DfoldDofsPtr);
-
+    VectorType t_initial = VectorType::Ones(1)*t_0;
+    ProblemDOFs<DefaultConfigurator> problemDOFs(t_initial, plateGeomDef, VectorType::Zero(3*plateTopol.getNumVertices()),foldDofsPtr, DfoldDofsPtr);
     SQPLineSearchSolver<DefaultConfigurator> solver(pars, costFunctional, DcostFunctional, std::move(factory), boundaryDOFs, problemDOFs, 20);
-    
-    solver.solve(plateGeomRef, def_geometries, ref_geometries, fold_DOFs);
+    const std::string filename_def_geometries = "/lustre/scratch/data/s24pjoha_hpc-results/thesis_results/deformed_SkewedCrossFoldOptimization/";
+    const std::string filename_ref_geometries = "/lustre/scratch/data/s24pjoha_hpc-results/thesis_results/reference_SkewedCrossFoldOptimization/";
+
+    solver.solve(plateGeomRef, filename_def_geometries, filename_ref_geometries, plate);
     std::string filename;
 
     for(int i = 0; i < def_geometries.size(); i++){

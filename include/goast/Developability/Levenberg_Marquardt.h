@@ -85,7 +85,7 @@ class LMAlgorithm{
             MatrixType Id(num_reduced_dofs, num_reduced_dofs);
             Id.setIdentity();
 
-            while(_pars.iter < _pars.maxIter && !_pars.found){
+            do{
                 std::cout << "\rIteration: "<< std::setw(4) << _pars.iter
                 << " | F_k: " << std::setprecision(12)<< std::setw(10) << 0.5*f_k.dot(W*f_k)
                 << " | g_k: " << std::setprecision(12)<<std::setw(10)<<g_k.template lpNorm<Eigen::Infinity>()<<std::endl;
@@ -141,7 +141,7 @@ class LMAlgorithm{
                     _pars.nu = 2*_pars.nu;
                 }
                 _pars.iter++;
-            }
+            }while(_pars.iter < _pars.maxIter && !_pars.found);
             plateGeomDest = x_k;
         }
     

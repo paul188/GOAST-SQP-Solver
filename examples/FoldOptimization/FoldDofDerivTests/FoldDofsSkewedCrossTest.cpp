@@ -40,7 +40,7 @@ try{
 
     // load flat plate [0,1]^2
     TriMesh plate;
-    OpenMesh::IO::read_mesh(plate, "../../data/plate/paperCrissCross_coarse_coarse.ply");
+    OpenMesh::IO::read_mesh(plate, "../../data/plate/paperCrissCross_coarse.ply");
     MeshTopologySaver plateTopol( plate );
     std::cerr << "num of nodes = " << plateTopol.getNumVertices() << std::endl;
     VectorType plateGeomRef, plateGeomDef, plateGeomInitial;
@@ -203,13 +203,13 @@ try{
 
     std::vector<int> foldVertices;
 
-    auto foldDofs = FoldDofsSkewedCross<DefaultConfigurator>(plateTopol,plateGeomInitial, plateGeomRef, bdryMaskRef_1);
+    auto foldDofs = FoldDofsSkewedCross<DefaultConfigurator>(plateTopol,plateGeomInitial, plateGeomRef, bdryMaskRef_1, scaling_piece_1, scaling_piece_2, scaling_piece_3, scaling_piece_4);
     foldDofs.getFoldVertices(foldVertices);
-    auto DfoldDofs = FoldDofsSkewedCrossGradient<DefaultConfigurator>(plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices); 
+    auto DfoldDofs = FoldDofsSkewedCrossGradient<DefaultConfigurator>(plateTopol, bdryMaskRef_1, plateGeomInitial, foldVertices, scaling_piece_1, scaling_piece_2, scaling_piece_3, scaling_piece_4); 
 
     // TEST THE FOLD DOFS ACTION
     VectorType translate_vec = VectorType::Ones(foldDofs.getNumDofs());
-    translate_vec[0] = 0.0;
+    translate_vec[0] = 10.0;
     VectorType testGeom = plateGeomInitial;
     MatrixType testMat;
     foldDofs.apply(translate_vec,testGeom);

@@ -112,7 +112,7 @@ class FoldDofsSimpleLine : public FoldDofs<ConfiguratorType>, public BaseOp<type
             for(int i = 0; i < this->_foldVertices.size(); i++){
                 VecType coords;
                 getXYZCoord<VectorType, VecType>( Dest, coords, this->_foldVertices[i]);
-                coords[1] += t[0];
+                coords[0] += t[0];
                 setXYZCoord<VectorType, VecType>( Dest, coords, this->_foldVertices[i]);
             }
 
@@ -123,7 +123,7 @@ class FoldDofsSimpleLine : public FoldDofs<ConfiguratorType>, public BaseOp<type
         bool isFoldVertex(const RealType coord_x, const RealType coord_y) const
         {
             const RealType tolerance = 1e-5;  // Adjust as necessary
-            return std::abs(coord_y - 2.0) < tolerance;
+            return std::abs(coord_x - 0.5) < tolerance;
         }
 
         bool isFoldEdge(const int edgeIdx) const
@@ -187,7 +187,7 @@ class FoldDofsSimpleLineGradient : public FoldDofsGradient<ConfiguratorType>, pu
 
             for(int i = 0; i < this->_foldVertices.size(); i++){
                 // Set the Y components of foldVertices to 1
-                indicator_dof[this->_plateTopol.getNumVertices() + this->_foldVertices[i]] = 1;
+                indicator_dof[this->_foldVertices[i]] = 1;
             }
 
             typename ConfiguratorType::SparseMatrixType StiffnessMatrix;
@@ -480,6 +480,9 @@ class FoldDofsCrossGradient : public FoldDofsGradient<ConfiguratorType>, public 
         std::vector<int> _line1Vertices;
         std::vector<int> _line2Vertices;
 
+        std::vector<Eigen::Triplet<RealType>> _gradient_triplets;
+
+
     public:
 
         FoldDofsCrossGradient(const MeshTopologySaver &plateTopol,
@@ -490,24 +493,76 @@ class FoldDofsCrossGradient : public FoldDofsGradient<ConfiguratorType>, public 
                                    const std::vector<int> &line2Vertices)
                                       : FoldDofsGradient<ConfiguratorType>(plateTopol,bdryMaskRef,plateGeomInitial,foldVertices),
                                      _line1Vertices( line1Vertices ),
-                                     _line2Vertices( line2Vertices ){}
+                                     _line2Vertices( line2Vertices )
+        {
+
+            /*
+            MatrixType indicator_dof(this->_plateGeomInitial.size(),2);
+            indicator_dof.setZero();
+
+            std::vector<Eigen::Triplet<RealType>> triplets;
+            for (int i = 0; i < _line1Vertices.size(); i++) {
+                VecType coords;
+                getXYZCoord<VectorType, VecType>( this->_plateGeomInitial, coords, _line1Vertices[i]);
+                triplets.push_back(Eigen::Triplet<RealType>(_line1Vertices[i], 0, 1.0));
+            }
+
+            for(int i = 0; i < _line2Vertices.size(); i++) {
+                VecType coords;
+                getXYZCoord<VectorType, VecType>( this->_plateGeomInitial, coords, _line2Vertices[i]);
+                triplets.push_back(Eigen::Triplet<RealType>(this->_plateTopol.getNumVertices() + _line2Vertices[i], 1, 1.0));
+            }
+
+            indicator_dof.setFromTriplets(triplets.begin(), triplets.end());
+
+            VectorType dest;
+            dest.resize(this->_plateGeomInitial.size());
+            dest.setZero();
+
+            MatrixType gradient_mat;
+            gradient_mat.resize(this->_plateGeomInitial.size(), 2);
+            gradient_mat.setZero();
+
+            typename ConfiguratorType::SparseMatrixType StiffnessMatrix;
+            computeStiffnessMatrix<ConfiguratorType>(this->_plateTopol, this->_plateGeomInitial, StiffnessMatrix);
+            applyMaskToMajor<typename ConfiguratorType::SparseMatrixType>( this->_bdryMaskRef, StiffnessMatrix );
+
+            LinearSolver<DefaultConfigurator> directSolver;
+            directSolver.prepareSolver( StiffnessMatrix );
+
+            std::vector<Eigen::Triplet<RealType>> tripletList;
+            for(int i = 0; i < 2; i++)
+            {
+                directSolver.backSubstitute( indicator_dof.col(i), dest );
+                assignSparseBlockInplace(gradient_mat, convertVecToSparseMat(dest), 0, i, tripletList);
+                dest.setZero();
+            }
+
+            // Now, obtain the triplets from the sparse matrix _gradient_mat
+            _gradient_triplets.reserve(gradient_mat.nonZeros());  // Optional, for speed
+
+            for (int k = 0; k < gradient_mat.outerSize(); ++k) {
+                for (MatrixType::InnerIterator it(gradient_mat, k); it; ++it) {
+                    _gradient_triplets.emplace_back(it.row(), it.col(), it.value());
+                }
+            }*/
+        }
 
 
         void apply(const VectorType &t, MatrixType& Dest) const override{
             // Compute the gradient of the translation of the vertices of the fold with parameters t_i       
            
-            VectorType dest;
-            dest.resize(this->_plateGeomInitial.size());
-           
             if(Dest.rows() != this->_plateGeomInitial.size() || Dest.cols() != 2){
                 Dest.resize(this->_plateGeomInitial.size(), 2);
             }
+            
+            VectorType dest;
+            dest.resize(this->_plateGeomInitial.size());
 
             dest.setZero();
             Dest.setZero();
 
             MatrixType indicator_dof(this->_plateGeomInitial.size(),2);
-            indicator_dof.setZero();
 
             std::vector<Eigen::Triplet<RealType>> triplets;
             for (int i = 0; i < _line1Vertices.size(); i++) {
@@ -539,6 +594,7 @@ class FoldDofsCrossGradient : public FoldDofsGradient<ConfiguratorType>, public 
                 assignSparseBlockInplace(Dest, convertVecToSparseMat(dest), 0, i, tripletList);
                 dest.setZero();
             }
+           //Dest.setFromTriplets(_gradient_triplets.begin(), _gradient_triplets.end());
         }
 
 };
@@ -657,18 +713,30 @@ class FoldDofsArcLineGradient : public FoldDofsGradient<ConfiguratorType>, publi
         }
 };
 
+
 template<typename ConfiguratorType>
 class FoldDofsSkewedCross : public FoldDofs<ConfiguratorType>, public BaseOp<typename ConfiguratorType::VectorType, typename ConfiguratorType::VectorType>{
     typedef typename ConfiguratorType::RealType RealType;
     typedef typename ConfiguratorType::VectorType VectorType;
     typedef typename ConfiguratorType::VecType VecType;
 
+    private:
+        const std::vector<int> _scaling_piece_1, _scaling_piece_2, _scaling_piece_3, _scaling_piece_4;
+
     public:
         FoldDofsSkewedCross(const MeshTopologySaver &plateTopol,
                             const VectorType &plateGeomInitial,
                             const VectorType &plateGeomRef_basic,
-                            const std::vector<int> &bdryMaskRef)
-        : FoldDofs<ConfiguratorType>(plateTopol,plateGeomInitial,plateGeomRef_basic,bdryMaskRef)
+                            const std::vector<int> &bdryMaskRef,
+                            const std::vector<int> &scaling_piece_1,
+                            const std::vector<int> &scaling_piece_2,
+                            const std::vector<int> &scaling_piece_3,
+                            const std::vector<int> &scaling_piece_4)
+        : FoldDofs<ConfiguratorType>(plateTopol,plateGeomInitial,plateGeomRef_basic,bdryMaskRef),
+            _scaling_piece_1(scaling_piece_1),
+            _scaling_piece_2(scaling_piece_2),
+            _scaling_piece_3(scaling_piece_3),
+            _scaling_piece_4(scaling_piece_4)
         {
             this->initialize_folds_edges();
         }
@@ -703,41 +771,47 @@ class FoldDofsSkewedCross : public FoldDofs<ConfiguratorType>, public BaseOp<typ
                 setXYZCoord<VectorType, VecType>( Dest, coords, this->_foldVertices[i]);
             }   
 
-            auto exp_smoother = [](RealType x) -> RealType{
-                return (1.0 - x);
-            };
+            // Now handle the scaling pieces
+            // scaling piece 1
             
-
-            
-            for(int i = 0; i < this->_plateTopol.getNumVertices(); i++)
+            for(int i = 0; i < _scaling_piece_1.size(); i++)
             {
-                VecType coords_initial, coords;
-                getXYZCoord<VectorType, VecType>( this->_plateGeomInitial, coords_initial, i);
-                getXYZCoord<VectorType, VecType>(this->_plateGeomInitial, coords, i);
-                // Apply the exponential smoothing to the coordinates
-                // Check in which quadrant we are
-                if(coords_initial[0] <= 0.5 && coords_initial[1] <= 0.5)
-                {
-                    coords[0] = coords_initial[0] - exp_smoother(2*(0.5 - coords_initial[0]))*2*w*(0.5 - coords_initial[1]);
-                    coords[1] = coords_initial[1] + exp_smoother(2*(0.5 - coords_initial[1]))*2*w*(0.5 - coords_initial[0]);
-                }
-                else if(coords_initial[0] <= 0.5 && coords_initial[1] >= 0.5)
-                {
-                    coords[0] = coords_initial[0] + exp_smoother(2*(0.5 - coords_initial[0]))*2*w*(coords_initial[1] - 0.5);
-                    coords[1] = coords_initial[1] + exp_smoother(2*(coords_initial[1] - 0.5))*2*w*(0.5 - coords_initial[0]);
-                }
-                else if(coords_initial[0] >= 0.5 && coords_initial[1] >= 0.5)
-                {
-                    coords[0] = coords_initial[0] + exp_smoother(2*(coords_initial[0] - 0.5))*2*w*(coords_initial[1] - 0.5);
-                    coords[1] = coords_initial[1] - exp_smoother(2*(coords_initial[1] - 0.5))*2*w*(coords_initial[0] - 0.5);
-                }
-                else if(coords_initial[0] >= 0.5 && coords_initial[1] <= 0.5)
-                {
-                    coords[0] = coords_initial[0] - exp_smoother(2*(coords_initial[0] - 0.5))*2*w*(0.5 - coords_initial[1]);
-                    coords[1] = coords_initial[1] - exp_smoother(2*(0.5 - coords_initial[1]))*2*w*(coords_initial[0] - 0.5);
-                }
-                setXYZCoord<VectorType, VecType>( Dest, coords, i);
+                VecType coords;
+                getXYZCoord<VectorType, VecType>( Dest, coords, _scaling_piece_1[i]);
+                coords[1] = 0.5 + w + 2*(coords[1] - 0.5)*(0.5 - w);
+                setXYZCoord<VectorType, VecType>( Dest, coords, _scaling_piece_1[i]);
             }
+
+            // scaling piece 2
+            for(int i = 0; i < _scaling_piece_2.size(); i++)
+            {
+                VecType coords;
+                getXYZCoord<VectorType, VecType>( Dest, coords, _scaling_piece_2[i]);
+                coords[0] = 0.5 + w + (coords[0] - 0.5)*2*(0.5 - w);
+                setXYZCoord<VectorType, VecType>( Dest, coords, _scaling_piece_2[i]);
+            }
+
+            // scaling piece 3
+            for(int i = 0; i < _scaling_piece_3.size(); i++)
+            {
+                VecType coords;
+                getXYZCoord<VectorType, VecType>( Dest, coords, _scaling_piece_3[i]);
+                coords[1] = 2*coords[1]*(0.5 - w);
+                setXYZCoord<VectorType, VecType>( Dest, coords, _scaling_piece_3[i]);
+            }
+
+            // scaling piece 4
+            for(int i = 0; i < _scaling_piece_4.size(); i++)
+            {
+                VecType coords;
+                getXYZCoord<VectorType, VecType>( Dest, coords, _scaling_piece_4[i]);
+                coords[0] = 2*coords[0]*(0.5 - w);
+                setXYZCoord<VectorType, VecType>( Dest, coords, _scaling_piece_4[i]);
+            }
+
+            // Now, use the DirichletSmoother to regularize
+            DirichletSmoother<DefaultConfigurator> smoother(this->_plateGeomInitial,this->_bdryMaskRef, this->_plateTopol);
+            smoother.apply(Dest, Dest);
         }
 
         bool isFoldVertex(const RealType coord_x, const RealType coord_y) const
@@ -782,12 +856,23 @@ class FoldDofsSkewedCrossGradient : public FoldDofsGradient<ConfiguratorType>, p
     typedef typename ConfiguratorType::VectorType VectorType;
     typedef typename ConfiguratorType::VecType VecType;
 
+    private:
+        const std::vector<int> _scaling_piece_1, _scaling_piece_2, _scaling_piece_3, _scaling_piece_4;
+
     public:
         FoldDofsSkewedCrossGradient(const MeshTopologySaver &plateTopol,
             const std::vector<int> &bdryMaskRef,
             const VectorType &plateGeomInitial,
-            const std::vector<int> &foldVertices  
-        ): FoldDofsGradient<ConfiguratorType>(plateTopol,bdryMaskRef,plateGeomInitial,foldVertices)
+            const std::vector<int> &foldVertices,
+            const std::vector<int> &scaling_piece_1,
+            const std::vector<int> &scaling_piece_2,
+            const std::vector<int> &scaling_piece_3,
+            const std::vector<int> &scaling_piece_4    
+        ): FoldDofsGradient<ConfiguratorType>(plateTopol,bdryMaskRef,plateGeomInitial,foldVertices),
+        _scaling_piece_1(scaling_piece_1),
+        _scaling_piece_2(scaling_piece_2),
+        _scaling_piece_3(scaling_piece_3),
+        _scaling_piece_4(scaling_piece_4)
         {}
 
         void apply(const VectorType &t, MatrixType& Dest) const override{
@@ -800,6 +885,7 @@ class FoldDofsSkewedCrossGradient : public FoldDofsGradient<ConfiguratorType>, p
             }
 
             rhs.setZero();
+            dest.setZero();
             Dest.setZero();
 
 
@@ -812,9 +898,6 @@ class FoldDofsSkewedCrossGradient : public FoldDofsGradient<ConfiguratorType>, p
             RealType w = 0.3*std::tanh(t[0]);
             RealType dw_dt = 0.3*(1.0 - std::tanh(t[0])*std::tanh(t[0]));
 
-            std::vector<Eigen::Triplet<RealType>> triplets;
-            triplets.reserve(2*this->_plateTopol.getNumVertices());
-
             for(int i = 0; i < this->_foldVertices.size(); i++)
             {
                 VecType coords_initial;
@@ -822,58 +905,59 @@ class FoldDofsSkewedCrossGradient : public FoldDofsGradient<ConfiguratorType>, p
                 // Check which part of the cross this vertex belongs to
                 if(std::abs(coords_initial[1] - 0.5) < 1e-4)
                 {
-                    triplets.emplace_back(this->_plateTopol.getNumVertices() + this->_foldVertices[i], 0, -2*(coords_initial[0]-0.5)*dw_dt);
+                    rhs[this->_plateTopol.getNumVertices() + this->_foldVertices[i]] = -2*(coords_initial[0]-0.5)*dw_dt;
                 }
                 else if(std::abs(coords_initial[0] - 0.5) < 1e-4)
                 {
-                    triplets.emplace_back(this->_foldVertices[i], 0, 2*(coords_initial[1]-0.5)*dw_dt);
+                    rhs[this->_foldVertices[i]] = 2*(coords_initial[1]-0.5)*dw_dt;
                 }
             }
-            
-            auto exp_smoother = [](RealType x) -> RealType{
-                return (1.0 - x);
-            };
-            
-            for(int i = 0; i < this->_plateTopol.getNumVertices(); i++)
+
+            // Now, handle the scaling pieces
+            // scaling piece 1
+            for(int i = 0; i < _scaling_piece_1.size(); i++)
             {
-                VecType coords_initial, coords;
-                getXYZCoord<VectorType, VecType>( this->_plateGeomInitial, coords_initial, i);
-                getXYZCoord<VectorType, VecType>(this->_plateGeomInitial, coords, i);
-
-                if(std::abs(coords_initial[1] - 0.5) < 1e-4)
-                {
-                    continue;
-                }
-                else if(std::abs(coords_initial[0] - 0.5) < 1e-4)
-                {
-                    continue;
-                }
-
-                // Apply the exponential smoothing to the coordinates
-                // Check in which quadrant we are
-                if(coords_initial[0] <= 0.5 && coords_initial[1] <= 0.5)
-                {
-                    triplets.emplace_back(i, 0, - exp_smoother(2*(0.5 - coords_initial[0]))*2*dw_dt*(0.5 - coords_initial[1]));
-                    triplets.emplace_back(this->_plateTopol.getNumVertices() + i, exp_smoother(2*(0.5 - coords_initial[1]))*2*dw_dt*(0.5 - coords_initial[0]));
-                }
-                else if(coords_initial[0] <= 0.5 && coords_initial[1] >= 0.5)
-                {
-                    triplets.emplace_back(i, 0, exp_smoother(2*(0.5 - coords_initial[0]))*2*dw_dt*(coords_initial[1] - 0.5));
-                    triplets.emplace_back(this->_plateTopol.getNumVertices() + i, 0,  exp_smoother(2*(coords_initial[1] - 0.5))*2*dw_dt*(0.5 - coords_initial[0]));
-                }
-                else if(coords_initial[0] >= 0.5 && coords_initial[1] >= 0.5)
-                {
-                    triplets.emplace_back(i, 0, exp_smoother(2*(coords_initial[0] - 0.5))*2*dw_dt*(coords_initial[1] - 0.5));
-                    triplets.emplace_back(this->_plateTopol.getNumVertices() + i,0, - exp_smoother(2*(coords_initial[1] - 0.5))*2*dw_dt*(coords_initial[0] - 0.5));
-                }
-                else if(coords_initial[0] >= 0.5 && coords_initial[1] <= 0.5)
-                {
-                    triplets.emplace_back(i, 0, - exp_smoother(2*(coords_initial[0] - 0.5))*2*dw_dt*(0.5 - coords_initial[1]));
-                    triplets.emplace_back(this->_plateTopol.getNumVertices() + i, 0, - exp_smoother(2*(0.5 - coords_initial[1]))*2*dw_dt*(coords_initial[0] - 0.5));
-                }
+                VecType coords;
+                getXYZCoord<VectorType, VecType>( this->_plateGeomInitial, coords, _scaling_piece_1[i]);
+                rhs[this->_plateTopol.getNumVertices() + _scaling_piece_1[i]] = (1.0 - 2*(coords[1] - 0.5))*dw_dt;
             }
 
-            Dest.setFromTriplets(triplets.begin(), triplets.end());
+            // scaling piece 2
+            for(int i = 0; i < _scaling_piece_2.size(); i++)
+            {
+                VecType coords;
+                getXYZCoord<VectorType, VecType>( this->_plateGeomInitial, coords, _scaling_piece_2[i]);
+                rhs[_scaling_piece_2[i]] = (1.0 - 2*(coords[0] - 0.5))*dw_dt;
+            }
+
+            // scaling piece 3
+            for(int i = 0; i < _scaling_piece_3.size(); i++)
+            {
+                VecType coords;
+                getXYZCoord<VectorType, VecType>( this->_plateGeomInitial, coords, _scaling_piece_3[i]);
+                rhs[this->_plateTopol.getNumVertices() + _scaling_piece_3[i]] = -2.0*coords[1]*dw_dt;
+            }
+
+            // scaling piece 4
+            for(int i = 0; i < _scaling_piece_4.size(); i++)
+            {
+                VecType coords;
+                getXYZCoord<VectorType, VecType>( this->_plateGeomInitial, coords, _scaling_piece_4[i]);
+                rhs[_scaling_piece_4[i]] = -2.0*coords[0]*dw_dt;
+            }
+
+            // Now that I have the derivative of the boundary w.r.t. t, just solve the Laplace problem like usual
+            typename ConfiguratorType::SparseMatrixType StiffnessMatrix;
+            computeStiffnessMatrix<ConfiguratorType>(this->_plateTopol, this->_plateGeomInitial, StiffnessMatrix);
+            applyMaskToMajor(this->_bdryMaskRef, StiffnessMatrix );
+
+            LinearSolver<DefaultConfigurator> directSolver;
+            directSolver.prepareSolver( StiffnessMatrix );
+            directSolver.backSubstitute( rhs, dest );
+            if (dest.array().isNaN().any()) {
+                std::cerr << "Warning: Solution contains NaN values!" << std::endl;
+            }
+            Dest = convertVecToSparseMat(dest);
         }
 };   
 
@@ -943,8 +1027,8 @@ class FoldDofsCrossInterpolation : public FoldDofs<ConfiguratorType>, public Bas
             }   
 
             // Now, use the DirichletSmoother to regularize
-            //DirichletSmoother<DefaultConfigurator> smoother(this->_plateGeomInitial,this->_bdryMaskRef, this->_plateTopol);
-            //smoother.apply(Dest, Dest);
+            DirichletSmoother<DefaultConfigurator> smoother(this->_plateGeomInitial,this->_bdryMaskRef, this->_plateTopol);
+            smoother.apply(Dest, Dest);
 
             // Candidates for mesh smoothing functions:
             auto linear = [](RealType x) -> RealType{
@@ -1227,7 +1311,7 @@ class FoldDofsArcInterpolation : public FoldDofs<ConfiguratorType>, public BaseO
             for(size_t i = 0; i < _num_dofs; i++)
             {
                 //w[i] = 0.25 + 0.5*std::tanh(t[i]);
-                w[i] = 0.45 + 0.35*std::tanh(t[i]);
+                //w[i] = 0.45 + 0.35*std::tanh(t[i]);
             }
 
             Dest = this->_plateGeomRef_basic;
@@ -1468,15 +1552,13 @@ class FoldDofsArcInterpolation2 : public FoldDofs<ConfiguratorType>, public Base
             VectorType w(_num_dofs);
             for(size_t i = 0; i < _num_dofs; i++)
             {
-                //w[i] = 0.25 + 0.5*std::tanh(t[i]);
-                w[i] = 0.45 + 0.35*std::tanh(t[i]);
+                w[i] = 0.25 + 0.5*std::tanh(t[i]);
+                //w[i] = 0.45 + 0.35*std::tanh(t[i]);
             }
 
             Dest = this->_plateGeomRef_basic;
 
             VectorType coeffs = _lu.solve(w);
-            std::cout<<"Coeffs: "<<coeffs[0]<<"; "<<coeffs[1]<<"; "<<coeffs[2]<<std::endl;
-
             auto p = [coeffs, this](RealType x) -> RealType{
                 RealType y_val = 0.0;
                 for(int i = 0; i < coeffs.size(); i++)
@@ -1628,7 +1710,8 @@ class FoldDofsArcInterpolation2Gradient : public FoldDofsGradient<ConfiguratorTy
             dw_dt.setZero();
             for(int i = 0; i < _num_dofs; i++)
             {
-                dw_dt(i,i) = 0.35*(1.0 - std::tanh(t[i])*std::tanh(t[i]));
+                //dw_dt(i,i) = 0.35*(1.0 - std::tanh(t[i])*std::tanh(t[i]));
+                dw_dt(i,i) = 0.5*(1.0 - std::tanh(t[i])*std::tanh(t[i]));
             }
 
             FullMatrixType da_dt(_num_dofs, _num_dofs);
@@ -1680,3 +1763,250 @@ class FoldDofsArcInterpolation2Gradient : public FoldDofsGradient<ConfiguratorTy
             }
         }
 };   
+
+template<typename ConfiguratorType>
+class FoldDofsArcInterpolation3 : public FoldDofs<ConfiguratorType>, public BaseOp<typename ConfiguratorType::VectorType, typename ConfiguratorType::VectorType>{
+    typedef typename ConfiguratorType::RealType RealType;
+    typedef typename ConfiguratorType::VectorType VectorType;
+    typedef typename ConfiguratorType::VecType VecType;
+
+    const size_t _num_dofs;
+
+    Eigen::PartialPivLU<FullMatrixType> _lu;
+
+    public:
+        FoldDofsArcInterpolation3(const MeshTopologySaver &plateTopol,
+            const VectorType &plateGeomInitial,
+            const VectorType &plateGeomRef_basic,
+            const std::vector<int> &bdryMaskRef)
+            : FoldDofs<ConfiguratorType>(plateTopol,plateGeomInitial,plateGeomRef_basic,bdryMaskRef),
+            _num_dofs(2)
+        {
+            this->initialize_folds_edges();
+
+            // Initialize the inerpolationMatrix
+            FullMatrixType interpolationMatrix;
+            interpolationMatrix.resize(3, 3);
+            interpolationMatrix.setZero();
+
+            // interpolation points at x = 0.0, 0.25, 0.5
+            // polDegrees = {0,2,4}
+            for(size_t i = 0; i < 3; i++)
+            {
+                for(size_t j = 0; j < 3; j++)
+                {
+                    interpolationMatrix(i,j) = std::pow((0.25*i) - 0.5, 2*j);
+                }
+            }
+            
+            Eigen::PartialPivLU<FullMatrixType> lu(interpolationMatrix);
+            _lu = lu;
+        }
+
+
+        void apply(const VectorType &t, VectorType &Dest) const override{
+            assert(t.size() == _num_dofs);
+
+            if(Dest.size() != 3*this->_plateTopol.getNumVertices()){
+                Dest.resize(3*this->_plateTopol.getNumVertices());
+            }
+
+            VectorType w(3);
+            w[0] = 0.25;
+            w[1] = 0.45 + 0.35*std::tanh(t[0]);
+            w[2] = 0.45 + 0.35*std::tanh(t[1]);
+
+            Dest = this->_plateGeomRef_basic;
+
+            VectorType coeffs = _lu.solve(w);
+            auto p = [coeffs, this](RealType x) -> RealType{
+                RealType y_val = 0.0;
+                for(int i = 0; i < coeffs.size(); i++)
+                {
+                    y_val += coeffs[i] * std::pow(x-0.5, 2*i);
+                }
+                return y_val;
+            };
+
+            std::cout<<"Coeffs: "<<std::setprecision(15)<<coeffs[0]<<"; "<<coeffs[1]<<"; "<<coeffs[2]<<std::endl;
+
+            // Now, apply the translation to the fold vertices
+            for(int i = 0; i < this->_foldVertices.size(); i++)
+            {
+                VecType coords, coords_initial;
+                getXYZCoord<VectorType, VecType>( this->_plateGeomInitial, coords_initial, this->_foldVertices[i]);
+                getXYZCoord<VectorType, VecType>( Dest, coords, this->_foldVertices[i]);
+
+                coords[1] = p(coords_initial[0]);
+                setXYZCoord<VectorType, VecType>( Dest, coords, this->_foldVertices[i]);
+            }
+
+            // Now, instead of Dirichlet smoother, use distance-based interpolation
+            auto exp_smoother = [](RealType x) -> RealType{
+                return (1.0 - x);
+            };
+
+            for(int i = 0; i < this->_plateTopol.getNumVertices(); i++)
+            {
+                VecType coords, coords_initial;
+                getXYZCoord<VectorType, VecType>( Dest, coords, i);
+                getXYZCoord<VectorType, VecType>( this->_plateGeomInitial, coords_initial, i);
+
+                // don't want to perturb the folds
+                if(std::abs(coords_initial[1] - 0.25) < 1e-4)
+                {
+                    continue;
+                }
+
+                // Check if we are above or below the fold
+                if(coords_initial[1] < 0.25)
+                {
+                    coords[1] =  4*coords_initial[1]*p(coords_initial[0]);
+                }
+                else if(coords_initial[1] > 0.25)
+                {
+                    coords[1] = (1.0 - (4.0/3.0)*(coords_initial[1] - 0.25))*p(coords_initial[0]) + (4.0/3.0)*(coords_initial[1] - 0.25);
+                }
+                setXYZCoord<VectorType, VecType>( Dest, coords, i);
+            }
+        }
+
+        bool isFoldVertex(const RealType coord_x, const RealType coord_y) const
+        {
+            if((std::abs(coord_y - 0.25) < 1e-4)){
+                return true;
+            }
+            return false;
+        }
+
+        bool isFoldEdge(const int edgeIdx) const
+        {
+            int node_i = this->_plateTopol.getAdjacentNodeOfEdge(edgeIdx,0);
+            int node_j = this->_plateTopol.getAdjacentNodeOfEdge(edgeIdx,1);
+
+            VecType coords_i, coords_j;
+            getXYZCoord<VectorType, VecType>( this->_plateGeomInitial, coords_i, node_i);
+            getXYZCoord<VectorType, VecType>( this->_plateGeomInitial, coords_j, node_j);
+
+            if(isFoldVertex(coords_i[0], coords_i[1]) && isFoldVertex(coords_j[0], coords_j[1])){
+                return true;
+            }
+            return false;
+        }
+
+        void getFoldVertices(std::vector<int> &foldVertices) const{
+            foldVertices = this->_foldVertices;
+        }
+
+        void getEdgeWeights(VectorType &edge_weights) const{
+            edge_weights = this->_edge_weights;
+        }
+
+        size_t getNumDofs() const {
+            return _num_dofs;
+        }
+
+    };
+
+template<typename ConfiguratorType>
+class FoldDofsArcInterpolation3Gradient : public FoldDofsGradient<ConfiguratorType>, public BaseOp<typename ConfiguratorType::VectorType, typename ConfiguratorType::SparseMatrixType> {
+    protected:
+        typedef typename ConfiguratorType::RealType RealType;
+        typedef typename ConfiguratorType::VectorType VectorType;
+        typedef typename ConfiguratorType::VecType VecType;
+
+        const size_t _num_dofs;
+
+        Eigen::PartialPivLU<FullMatrixType> _lu;
+
+    public:
+        FoldDofsArcInterpolation3Gradient(const MeshTopologySaver &plateTopol,
+            const std::vector<int> &bdryMaskRef,
+            const VectorType &plateGeomInitial,
+            const std::vector<int> &foldVertices
+        ): FoldDofsGradient<ConfiguratorType>(plateTopol,bdryMaskRef,plateGeomInitial,foldVertices),
+           _num_dofs(2)
+        {
+            // Initialize the inerpolationMatrix
+            FullMatrixType interpolationMatrix;
+            interpolationMatrix.resize(3, 3);
+            interpolationMatrix.setZero();
+
+            // interpolation points at x = 0.0, 0.25, 0.5
+            // polDegrees = {0,2,4}
+            for(size_t i = 0; i < 3; i++)
+            {
+                for(size_t j = 0; j < 3; j++)
+                {
+                    interpolationMatrix(i,j) = std::pow((0.25*i) - 0.5, 2*j);
+                }
+            }
+            
+            Eigen::PartialPivLU<FullMatrixType> lu(interpolationMatrix);
+            _lu = lu;
+        }
+
+        void apply(const VectorType &t, MatrixType& Dest) const override{
+
+            if(Dest.rows() != 3*this->_plateTopol.getNumVertices() || Dest.cols() != _num_dofs){
+                Dest.resize(3*this->_plateTopol.getNumVertices(), _num_dofs);
+            }
+
+            Dest.setZero();
+            assert(t.size() == _num_dofs);
+            FullMatrixType dw_dt(3, _num_dofs);
+            dw_dt.setZero();
+            for(int i = 0; i < _num_dofs; i++)
+            {
+                dw_dt(i+1,i) = 0.35*(1.0 - std::tanh(t[i])*std::tanh(t[i]));
+            }
+
+            FullMatrixType da_dt(_num_dofs, 3);
+            da_dt.setZero();
+            for(int i = 0; i < _num_dofs; i++)
+            {
+                VectorType row_i = _lu.solve(dw_dt.col(i));
+                da_dt.row(i) = row_i.transpose();
+            }
+
+            FullMatrixType dp_da(this->_plateTopol.getNumVertices(), 3);
+            dp_da.setZero();
+            for(int i = 0; i < this->_plateTopol.getNumVertices(); i++)
+            {
+                VecType coords_initial;
+                getXYZCoord<VectorType, VecType>( this->_plateGeomInitial, coords_initial, i);
+
+                for(int j = 0; j < 3; j++)
+                {
+                    dp_da(i,j) = std::pow(coords_initial[0] - 0.5, 2*j);
+                }
+            }
+
+            MatrixType dp_dt_block = (dp_da * da_dt.transpose()).sparseView();
+            MatrixType dp_dt(3*this->_plateTopol.getNumVertices(), _num_dofs);
+            dp_dt.setZero();
+            std::vector<Eigen::Triplet<RealType>> triplets_dp_dt;
+            assignSparseBlockInplace(dp_dt, dp_dt_block, this->_plateTopol.getNumVertices(), 0, triplets_dp_dt);
+
+            std::vector<Eigen::Triplet<RealType>> triplets;
+            for(int i = 0; i < this->_plateTopol.getNumVertices(); i++)
+            {
+                VecType coords_initial;
+                getXYZCoord<VectorType, VecType>(this->_plateGeomInitial, coords_initial, i);
+                
+                if(std::abs(coords_initial[1] - 0.25) < 1e-4)
+                {
+                    Dest.row(this->_plateTopol.getNumVertices() + i) = dp_dt_block.row(i);
+                }
+                else if(coords_initial[1] > 0.25)
+                {
+                    // We are above the fold
+                    Dest.row(this->_plateTopol.getNumVertices() + i) = (1.0 - (4.0/3.0)*(coords_initial[1] - 0.25))*dp_dt_block.row(i);
+                }
+                else if(coords_initial[1] < 0.25)
+                {
+                    Dest.row(this->_plateTopol.getNumVertices() + i) = 4.0*coords_initial[1]*dp_dt_block.row(i);
+                }
+            }
+        }
+};

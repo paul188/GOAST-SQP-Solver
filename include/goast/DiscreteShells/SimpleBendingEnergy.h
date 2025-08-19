@@ -70,9 +70,6 @@ public:
     _activeShellIsDeformed( ActiveShellIsDeformed),
     _weight(Weight)
     {
-      for(int i = 0; i < _topology.getNumEdges(); i++){
-        std::cout<< "Weight for edge " << i << ": " << _weight[i] << std::endl;
-      }
     }
 
     SimpleBendingEnergy( const MeshTopologySaver& topology,
@@ -90,9 +87,6 @@ public:
         throw BasicException("SimpleBendingEnergy: Could not open log file!");
       }
 
-      for(int i = 0; i < _topology.getNumEdges(); i++){
-        std::cout<< "Weight for edge " << i << ": " << _weight[i] << std::endl;
-      }
     }
 
   // energy evaluation
