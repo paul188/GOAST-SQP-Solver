@@ -2520,32 +2520,9 @@ class ConstraintSqrdReduced : public BaseOp<typename ConfiguratorType::VectorTyp
                 int node_2 = _quadTopol.getNodeOfQuad(i,2);
                 int node_3 = _quadTopol.getNodeOfQuad(i,3);
 
-                // OLD
-                
-                // Get the weights of the vertices
-                RealType w_0 = 1.0;//_vars_idx.vertex_weight(vars, node_0);
-                RealType w_1 = 1.0;//_vars_idx.vertex_weight(vars, node_1);
-                RealType w_2 = 1.0;//_vars_idx.vertex_weight(vars, node_2);
-                RealType w_3 = 1.0;//_vars_idx.vertex_weight(vars, node_3);
-
-                VectorType v_0 = vertices.segment(3*node_0, 3);
-                VectorType v_1 = vertices.segment(3*node_1, 3);
-                VectorType v_2 = vertices.segment(3*node_2, 3);
-                VectorType v_3 = vertices.segment(3*node_3, 3);
-
-                // Calculate the reweighted vertices
-                VectorType rw_v_0 = v_0 * w_0;
-                VectorType rw_v_1 = v_1 * w_1;
-                VectorType rw_v_2 = v_2 * w_2;
-                VectorType rw_v_3 = v_3 * w_3;
-
-                // Calculate the reweighted edges
-                Eigen::Vector3d rw_e_02 = ((w_0 + w_1)*(rw_v_2 + rw_v_3) - (w_2 + w_3)*(rw_v_0 + rw_v_1)).template head<3>();
-                Eigen::Vector3d rw_e_13 = ((w_1 + w_2)*(rw_v_0 + rw_v_3) - (w_0 + w_3)*(rw_v_1 + rw_v_2)).template head<3>();
-
                 // NEW 
                 // Get the weights of the vertices
-                /*
+                
                 RealType w_0 = 0.5;//_vars_idx.vertex_weight(vars, node_0);
                 RealType w_1 = 0.5;//_vars_idx.vertex_weight(vars, node_1);
                 RealType w_2 = 0.5;//_vars_idx.vertex_weight(vars, node_2);
@@ -2565,7 +2542,6 @@ class ConstraintSqrdReduced : public BaseOp<typename ConfiguratorType::VectorTyp
                 // Calculate the reweighted edges
                 Eigen::Vector3d rw_e_02 = ((rw_v_2 + rw_v_3) - (rw_v_0 + rw_v_1)).template head<3>();
                 Eigen::Vector3d rw_e_13 = ((rw_v_0 + rw_v_3) - (rw_v_1 + rw_v_2)).template head<3>();
-                */
 
                 // Calculate the face normals with consistent orientation
                 Eigen::Vector3d face_normal = rw_e_02.cross(rw_e_13);
@@ -2611,15 +2587,9 @@ class ConstraintSqrdReduced : public BaseOp<typename ConfiguratorType::VectorTyp
                 ruling_23 = n_i.cross(n_face2);
                 ruling_30 = n_i.cross(n_face3);
 
-                // Get the weights again
-                RealType w_0 = 1.0;//_vars_idx.vertex_weight(vars, node_0);
-                RealType w_1 = 1.0;//_vars_idx.vertex_weight(vars, node_1);
-                RealType w_2 = 1.0;//_vars_idx.vertex_weight(vars, node_2);
-                RealType w_3 = 1.0;//_vars_idx.vertex_weight(vars, node_3);
-
                 // Calculate the reweighted rulings
-                Eigen::Vector3d rw_ruling_13 = (w_1 + w_2)*ruling_12 - (w_0 + w_3)*ruling_30;
-                Eigen::Vector3d rw_ruling_02 = (w_0 + w_1)*ruling_01 - (w_2 + w_3)*ruling_23;
+                Eigen::Vector3d rw_ruling_13 = ruling_12 - ruling_30;
+                Eigen::Vector3d rw_ruling_02 = ruling_01 - ruling_23;
 
                 // Now, finally calculate the developability constraint
                 VectorType rw_rulings_cross = rw_ruling_13.cross(rw_ruling_02);
@@ -2760,6 +2730,8 @@ class ConstraintSqrdReducedGradient : public BaseOp<typename ConfiguratorType::V
             for(int i = 0; i < _num_faces; i++)
             {
 
+               // std::cout<< "Face " << i << ": ";
+
                 // Get the indices of the vertices of the face
                 int node_0 = _quadTopol.getNodeOfQuad(i,0);
                 int node_1 = _quadTopol.getNodeOfQuad(i,1);
@@ -2767,52 +2739,120 @@ class ConstraintSqrdReducedGradient : public BaseOp<typename ConfiguratorType::V
                 int node_3 = _quadTopol.getNodeOfQuad(i,3);
 
                 // Get the weights of the vertices
-                RealType w_0 = 1.0;//_vars_idx.vertex_weight(vars, node_0);
-                RealType w_1 = 1.0;//_vars_idx.vertex_weight(vars, node_1);
-                RealType w_2 = 1.0;//_vars_idx.vertex_weight(vars, node_2);
-                RealType w_3 = 1.0;//_vars_idx.vertex_weight(vars, node_3);
+                RealType w_0 = 0.5;//_vars_idx.vertex_weight(vars, node_0);
+                RealType w_1 = 0.5;//_vars_idx.vertex_weight(vars, node_1);
+                RealType w_2 = 0.5;//_vars_idx.vertex_weight(vars, node_2);
+                RealType w_3 = 0.5;//_vars_idx.vertex_weight(vars, node_3);
 
                 Eigen::Vector3d v_0 = vertices.segment(3*node_0, 3).template head<3>();
                 Eigen::Vector3d v_1 = vertices.segment(3*node_1, 3).template head<3>();
                 Eigen::Vector3d v_2 = vertices.segment(3*node_2, 3).template head<3>();
                 Eigen::Vector3d v_3 = vertices.segment(3*node_3, 3).template head<3>();
 
+                /*
+                std::cout<<"v_0: "<<v_0.transpose()<<std::endl;
+                std::cout<<"v_1: "<<v_1.transpose()<<std::endl;
+                std::cout<<"v_2: "<<v_2.transpose()<<std::endl;
+                std::cout<<"v_3: "<<v_3.transpose()<<std::endl;
+                */
+
                 // Calculate the reweighted vertices
-                VectorType rw_v_0 = v_0 * w_0;
-                VectorType rw_v_1 = v_1 * w_1;
-                VectorType rw_v_2 = v_2 * w_2;
-                VectorType rw_v_3 = v_3 * w_3;
+                Eigen::Vector3d rw_v_0 = v_0 * w_0;
+                Eigen::Vector3d rw_v_1 = v_1 * w_1;
+                Eigen::Vector3d rw_v_2 = v_2 * w_2;
+                Eigen::Vector3d rw_v_3 = v_3 * w_3;
 
                 // Calculate the reweighted edges
-                Eigen::Vector3d rw_e_02 = (w_0 + w_1)*(rw_v_2 + rw_v_3) - (w_2 + w_3)*(rw_v_0 + rw_v_1);
-                Eigen::Vector3d rw_e_13 = (w_1 + w_2)*(rw_v_0 + rw_v_3) - (w_0 + w_3)*(rw_v_1 + rw_v_2);
+                Eigen::Vector3d rw_e_02 = (rw_v_2 + rw_v_3) - (rw_v_0 + rw_v_1);
+                Eigen::Vector3d rw_e_13 = (rw_v_0 + rw_v_3) - (rw_v_1 + rw_v_2);
+
+                /*
+                std::cout<<"rw_e_02: "<<rw_e_02.transpose()<<std::endl;
+                std::cout<<"rw_e_13: "<<rw_e_13.transpose()<<std::endl;
+                */
 
                 // Calculate the face normals with consistent orientation
-                VectorType face_normal = rw_e_02.cross(rw_e_13);
+                Eigen::Vector3d face_normal = rw_e_02.cross(rw_e_13);
                 face_normal = face_normal / face_normal.norm();
+
+                //std::cout<<"face_normal: "<<face_normal.transpose()<<std::endl;
                 
-                normals.segment(3*i, 3) = face_normal;
+                normals[3*i] = face_normal[0];
+                normals[3*i + 1] = face_normal[1];
+                normals[3*i + 2] = face_normal[2];
 
                 // Calculate the normal derivatives for the face
                 FullMatrixType A(3,3);
-                A.row(0) = rw_e_02;
-                A.row(1) = rw_e_13;
-                A.row(2) = 2*face_normal;
+                A(0,0) = rw_e_02[0];
+                A(0,1) = rw_e_02[1];
+                A(0,2) = rw_e_02[2];
+                A(1,0) = rw_e_13[0];
+                A(1,1) = rw_e_13[1];
+                A(1,2) = rw_e_13[2];
+                A(2,0) = 2*face_normal[0];
+                A(2,1) = 2*face_normal[1];
+                A(2,2) = 2*face_normal[2];
+
+                if(!v_0.allFinite())
+                {
+                    std::cout << "v_0 contains NaN or Inf" << std::endl;
+                }
+                if(!v_1.allFinite())
+                {
+                    std::cout << "v_1 contains NaN or Inf" << std::endl;
+                }
+                if(!v_2.allFinite())
+                {
+                    std::cout << "v_2 contains NaN or Inf" << std::endl;
+                }
+                if(!v_3.allFinite())
+                {
+                    std::cout << "v_3 contains NaN or Inf" << std::endl;
+                }
+
+                /*
+                for(int k= 0; k < 3; k++)
+                {
+                    for(int m = 0; m < 3; m++)
+                    {
+                        std::cout<< "A(" << k << "," << m << ") = " << A(k,m) << " ";
+                    }
+                    std::cout<<std::endl;
+                }*/
+
+                //std::cout<<"Face i"<<i<<": "<<A.determinant()<<std::endl;
+                if (!rw_e_02.allFinite()) {
+                    std::cout << "rw_e_02 contains NaN or Inf" << std::endl;
+                }
+                if (!rw_e_13.allFinite()) {
+                    std::cout << "rw_e_02 contains NaN or Inf" << std::endl;
+                }
+                if (!face_normal.allFinite()) {
+                    std::cout << "rw_e_02 contains NaN or Inf" << std::endl;
+                }
 
                 // Calculate dn_dv_0, ..., dn_dv_3
                 // First, calculate dn_dv_0
                 FullMatrixType rhs_0(3,3);
                 rhs_0.setZero();
-                rhs_0.row(0) = -2*face_normal;
-                rhs_0.row(1) = 2*face_normal;
+                rhs_0(0,0) = -2*face_normal[0];
+                rhs_0(0,1) = -2*face_normal[1];
+                rhs_0(0,2) = -2*face_normal[2];
+                rhs_0(1,0) = 2*face_normal[0];
+                rhs_0(1,1) = 2*face_normal[1];
+                rhs_0(1,2) = 2*face_normal[2];
 
                 FullMatrixType dn_dv_0 = A.colPivHouseholderQr().solve(-rhs_0);
 
                 // Now, calculate dn_dv_1
                 FullMatrixType rhs_1(3,3);
                 rhs_1.setZero();
-                rhs_1.row(0) = -2*face_normal;
-                rhs_1.row(1) = -2*face_normal;
+                rhs_1(0,0) = -2*face_normal[0];
+                rhs_1(0,1) = -2*face_normal[1];
+                rhs_1(0,2) = -2*face_normal[2];
+                rhs_1(1,0) = -2*face_normal[0];
+                rhs_1(1,1) = -2*face_normal[1];
+                rhs_1(1,2) = -2*face_normal[2];
 
                 // Calculate dn_dv_2
                 FullMatrixType dn_dv_1 = A.colPivHouseholderQr().solve(-rhs_1);
@@ -2820,15 +2860,23 @@ class ConstraintSqrdReducedGradient : public BaseOp<typename ConfiguratorType::V
                 // Now, calculate dn_dv_2
                 FullMatrixType rhs_2(3,3);
                 rhs_2.setZero();
-                rhs_2.row(0) = 2*face_normal;
-                rhs_2.row(1) = -2*face_normal;
+                rhs_2(0,0) = 2*face_normal[0];
+                rhs_2(0,1) = 2*face_normal[1];
+                rhs_2(0,2) = 2*face_normal[2];
+                rhs_2(1,0) = -2*face_normal[0];
+                rhs_2(1,1) = -2*face_normal[1];
+                rhs_2(1,2) = -2*face_normal[2];
                 FullMatrixType dn_dv_2 = A.colPivHouseholderQr().solve(-rhs_2);
 
                 // Now, calculate dn_dv_3
                 FullMatrixType rhs_3(3,3);
                 rhs_3.setZero();
-                rhs_3.row(0) = 2*face_normal;
-                rhs_3.row(1) = 2*face_normal;
+                rhs_3(0,0) = 2*face_normal[0];
+                rhs_3(0,1) = 2*face_normal[1];
+                rhs_3(0,2) = 2*face_normal[2];
+                rhs_3(1,0) = 2*face_normal[0];
+                rhs_3(1,1) = 2*face_normal[1];
+                rhs_3(1,2) = 2*face_normal[2];
                 FullMatrixType dn_dv_3 = A.colPivHouseholderQr().solve(-rhs_3);
 
                 dnormal_dv.block(3*i, 3*node_0, 3, 3) = dn_dv_0;
@@ -2836,6 +2884,11 @@ class ConstraintSqrdReducedGradient : public BaseOp<typename ConfiguratorType::V
                 dnormal_dv.block(3*i, 3*node_2, 3, 3) = dn_dv_2;
                 dnormal_dv.block(3*i, 3*node_3, 3, 3) = dn_dv_3;
             }   
+
+            if(dnormal_dv.hasNaN())
+            {
+                std::cerr << "dnormal_dv contains NaN values!" << std::endl;
+            }
 
             _it_face.reset();
             for(_it_face; _it_face.valid(); _it_face++)
@@ -3064,10 +3117,10 @@ class ConstraintSqrdReducedGradient : public BaseOp<typename ConfiguratorType::V
                 dr_he_30.block(0, 3*node_3_1, 3, 3) = dr_he_30_dv_3_1;
 
                 FullMatrixType drw_13(3, num_dofs);
-                drw_13 = 2*dr_he_12 - 2*dr_he_30;
+                drw_13 = dr_he_12 - dr_he_30;
 
                 FullMatrixType drw_02(3, num_dofs);
-                drw_02 = 2*dr_he_01 - 2*dr_he_23;
+                drw_02 = dr_he_01 - dr_he_23;
 
                 // Now, finally calculate the developability constraint gradient
                 // Compute the reweighted rulings themselves
@@ -3076,19 +3129,15 @@ class ConstraintSqrdReducedGradient : public BaseOp<typename ConfiguratorType::V
                 Eigen::Vector3d ruling_23 = normal_i.cross(normal_2);
                 Eigen::Vector3d ruling_30 = normal_i.cross(normal_3);
 
-                // Get the weights again
-                RealType w_0 = 1.0;//_vars_idx.vertex_weight(vars, node_0);
-                RealType w_1 = 1.0;//_vars_idx.vertex_weight(vars, node_1);
-                RealType w_2 = 1.0;//_vars_idx.vertex_weight(vars, node_2);
-                RealType w_3 = 1.0;//_vars_idx.vertex_weight(vars, node_3);
-
                 // Calculate the reweighted rulings
-                Eigen::Vector3d rw_ruling_13 = (w_1 + w_2)*ruling_12 - (w_0 + w_3)*ruling_30;
-                Eigen::Vector3d rw_ruling_02 = (w_0 + w_1)*ruling_01 - (w_2 + w_3)*ruling_23;
+                Eigen::Vector3d rw_ruling_13 = ruling_12 - ruling_30;
+                Eigen::Vector3d rw_ruling_02 = ruling_01 - ruling_23;
 
                 Eigen::Vector3d rw_rulings_cross = rw_ruling_13.cross(rw_ruling_02);
 
-                FullMatrixType factor_1 = 2 * ((drw_13 & rw_ruling_02) + (rw_ruling_13 & drw_02));
+                //VectorType store = (factor_1.transpose() * rw_rulings_cross);
+                //std::cout<<"store norm: "<<store.norm()<<std::endl;
+
                 Dest += factor_1.transpose() * rw_rulings_cross;
 
                 /*

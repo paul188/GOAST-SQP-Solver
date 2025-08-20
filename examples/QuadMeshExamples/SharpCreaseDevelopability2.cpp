@@ -129,75 +129,110 @@ int main()
                 bdryMaskTri.push_back(i);
             }
         }
-
-        VectorType smoothedGeom = centroid_geom;
-
-        /*
-        for(int i = 0; i < centroidTopol.getNumVertices(); i++)
-        {
-            VecType coords;
-            getXYZCoord<VectorType, VecType>(smoothedGeom,coords, i);
-
-            double x = coords[0];
-            double y = coords[1];
-            double z = coords[2];
-
-            double eps = 1e-9;
-            if (y <= x + 0.5 + eps &&
-                y <= 1.5 - x + eps &&
-                y >= 0.5 - x - eps &&
-                y >= x - 0.5 - eps)
-            {
-                coords[2] = 0.2; // flatten
-                bdryMaskTri.push_back(i);
-            }
-
-
-            if((y <= (x + 0.5)) && ((y <= (1.0 - x))) && (y >= (0.5 - x)) && (y >= (x - 0.5)))
-            {
-                coords[2] = 0.2;
-            }
-            setXYZCoord<VectorType, VecType>(smoothedGeom, coords, i);
-        }*/
-
-        for(int i = 0; i < centroidTopol.getNumVertices(); i++)
-        {
-            VecType coords;
-            getXYZCoord<VectorType, VecType>(smoothedGeom,coords, i);
-            coords[1] *= sqrt(1.0 - (0.4*0.4));
-            coords[0] *= sqrt(1.0 - (0.4*0.4));
-            setXYZCoord<VectorType, VecType>(smoothedGeom, coords, i);
-        }
-        /*
-        for(int i = 0; i < centroidTopol.getNumVertices(); i++)
-        {
-            VecType coords;
-            getXYZCoord<VectorType, VecType>(smoothedGeom,coords, i);
-            
-            double x = coords[0];
-            double y = coords[1];
-            double z = coords[2];
-            if(std::abs(x - 0.5) < 0.1 && std::abs(y - 0.5) < 0.1)
-            {
-                coords[2] = 0.4;
-                bdryMaskTri.push_back(i);
-            }
-            setXYZCoord<VectorType, VecType>(smoothedGeom, coords, i);
-        }*/
-
         extendBoundaryMask(centroid_topol.getNumVertices(), bdryMaskTri);
 
-        setGeometry(centroid_mesh, smoothedGeom);
-        OpenMesh::IO::write_mesh(centroid_mesh, "smoothed_centroid_3.ply");
+        for(int i = 0; i < centroidTopol.getNumVertices(); i++)
+        {
+            VecType coords;
+            getXYZCoord<VectorType, VecType>(centroid_geom,coords, i);
+            coords[1] *= sqrt(1.0 - (0.4*0.4));
+            coords[0] *= sqrt(1.0 - (0.4*0.4));
+            setXYZCoord<VectorType, VecType>(centroid_geom, coords, i);
+        }
 
         // Now, apply the Dirichlet smoothing
         DirichletSmoother<DefaultConfigurator> dirichletSmoother(centroid_base_geom, bdryMaskTri, centroid_topol);
-        dirichletSmoother.apply(smoothedGeom, smoothedGeom);
+        VectorType smoothedGeom = VectorType::Zero(centroid_topol.getNumVertices() * 3);
+        dirichletSmoother.apply(centroid_geom, smoothedGeom);
 
         setGeometry(centroid_mesh, smoothedGeom);
-        OpenMesh::IO::write_mesh(centroid_mesh, "smoothed_centroid_2.ply");
+        OpenMesh::IO::write_mesh(centroid_mesh, "smoothed_centroid.ply");
 
-        ElasticCentroi        
+        // ------------------- TRANSFER SMOOTHED CENTROID GEOMETRY TO QUAD MESH ---------------------
+
+        VectorType smoothedQuadGeom = VectorType::Zero(quadTopol.getNumVertices() * 3);
+        for(int i = 0; i < quadTopol.getNumVertices(); i++)
+        {
+            // get the smoothed centroid coordinates
+            VecType centroid_coords;
+            getXYZCoord<VectorType, VecType>(smoothedGeom,centroid_coords, quadToCentroidIdxMap[i]);
+            smoothedQuadGeom[3*i] = centroid_coords[0];
+            smoothedQuadGeom[3*i + 1] = centroid_coords[1];
+            smoothedQuadGeom[3*i + 2] = centroid_coords[2];
+        }
+
+        QuadMeshTopologySaver::setGeometry(mesh, smoothedQuadGeom);
+        OpenMesh::IO::write_mesh(mesh, "smoothed_quad_newest.ply");
+
+        QuadMeshTopologySaver::setGeometry(mesh, geom);
+
+        VectorType bdryCoords(3*bdryMask.size());
+
+        for(int i = 0; i < bdryMask.size(); i++)
+        {
+            VecType coords;
+            coords[0] = geom[3*bdryMask[i]];
+            coords[1] = geom[3*bdryMask[i]+1];
+            coords[2] = geom[3*bdryMask[i]+2];
+
+            bdryCoords[3*i] = coords[0];
+            bdryCoords[3*i+1] = coords[1];
+            bdryCoords[3*i+2] = coords[2];
+        }
+
+        QuadMeshTopologySaver::setGeometry(mesh, geom);
+        OpenMesh::IO::write_mesh(mesh, "prepare_developability.ply");
+        /*
+        std::pair<std::vector<int>, VectorType> bdryData = std::make_pair(bdryMask,bdryCoords);
+
+        StripHandler<DefaultConfigurator> stripHandle(quadTopol);
+
+        ConstraintIdx<DefaultConfigurator> constraintIdx(stripHandle, quadTopol);
+        VarsIdx<DefaultConfigurator> variablesIdx(quadTopol);
+
+        // --------------------- INITIALIZE CONSTRAINT WEIGHTS --------------------------------
+
+          constraint_weights<DefaultConfigurator> weights;
+          weights.fair_v = 50.0;
+          weights.fair_n = 10.0;
+          weights.fair_r = 0.0;
+          weights.ruling_0 = 10.0;
+          weights.ruling_1 = 10.0;
+          weights.ruling_2 = 10.0;
+          weights.dev = 1000.0;
+
+        MatrixType weights_mat;
+        weights.extend_weights(constraintIdx, weights_mat);
+
+        //printMatrixToFile(weights_mat, "/home/paul_johannssen/Desktop/masterarbeit/goast_old/examples/QuadMeshExamples/plotting/weights.txt");
+
+        // -------------------------- SETUP Constraint and ConstraintGrad ----------------------------
+
+        Constraint<DefaultConfigurator> constraint(quadTopol,stripHandle, constraintIdx, variablesIdx, bdryData);
+        ConstraintGrad<DefaultConfigurator> constraintGrad(quadTopol,stripHandle, constraintIdx, variablesIdx, bdryData);
+
+        // -------------------------- INITIALIZE THE VARIABLES --------------------------------------------
+        VectorType init = VectorType::Zero(variablesIdx["num_dofs"]);
+        constraint.initialize_vars(smoothedQuadGeom, init);
+
+
+        LevenbergMarquardtParams<DefaultConfigurator> pars;
+        LMAlgorithm<DefaultConfigurator> lm(pars, constraint, constraintGrad, variablesIdx["num_dofs"], constraintIdx["num_cons"]);
+
+        //std::string filepath_begin = "/home/paul_johannssen/Desktop/masterarbeit/goast_old/examples/QuadMeshExamples/plotting/gauss_image_data_begin.txt";
+        //plot_gauss_image(quadTopol,view, filepath_begin);
+
+        VectorType Dest;
+        lm.solve(init, Dest, weights_mat);
+        auto test_normal = variablesIdx.face_normal(Dest, 0);
+        VectorType DestGeom = Dest.segment(variablesIdx["vertices"],3*num_vertices);
+        QuadMeshTopologySaver::setGeometry(mesh, DestGeom);
+        OpenMesh::IO::write_mesh(mesh, "result_developability.ply");
+        std::string normals_file = "/home/paul_johannssen/Desktop/masterarbeit/goast/examples/QuadMeshExamples/plotting/normals.txt";
+        export_normals(quadTopol,Dest, variablesIdx, normals_file);
+        std::string rw_rulings_file = "/home/paul_johannssen/Desktop/masterarbeit/goast/examples/QuadMeshExamples/plotting/rw_rulings.txt";
+        export_rw_rulings(quadTopol,Dest, variablesIdx, rw_rulings_file);
+        */
 
     }catch(std::exception &e){
         std::cerr << "Exception caught: " << e.what() << std::endl;

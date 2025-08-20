@@ -21,249 +21,114 @@ int main()
         MyMesh mesh;
         OpenMesh::IO::read_mesh(mesh, "../../data/plate/basePlateSharpCreaseDevelopability.ply");
         QuadMeshTopologySaver quadTopol(mesh);
-        VectorType geom;
-        QuadMeshTopologySaver::getGeometry(mesh,geom);
+        VectorType quadDeformedGeometry, quadReferenceGeometry;
+        QuadMeshTopologySaver::getGeometry(mesh,quadDeformedGeometry);
+        QuadMeshTopologySaver::getGeometry(mesh,quadReferenceGeometry);
 
         size_t num_vertices = quadTopol.getNumVertices();
         size_t num_faces = quadTopol.getNumFaces();
 
-        // --------------------- GENERATE BASE CENTROID TOPOLOGY ----------------------------
+        // Read in the initial deformed quad geometry
+        OpenMesh::IO::read_mesh(mesh, "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/smoothed_quad_newest.ply");
+        QuadMeshTopologySaver::getGeometry(mesh, quadDeformedGeometry);
 
-        TriMesh centroid_base_mesh = quadTopol.makeQuadMeshCentroid();
-        MeshTopologySaver centroidTopol(centroid_base_mesh);
-        VectorType centroid_base_geom;
-        getGeometry(centroid_base_mesh, centroid_base_geom);
+        VectorType factors(2);
+        factors[0] = 0.0; 
+        factors[1] = 1.0; 
 
-        // ---------------------  GENERATE MAP BETWEEN QUAD AND CENTROID TOPOLOGY ----------------------------
-        std::map<int,int> quadToCentroidIdxMap;
-        std::vector<int> noQuadVertexIndices;
-        bool foundMatch = false;
-        for(int i = 0; i < centroidTopol.getNumVertices(); i++){
-            VecType coords_tri;
-            getXYZCoord<VectorType, VecType>(centroid_base_geom,coords_tri, i);
-            for(int j = 0; j < quadTopol.getNumVertices(); j++)
-            {
-                VecType coords_quad;
-                coords_quad[0] = geom[3*j];
-                coords_quad[1] = geom[3*j+1];
-                coords_quad[2] = geom[3*j+2];
-
-                if((coords_quad - coords_tri).norm() < 1e-4)
-                {
-                    quadToCentroidIdxMap[j] = i;
-                    foundMatch = true;
-                    break;
-                }
-                
-            }
-            if(!foundMatch)
-            {
-                noQuadVertexIndices.push_back(i);
-            }
-            
-            // reset foundMatch
-            foundMatch = false;
-        }
-
-        // -------------------------- SETUP BOUNDARY ------------------------------------------
-
-        double tolerance = 1e-4;
-
+        int counter_1 = 0;
+        int counter_2 = 0;
         std::vector<int> bdryMask;
-        for(int i = 0; i < num_vertices; i++)
-        {
-            VecType coords;
-            coords[0] = geom[3*i];
-            coords[1] = geom[3*i+1];
-            coords[2] = geom[3*i+2];
-            if(std::abs(coords[0]) < tolerance || std::abs(1.0 - coords[0]) < tolerance || std::abs(coords[1]) < tolerance || std::abs(1.0 - coords[1]) < tolerance){
-                bdryMask.push_back(i);
-            }
-
-            if(std::abs(coords[0]) < tolerance || std::abs(1-coords[0]) < tolerance)
-            {
-                if(coords[1] <= 0.5)
-                {
-                    geom[3*i + 2] = 0.4*coords[1];
-                }
-                else if(coords[1] > 0.5)
-                {
-                    geom[3*i + 2] = 0.4*(1.0 - coords[1]);
-                }
-                continue;
-            }
-
-            if(std::abs(coords[1]) < tolerance || std::abs(1-coords[1]) < tolerance)
-            {
-                if(coords[0] <= 0.5)
-                {
-                    geom[3*i + 2] = 0.4*coords[0];
-                }
-                else if(coords[0] > 0.5)
-                {
-                    geom[3*i + 2] = 0.4*(1.0 - coords[0]);
-                }
-                continue;
-            }
-        }
-
-        // ----------------- GENERATE DEFORMED CENTROID MESHES --------------------------------
-
-        QuadMeshTopologySaver::setGeometry(mesh, geom);
-        QuadMeshTopologySaver new_quad_topol(mesh);
-        // Now, we want to refine this into a triangle mesh
-        TriMesh centroid_mesh = new_quad_topol.makeQuadMeshCentroid();
-        VectorType centroid_geom;
-        getGeometry(centroid_mesh, centroid_geom);
-        MeshTopologySaver centroid_topol(centroid_mesh);
-        OpenMesh::IO::write_mesh(centroid_mesh, "centroid.ply");
-        // Now, first recalculate the boundary in the TriMesh format
-        std::vector<int> bdryMaskTri;
-        for(int i = 0; i < centroid_topol.getNumVertices(); i++)
-        {
-            VecType coords;
-            getXYZCoord<VectorType, VecType>(centroid_base_geom,coords, i);
-
-            if(std::abs(coords[0]) < tolerance || std::abs(1.0 - coords[0]) < tolerance || std::abs(coords[1]) < tolerance || std::abs(1.0 - coords[1]) < tolerance)
-            {
-                bdryMaskTri.push_back(i);
-            }
-        }
-
-        VectorType smoothedGeom = centroid_geom;
-
-        /*
-        for(int i = 0; i < centroidTopol.getNumVertices(); i++)
-        {
-            VecType coords;
-            getXYZCoord<VectorType, VecType>(smoothedGeom,coords, i);
-
-            double x = coords[0];
-            double y = coords[1];
-            double z = coords[2];
-
-            double eps = 1e-9;
-            if (y <= x + 0.5 + eps &&
-                y <= 1.5 - x + eps &&
-                y >= 0.5 - x - eps &&
-                y >= x - 0.5 - eps)
-            {
-                coords[2] = 0.2; // flatten
-                bdryMaskTri.push_back(i);
-            }
-
-
-            if((y <= (x + 0.5)) && ((y <= (1.0 - x))) && (y >= (0.5 - x)) && (y >= (x - 0.5)))
-            {
-                coords[2] = 0.2;
-            }
-            setXYZCoord<VectorType, VecType>(smoothedGeom, coords, i);
-        }*/
-
-        for(int i = 0; i < centroidTopol.getNumVertices(); i++)
-        {
-            VecType coords;
-            getXYZCoord<VectorType, VecType>(smoothedGeom,coords, i);
-            coords[1] *= sqrt(1.0 - (0.4*0.4));
-            coords[0] *= sqrt(1.0 - (0.4*0.4));
-            setXYZCoord<VectorType, VecType>(smoothedGeom, coords, i);
-        }
-        /*
-        for(int i = 0; i < centroidTopol.getNumVertices(); i++)
-        {
-            VecType coords;
-            getXYZCoord<VectorType, VecType>(smoothedGeom,coords, i);
-            
-            double x = coords[0];
-            double y = coords[1];
-            double z = coords[2];
-            if(std::abs(x - 0.5) < 0.1 && std::abs(y - 0.5) < 0.1)
-            {
-                coords[2] = 0.4;
-                bdryMaskTri.push_back(i);
-            }
-            setXYZCoord<VectorType, VecType>(smoothedGeom, coords, i);
-        }*/
-
-        extendBoundaryMask(centroid_topol.getNumVertices(), bdryMaskTri);
-
-        setGeometry(centroid_mesh, smoothedGeom);
-        OpenMesh::IO::write_mesh(centroid_mesh, "smoothed_centroid_3.ply");
-
-        // Now, apply the Dirichlet smoothing
-        DirichletSmoother<DefaultConfigurator> dirichletSmoother(centroid_base_geom, bdryMaskTri, centroid_topol);
-        dirichletSmoother.apply(smoothedGeom, smoothedGeom);
-
-        setGeometry(centroid_mesh, smoothedGeom);
-        OpenMesh::IO::write_mesh(centroid_mesh, "smoothed_centroid_2.ply");
-
-        // ------------------- TRANSFER SMOOTHED CENTROID GEOMETRY TO QUAD MESH ---------------------
-
-        VectorType smoothedQuadGeom = VectorType::Zero(quadTopol.getNumVertices() * 3);
         for(int i = 0; i < quadTopol.getNumVertices(); i++)
         {
-            // get the smoothed centroid coordinates
-            VecType centroid_coords;
-            getXYZCoord<VectorType, VecType>(smoothedGeom,centroid_coords, quadToCentroidIdxMap[i]);
-            smoothedQuadGeom[3*i] = centroid_coords[0];
-            smoothedQuadGeom[3*i + 1] = centroid_coords[1];
-            smoothedQuadGeom[3*i + 2] = centroid_coords[2];
+            VecType coords;
+            coords[0] = quadReferenceGeometry[3*i];
+            coords[1] = quadReferenceGeometry[3*i+1];
+            coords[2] = quadReferenceGeometry[3*i+2];
+
+            if((std::abs(coords[0]) < 1e-4) || (std::abs(1.0 - coords[0]) < 1e-3) )
+            {
+                counter_1++;
+                bdryMask.push_back(3*i);
+                bdryMask.push_back(3*i + 1);
+                bdryMask.push_back(3*i + 2);
+            }
+
+            if((std::abs(coords[1]) < 1e-4) || (std::abs(1.0 - coords[1]) < 1e-3) )
+            {
+                counter_2++;
+                bdryMask.push_back(3*i);
+                bdryMask.push_back(3*i + 1);
+                bdryMask.push_back(3*i + 2);
+            }
         }
 
-        QuadMeshTopologySaver::setGeometry(mesh, smoothedQuadGeom);
-        OpenMesh::IO::write_mesh(mesh, "smoothed_quad.ply");
+        /*
+        for(int i = 0; i < quadTopol.getNumVertices(); i++)
+        {
+            VecType coords;
+            coords[0] = quadDeformedGeometry[3*i];
+            coords[1] = quadDeformedGeometry[3*i+1];
+            coords[2] = quadDeformedGeometry[3*i+2];
 
-        QuadMeshTopologySaver::setGeometry(mesh, geom);
-        OpenMesh::IO::write_mesh(mesh, "prepare_developability.ply");
+            coords[1] *= sqrt(1.0 - (0.4*0.4));
+            coords[0] *= sqrt(1.0 - (0.4*0.4));
 
+            quadDeformedGeometry[3*i] = coords[0];
+            quadDeformedGeometry[3*i + 1] = coords[1];
+            quadDeformedGeometry[3*i + 2] = coords[2];
+        }*/
 
-        StripHandler<DefaultConfigurator> stripHandle(quadTopol);
+        QuadMeshTopologySaver::setGeometry(mesh, quadDeformedGeometry);
+        OpenMesh::IO::write_mesh(mesh, "new_2.ply");
 
-        ConstraintIdx<DefaultConfigurator> constraintIdx(stripHandle, quadTopol);
-        VarsIdx<DefaultConfigurator> variablesIdx(quadTopol);
+        EdgeLengthQuadEnergy<DefaultConfigurator> E_edge(quadTopol, quadReferenceGeometry);
+        EdgeLengthQuadEnergyGradient<DefaultConfigurator> DE_edge(quadTopol, quadReferenceGeometry);
 
-        // --------------------- INITIALIZE CONSTRAINT WEIGHTS --------------------------------
+        ConstraintSqrdReduced<DefaultConfigurator> constraintSqrdReduced(quadTopol);
+        ConstraintSqrdReducedGradient<DefaultConfigurator> constraintSqrdReducedGradient(quadTopol);
 
-          constraint_weights<DefaultConfigurator> weights;
-          weights.fair_v = 0.005;//50.0;
-          weights.fair_n = 0.005;//10.0;
-          weights.fair_r = 0.005;
-          weights.ruling_0 = 10.0;
-          weights.ruling_1 = 10.0;
-          weights.ruling_2 = 10.0;
-          weights.dev = 1000.0;
+        AdditionOp<DefaultConfigurator> E_tot( factors, E_edge ,constraintSqrdReduced);
+        AdditionGradient<DefaultConfigurator> DE_tot( factors, DE_edge, constraintSqrdReducedGradient);
 
-        MatrixType weights_mat;
-        weights.extend_weights(constraintIdx, weights_mat);
+        std::cout<<"Hello1"<<std::endl;
+        VectorType test = VectorType::Zero(quadDeformedGeometry.size());
+        constraintSqrdReducedGradient.apply(quadDeformedGeometry, test);
+        std::cout<<"Hello2"<<std::endl;
 
-        //printMatrixToFile(weights_mat, "/home/paul_johannssen/Desktop/masterarbeit/goast_old/examples/QuadMeshExamples/plotting/weights.txt");
+        if(test.hasNaN())
+        {
+            std::cout<<"test has NaN!"<<std::endl;
+        }
 
-        // -------------------------- SETUP Constraint and ConstraintGrad ----------------------------
+        /*
+        for(int i = 0; i < test.size(); i++)
+        {
+            if(!(test[i]).isFinite())
+            {
+                std::cout<<"test["<<i<<"] = "<<test[i]<<" is not finite!"<<std::endl;
+            }
+        }*/
+        
+        // set outer optimization parameters
+        OptimizationParameters<DefaultConfigurator> optPars;
+        optPars.setGradientIterations( 200 );
+        optPars.setBFGSIterations( 200 );
+        optPars.setEpsilon( 1e-10);
+        optPars.setQuietMode( SHOW_ALL );
 
-        Constraint<DefaultConfigurator> constraint(quadTopol,stripHandle, constraintIdx, variablesIdx);
-        ConstraintGrad<DefaultConfigurator> constraintGrad(quadTopol,stripHandle, constraintIdx, variablesIdx);
-        BoundaryDOFS_quad<DefaultConfigurator> bdryDOFs(bdryMask, num_vertices, variablesIdx);
+        VectorType result = quadDeformedGeometry;
 
-        // -------------------------- INITIALIZE THE VARIABLES --------------------------------------------
-        VectorType init = VectorType::Zero(variablesIdx["num_dofs"]);
-        constraint.initialize_vars(smoothedQuadGeom, init);
+        GradientDescent<DefaultConfigurator> GD( constraintSqrdReduced, constraintSqrdReducedGradient, optPars);
+        GD.setBoundaryMask( bdryMask );
+        GD.solve( quadDeformedGeometry, result );
 
-        LevenbergMarquardtParams<DefaultConfigurator> pars;
-        LMAlgorithm<DefaultConfigurator> lm(pars, constraint, constraintGrad, bdryDOFs, variablesIdx["num_dofs"], constraintIdx["num_cons"]);
+        QuasiNewtonBFGS<DefaultConfigurator> BFGS( constraintSqrdReduced, constraintSqrdReducedGradient, optPars);
+        BFGS.setBoundaryMask( bdryMask );
+        BFGS.solve( result, result );
 
-        //std::string filepath_begin = "/home/paul_johannssen/Desktop/masterarbeit/goast_old/examples/QuadMeshExamples/plotting/gauss_image_data_begin.txt";
-        //plot_gauss_image(quadTopol,view, filepath_begin);
-
-        VectorType Dest;
-        lm.solve(init, Dest, weights_mat);
-        auto test_normal = variablesIdx.face_normal(Dest, 0);
-        VectorType DestGeom = Dest.segment(variablesIdx["vertices"],3*num_vertices);
-        QuadMeshTopologySaver::setGeometry(mesh, DestGeom);
-        OpenMesh::IO::write_mesh(mesh, "result_developability.ply");
-        std::string normals_file = "/home/paul_johannssen/Desktop/masterarbeit/goast_old/examples/QuadMeshExamples/plotting/normals.txt";
-        export_normals(quadTopol,Dest, variablesIdx, normals_file);
-        std::string rw_rulings_file = "/home/paul_johannssen/Desktop/masterarbeit/goast_old/examples/QuadMeshExamples/plotting/rw_rulings.txt";
-        export_rw_rulings(quadTopol,Dest, variablesIdx, rw_rulings_file);
+        QuadMeshTopologySaver::setGeometry(mesh, result);
+        OpenMesh::IO::write_mesh(mesh, "centroid_base_deformed_newest.ply");
 
     }catch(std::exception &e){
         std::cerr << "Exception caught: " << e.what() << std::endl;

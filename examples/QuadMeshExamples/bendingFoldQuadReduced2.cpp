@@ -1,6 +1,10 @@
+#include "goast/Core/Configurators.h"
+#include "goast/Core/Topology.h"
 #include "goast/Developability/Constraints.h"
+#include "goast/Developability/DevelopabilityCentroidEnergy.h"
 #include "goast/QuadMesh/QuadTopology.h"
 #include "goast/SQP/Utils/SparseMat.h"
+#include "goast/Smoothers.h"
 #include <goast/Core.h>
 #include <goast/DiscreteShells.h>
 #include <goast/Developability/Developability.h>
@@ -44,43 +48,29 @@ int main()
                 bdryMask.push_back(3*i + 1);
                 bdryMask.push_back(3*i + 2);
             }
-
-            if(std::abs(coords[0]) < tolerance || std::abs(1-coords[0]) < tolerance)
-            {
-                if(coords[1] <= 0.5)
-                {
-                    coords[2] = 0.4*coords[1];
-                }
-                else if(coords[1] > 0.5)
-                {
-                    coords[2] = 0.4*(1.0 - coords[1]);
-                }
-                quadDeformedGeometry[3*i] = coords[0];
-                quadDeformedGeometry[3*i + 1] = coords[1];
-                quadDeformedGeometry[3*i + 2] = coords[2];
-                continue;
-            }
-
-            if(std::abs(coords[1]) < tolerance || std::abs(1-coords[1]) < tolerance)
-            {
-                if(coords[0] <= 0.5)
-                {
-                    coords[2] = 0.4*coords[0];
-                }
-                else if(coords[0] > 0.5)
-                {
-                    coords[2] = 0.4*(1.0 - coords[0]);
-                }
-                quadDeformedGeometry[3*i] = coords[0];
-                quadDeformedGeometry[3*i + 1] = coords[1];
-                quadDeformedGeometry[3*i + 2] = coords[2];
-                continue;
-            }
         }
+
+        // -------------------- SETUP CENTROID MESH --------------------------------------------
+
+        // Now, convert to centroid mesh and smooth the geometry
+        QuadMeshTopologySaver::setGeometry(mesh, quadDeformedGeometry);
+        TriMesh centroid_base_mesh = quadTopol.makeQuadMeshCentroid();
+        MeshTopologySaver centroid_topol(centroid_base_mesh);
+        VectorType centroid_base_geom, centroidDeformedGeometry;
+        getGeometry(centroid_base_mesh, centroid_base_geom);
+        getGeometry(centroid_base_mesh, centroidDeformedGeometry);
+        OpenMesh::IO::write_mesh(centroid_base_mesh, "centroid_base.ply");
+        DirichletSmoother<DefaultConfigurator> dirichletSmoother(centroid_base_geom, bdryMask, centroid_topol);
+        dirichletSmoother.apply(centroid_base_geom, centroid_base_geom);
+
+        setGeometry(centroid_base_mesh, centroid_base_geom);
+        OpenMesh::IO::write_mesh(centroid_base_mesh, "centroid_base_deformed.ply");
+
+        CoordConverter<DefaultConfigurator> coordConverter(quadTopol, centroid_topol, quadDeformedGeometry, centroidDeformedGeometry);
+        coordConverter.convertCentroidToQuad(centroid_base_geom, quadDeformedGeometry);
 
         QuadMeshTopologySaver::setGeometry(mesh, quadDeformedGeometry);
         OpenMesh::IO::write_mesh(mesh, "quad_base_deformed_0.ply");
-
         VectorType factors(2);
         factors[0] = 0.0; 
         factors[1] = 1.0; 
@@ -93,11 +83,18 @@ int main()
 
         AdditionOp<DefaultConfigurator> E_tot( factors, E_edge ,constraintSqrdReduced);
         AdditionGradient<DefaultConfigurator> DE_tot( factors, DE_edge, constraintSqrdReducedGradient);
+
+        VectorType test;
+        constraintSqrdReducedGradient.apply(quadDeformedGeometry, test);
+        if(test.hasNaN())
+        {
+            std::cout<<"Test has NaN values!"<<std::endl;
+        }
         
         // set outer optimization parameters
         OptimizationParameters<DefaultConfigurator> optPars;
         optPars.setGradientIterations( 200 );
-        optPars.setBFGSIterations( 2000 );
+        optPars.setBFGSIterations( 200 );
         optPars.setEpsilon( 1e-10);
         optPars.setQuietMode( SHOW_ALL );
 
