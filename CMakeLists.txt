@@ -30,6 +30,26 @@ include_directories(
     /usr/local/include/eigen3
 )
 
+# --- CppAD setup ------------------------------------------------------------
+# Assume CppAD is installed in your home directory
+# --- CppAD setup ------------------------------------------------------------
+# CppAD local target
+# === CppAD ===
+# Use your local path to CppAD headers
+# CppAD header-only library
+
+set(CPPAD_INCLUDE_DIR "/home/s24pjoha_hpc/local/cppad/include")
+
+target_include_directories(GOAST INTERFACE ${CPPAD_INCLUDE_DIR})
+
+# Mark CppAD as an imported INTERFACE library
+add_library(CppAD_lib INTERFACE IMPORTED)
+set_target_properties(CppAD_lib PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${CPPAD_INCLUDE_DIR}"
+)
+
+#target_link_libraries(GOAST INTERFACE CppAD_lib)
+target_link_libraries(GOAST INTERFACE /home/s24pjoha_hpc/local/cppad/lib/libcppad_lib.so)
 
 target_link_libraries(GOAST INTERFACE /home/s24pjoha_hpc/openmesh/OpenMesh-11.0.0/lib/libOpenMeshCore.a)
 target_link_libraries(GOAST INTERFACE /home/s24pjoha_hpc/openmesh/OpenMesh-11.0.0/lib/libOpenMeshTools.a)
@@ -127,23 +147,26 @@ endif ()
 ################################################################################
 include(GNUInstallDirs)
 
-
+# Install targets once
 install(TARGETS GOAST GOAST_all
         EXPORT GOASTTargets
-        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-        )
+        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
+# Export file for find_package
 install(EXPORT GOASTTargets
         FILE GOASTTargets.cmake
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/GOAST
-        )
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/GOAST)
 
+# Package config
 include(CMakePackageConfigHelpers)
-write_basic_package_version_file("GOASTConfigVersion.cmake"
-                                 VERSION ${GOAST_VERSION}
-                                 COMPATIBILITY SameMajorVersion)
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/GOASTConfigVersion.cmake"
+    VERSION ${GOAST_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
 
-configure_file(cmake/GOASTConfig.cmake.in GOASTConfig.cmake @ONLY)
+configure_file(cmake/GOASTConfig.cmake.in
+               "${CMAKE_CURRENT_BINARY_DIR}/GOASTConfig.cmake" @ONLY)
 
 install(FILES
         "${CMAKE_CURRENT_BINARY_DIR}/GOASTConfig.cmake"
@@ -157,4 +180,6 @@ install(FILES
         "cmake/Modules/Findtrlib.cmake"
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/GOAST)
 
-install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/goast DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+# Install headers
+install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/goast
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})

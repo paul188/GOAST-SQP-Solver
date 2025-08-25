@@ -2491,16 +2491,13 @@ class ConstraintSqrdReduced : public BaseOp<typename ConfiguratorType::VectorTyp
         mutable VectorType normals;
         mutable VectorType rw_rulings;
 
-        mutable SkippingBdryFaceIterator _it_face;
-
     public:
         ConstraintSqrdReduced(const QuadMeshTopologySaver &quadTopol):
                 _quadTopol(quadTopol),
                 _num_vertices(quadTopol.getNumVertices()),
                 _num_faces(quadTopol.getNumFaces()),
                 _num_edges(quadTopol.getNumEdges()),
-                _num_halfedges(2*_num_edges),
-                _it_face(quadTopol)
+                _num_halfedges(2*_num_edges)
         {
             normals.resize(3*_num_faces);
             normals.setZero();
@@ -2553,12 +2550,8 @@ class ConstraintSqrdReduced : public BaseOp<typename ConfiguratorType::VectorTyp
             }   
 
             // Next, compute the reweighted rulings
-            _it_face.reset();
-            for(_it_face; _it_face.valid(); _it_face++)
+            for(int i = 0; i < _quadTopol.getNumFaces(); i++)
             {
-                int i = _it_face.idx();
-                int i_nobdry = _it_face.idx_nobdry();
-
                 // First, iterate over edges of the face
                 int he_0 = _quadTopol.getHalfEdgeOfQuad(i,0);
                 int he_1 = _quadTopol.getHalfEdgeOfQuad(i,1);
@@ -2570,16 +2563,68 @@ class ConstraintSqrdReduced : public BaseOp<typename ConfiguratorType::VectorTyp
                 int face_2 = _quadTopol.getFaceOfHalfEdge(he_2, 1);
                 int face_3 = _quadTopol.getFaceOfHalfEdge(he_3, 1);
 
-                Eigen::Vector3d n_i     = normals.segment(3 * i, 3);
-                Eigen::Vector3d n_face0 = normals.segment(3 * face_0, 3);
-                Eigen::Vector3d n_face1 = normals.segment(3 * face_1, 3);
-                Eigen::Vector3d n_face2 = normals.segment(3 * face_2, 3);
-                Eigen::Vector3d n_face3 = normals.segment(3 * face_3, 3);
+                VectorType ruling_01, ruling_12, ruling_23, ruling_30;
+                Eigen::Vector3d n_i = normals.segment(3 * i, 3).template head<3>();
+                Eigen::Vector3d n_face0, n_face1, n_face2, n_face3;
 
-                Eigen::Vector3d ruling_01 = n_i.cross(n_face0);
-                Eigen::Vector3d ruling_12 = n_i.cross(n_face1);
-                Eigen::Vector3d ruling_23 = n_i.cross(n_face2);
-                Eigen::Vector3d ruling_30 = n_i.cross(n_face3);
+                // Handle boundary faces -> we know that no two opposing faces are boundary faces
+                if(face_0 == -1 || face_1 == -1 || face_2 == -1 || face_3 == -1)
+                {       
+                    if(face_0 == -1 || face_2 == -1)
+                    {
+                        if(face_0 == -1)
+                        {   
+                            n_face2  = normals.segment(3 * face_2, 3).template head<3>();
+                            ruling_23 = n_i.cross(n_face2);
+                            ruling_01 = -ruling_23;
+                        }
+                        else
+                        {
+                            n_face0  = normals.segment(3 * face_0, 3).template head<3>();
+                            ruling_01 = n_i.cross(n_face0);
+                            ruling_23 = -ruling_01;
+                        }
+                    }
+                    else
+                    {
+                        n_face0 = normals.segment(3 * face_0, 3).template head<3>();
+                        n_face2 = normals.segment(3 * face_2, 3).template head<3>();
+                        ruling_01 = n_i.cross(n_face0);
+                        ruling_23 = n_i.cross(n_face2);
+                    }
+                    if(face_1 == -1 || face_3 == -1)
+                    {
+                        if(face_1 == -1)
+                        {
+                            n_face3  = normals.segment(3 * face_3, 3).template head<3>();
+                            ruling_30 = n_i.cross(n_face3);
+                            ruling_12 = -ruling_30;
+                        }
+                        else
+                        {
+                            n_face1  = normals.segment(3 * face_1, 3).template head<3>();
+                            ruling_12 = n_i.cross(n_face1);
+                            ruling_30 = -ruling_12;
+                        }
+                    }
+                    else{
+                        n_face1 = normals.segment(3 * face_1, 3).template head<3>();
+                        n_face3 = normals.segment(3 * face_3, 3).template head<3>();
+                        ruling_12 = n_i.cross(n_face1);
+                        ruling_30 = n_i.cross(n_face3);
+                    }
+                }
+                else{
+                    n_face0  = normals.segment(3 * face_0, 3).template head<3>();
+                    n_face1  = normals.segment(3 * face_1, 3).template head<3>();
+                    n_face2  = normals.segment(3 * face_2, 3).template head<3>();
+                    n_face3  = normals.segment(3 * face_3, 3).template head<3>();
+
+                    ruling_01 = n_i.cross(n_face0);
+                    ruling_12 = n_i.cross(n_face1);
+                    ruling_23 = n_i.cross(n_face2);
+                    ruling_30 = n_i.cross(n_face3);
+                }
 
                 // Calculate the reweighted rulings
                 Eigen::Vector3d rw_ruling_13 = 0.5*ruling_12 - 0.5*ruling_30;
@@ -2771,17 +2816,69 @@ class ConstraintSqrdReducedGradient : public BaseOp<typename ConfiguratorType::V
             int face_1 = _quadTopol.getFaceOfHalfEdge(he_1, 1);
             int face_2 = _quadTopol.getFaceOfHalfEdge(he_2, 1);
             int face_3 = _quadTopol.getFaceOfHalfEdge(he_3, 1);
-            
-            ADEigenVec3 n_i     = normals.segment(3 * i, 3);
-            ADEigenVec3 n_face0 = normals.segment(3 * face_0, 3);
-            ADEigenVec3 n_face1 = normals.segment(3 * face_1, 3);
-            ADEigenVec3 n_face2 = normals.segment(3 * face_2, 3);
-            ADEigenVec3 n_face3 = normals.segment(3 * face_3, 3);
 
-            ADEigenVec3 ruling_01 = n_i.cross(n_face0);
-            ADEigenVec3 ruling_12 = n_i.cross(n_face1);
-            ADEigenVec3 ruling_23 = n_i.cross(n_face2);
-            ADEigenVec3 ruling_30 = n_i.cross(n_face3);
+            ADEigenVec3 ruling_01, ruling_12, ruling_23, ruling_30;
+            ADEigenVec3 n_i = normals.segment(3 * i, 3).template head<3>();
+            ADEigenVec3 n_face0, n_face1, n_face2, n_face3;
+
+            // Handle boundary faces -> we know that no two opposing faces are boundary faces
+            if(face_0 == -1 || face_1 == -1 || face_2 == -1 || face_3 == -1)
+            {       
+                if(face_0 == -1 || face_2 == -1)
+                {
+                    if(face_0 == -1)
+                    {   
+                        n_face2  = normals.segment(3 * face_2, 3).template head<3>();
+                        ruling_23 = n_i.cross(n_face2);
+                        ruling_01 = -ruling_23;
+                    }
+                    else
+                    {
+                        n_face0  = normals.segment(3 * face_0, 3).template head<3>();
+                        ruling_01 = n_i.cross(n_face0);
+                        ruling_23 = -ruling_01;
+                    }
+                }
+                else
+                {
+                    n_face0 = normals.segment(3 * face_0, 3).template head<3>();
+                    n_face2 = normals.segment(3 * face_2, 3).template head<3>();
+                    ruling_01 = n_i.cross(n_face0);
+                    ruling_23 = n_i.cross(n_face2);
+                }
+                if(face_1 == -1 || face_3 == -1)
+                {
+                    if(face_1 == -1)
+                    {
+                        n_face3  = normals.segment(3 * face_3, 3).template head<3>();
+                        ruling_30 = n_i.cross(n_face3);
+                        ruling_12 = -ruling_30;
+                    }
+                    else
+                    {
+                        n_face1  = normals.segment(3 * face_1, 3).template head<3>();
+                        ruling_12 = n_i.cross(n_face1);
+                        ruling_30 = -ruling_12;
+                    }
+                }
+                else{
+                    n_face1 = normals.segment(3 * face_1, 3).template head<3>();
+                    n_face3 = normals.segment(3 * face_3, 3).template head<3>();
+                    ruling_12 = n_i.cross(n_face1);
+                    ruling_30 = n_i.cross(n_face3);
+                }
+            }
+            else{
+                n_face0  = normals.segment(3 * face_0, 3).template head<3>();
+                n_face1  = normals.segment(3 * face_1, 3).template head<3>();
+                n_face2  = normals.segment(3 * face_2, 3).template head<3>();
+                n_face3  = normals.segment(3 * face_3, 3).template head<3>();
+
+                ruling_01 = n_i.cross(n_face0);
+                ruling_12 = n_i.cross(n_face1);
+                ruling_23 = n_i.cross(n_face2);
+                ruling_30 = n_i.cross(n_face3);
+            }
 
             ADEigenVec3 rw_ruling_13 = 0.5 * ruling_12 - 0.5 * ruling_30;
             ADEigenVec3 rw_ruling_02 = 0.5 * ruling_01 - 0.5 * ruling_23;
@@ -2919,17 +3016,69 @@ class ConstraintSqrdReducedHessian : public BaseOp<typename ConfiguratorType::Ve
             int face_1 = _quadTopol.getFaceOfHalfEdge(he_1, 1);
             int face_2 = _quadTopol.getFaceOfHalfEdge(he_2, 1);
             int face_3 = _quadTopol.getFaceOfHalfEdge(he_3, 1);
-            
-            ADEigenVec3 n_i     = normals.segment(3 * i, 3);
-            ADEigenVec3 n_face0 = normals.segment(3 * face_0, 3);
-            ADEigenVec3 n_face1 = normals.segment(3 * face_1, 3);
-            ADEigenVec3 n_face2 = normals.segment(3 * face_2, 3);
-            ADEigenVec3 n_face3 = normals.segment(3 * face_3, 3);
 
-            ADEigenVec3 ruling_01 = n_i.cross(n_face0);
-            ADEigenVec3 ruling_12 = n_i.cross(n_face1);
-            ADEigenVec3 ruling_23 = n_i.cross(n_face2);
-            ADEigenVec3 ruling_30 = n_i.cross(n_face3);
+            ADEigenVec3 ruling_01, ruling_12, ruling_23, ruling_30;
+            ADEigenVec3 n_i = normals.segment(3 * i, 3).template head<3>();
+            ADEigenVec3 n_face0, n_face1, n_face2, n_face3;
+
+            // Handle boundary faces -> we know that no two opposing faces are boundary faces
+            if(face_0 == -1 || face_1 == -1 || face_2 == -1 || face_3 == -1)
+            {       
+                if(face_0 == -1 || face_2 == -1)
+                {
+                    if(face_0 == -1)
+                    {   
+                        n_face2  = normals.segment(3 * face_2, 3).template head<3>();
+                        ruling_23 = n_i.cross(n_face2);
+                        ruling_01 = -ruling_23;
+                    }
+                    else
+                    {
+                        n_face0  = normals.segment(3 * face_0, 3).template head<3>();
+                        ruling_01 = n_i.cross(n_face0);
+                        ruling_23 = -ruling_01;
+                    }
+                }
+                else
+                {
+                    n_face0 = normals.segment(3 * face_0, 3).template head<3>();
+                    n_face2 = normals.segment(3 * face_2, 3).template head<3>();
+                    ruling_01 = n_i.cross(n_face0);
+                    ruling_23 = n_i.cross(n_face2);
+                }
+                if(face_1 == -1 || face_3 == -1)
+                {
+                    if(face_1 == -1)
+                    {
+                        n_face3  = normals.segment(3 * face_3, 3).template head<3>();
+                        ruling_30 = n_i.cross(n_face3);
+                        ruling_12 = -ruling_30;
+                    }
+                    else
+                    {
+                        n_face1  = normals.segment(3 * face_1, 3).template head<3>();
+                        ruling_12 = n_i.cross(n_face1);
+                        ruling_30 = -ruling_12;
+                    }
+                }
+                else{
+                    n_face1 = normals.segment(3 * face_1, 3).template head<3>();
+                    n_face3 = normals.segment(3 * face_3, 3).template head<3>();
+                    ruling_12 = n_i.cross(n_face1);
+                    ruling_30 = n_i.cross(n_face3);
+                }
+            }
+            else{
+                n_face0  = normals.segment(3 * face_0, 3).template head<3>();
+                n_face1  = normals.segment(3 * face_1, 3).template head<3>();
+                n_face2  = normals.segment(3 * face_2, 3).template head<3>();
+                n_face3  = normals.segment(3 * face_3, 3).template head<3>();
+
+                ruling_01 = n_i.cross(n_face0);
+                ruling_12 = n_i.cross(n_face1);
+                ruling_23 = n_i.cross(n_face2);
+                ruling_30 = n_i.cross(n_face3);
+            }
 
             ADEigenVec3 rw_ruling_13 = 0.5 * ruling_12 - 0.5 * ruling_30;
             ADEigenVec3 rw_ruling_02 = 0.5 * ruling_01 - 0.5 * ruling_23;

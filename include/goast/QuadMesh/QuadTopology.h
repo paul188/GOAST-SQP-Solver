@@ -552,7 +552,7 @@ static void setGeometry( MyMesh& Mesh, const VectorType& geom ){
 
 // ---------------------- HERE COME THE METHODS FOR TURNING A QUAD MESH INTO A TRIMESH WITH CENTROIDS ---------------------------
 
-VertexHandle add_vertex_unique_Tri(TriMesh &triMesh, TriMesh::Point p)
+VertexHandle add_vertex_unique_Tri(TriMesh &triMesh, TriMesh::Point p) const
 {
     // Check if the vertex already exists
     for(const auto &vh : triMesh.vertices())
@@ -565,7 +565,7 @@ VertexHandle add_vertex_unique_Tri(TriMesh &triMesh, TriMesh::Point p)
     return vh;
 }
 
-void split_quad(MyMesh::FaceHandle &fh, MyMesh::HalfedgeHandle &start_heh, TriMesh &triMesh){
+void split_quad(MyMesh::FaceHandle &fh, MyMesh::HalfedgeHandle &start_heh, TriMesh &triMesh) const{
         
   // This is the outgoing halfedge from vertex vh along the face fh
   MyMesh::VertexHandle v1 = _mesh.from_vertex_handle(start_heh);
@@ -591,7 +591,7 @@ void split_quad(MyMesh::FaceHandle &fh, MyMesh::HalfedgeHandle &start_heh, TriMe
 
 }
 
-TriMesh makeQuadMeshCentroid() {
+TriMesh makeQuadMeshCentroid() const {
   // The result trimesh
   TriMesh triMesh;
   MyMesh quad_mesh = _mesh;

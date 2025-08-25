@@ -19,7 +19,7 @@ try{
 
     MyMesh mesh;
     
-    OpenMesh::IO::read_mesh(mesh, "../../data/plate/quadTest.ply");
+    OpenMesh::IO::read_mesh(mesh, "/home/s24pjoha_hpc/goast_old_old/goast/data/plate/quadTest.ply");
 
     VectorType geom;
 
@@ -54,23 +54,30 @@ try{
         geom[3 * i + 1] += distribution(generator); // y
         geom[3 * i + 2] += distribution(generator); // z
     }
-    //ConstraintSqrdReduced<DefaultConfigurator> constraint(quadTopol);
-    //ConstraintSqrdReducedGradient<DefaultConfigurator> constraintGrad(quadTopol);
+    ConstraintSqrdReduced<DefaultConfigurator> constraint(quadTopol);
+    ConstraintSqrdReducedGradient<DefaultConfigurator> constraintGrad(quadTopol);
+    ConstraintSqrdReducedHessian<DefaultConfigurator> constraintHess(quadTopol);
 
-    EdgeLengthQuadEnergy<DefaultConfigurator> constraint(quadTopol, quadGeomRef);
-    EdgeLengthQuadEnergyGradient<DefaultConfigurator> constraintGrad(quadTopol, quadGeomRef);
+    //EdgeLengthQuadEnergy<DefaultConfigurator> constraint2(quadTopol, quadGeomRef);
+    ///EdgeLengthQuadEnergyGradient<DefaultConfigurator> constraintGrad2(quadTopol, quadGeomRef);
+    //EdgeLengthQuadEnergyHessian<DefaultConfigurator> constraintHess2(quadTopol, quadGeomRef);
+
+    //EdgeLengthQuadEnergy2<DefaultConfigurator> constraint(quadTopol, quadGeomRef);
+    //EdgeLengthQuadEnergyGradient2<DefaultConfigurator> constraintGrad(quadTopol, quadGeomRef);
 
     VectorType test_input = geom;
     
     RealType dest;
     VectorType Dest;
+    MatrixType Dest_mat;
 
     constraint.apply(test_input,dest);
     constraintGrad.apply(test_input,Dest);
+    constraintHess.apply(test_input,Dest_mat);
 
-    ScalarValuedDerivativeTester<DefaultConfigurator> tester(constraint,constraintGrad,0.01,50);
-    //VectorValuedDerivativeTester<DefaultConfigurator> tester(constraint, constraintGrad,0.01, Dest.rows());
-    tester.plotAllDirections(test_input,"/lustre/scratch/data/s24pjoha_hpc-results/deriv_test_3/");
+    //ScalarValuedDerivativeTester<DefaultConfigurator> tester(constraint,constraintGrad,0.01,50);
+    VectorValuedDerivativeTester<DefaultConfigurator> tester(constraintGrad, constraintHess,0.01, Dest_mat.rows());
+    tester.plotAllDirections(test_input,"/lustre/scratch/data/s24pjoha_hpc-results/deriv_test_22/");
 
 }catch(std::exception &e){
     std::cerr << "Exception caught: " << e.what() << std::endl;

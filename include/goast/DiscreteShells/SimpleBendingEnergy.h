@@ -81,18 +81,10 @@ public:
     _weight(VectorType::Constant(_topology.getNumEdges(),Weight)), 
     _activeShellIsDeformed( ActiveShellIsDeformed)
     {
-      _stream.open( "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/SimpleBendingEnergy.log");
-      if( !_stream.is_open() ){
-        std::cerr << "Could not open SimpleBendingEnergy.log for writing!" << std::endl;
-        throw BasicException("SimpleBendingEnergy: Could not open log file!");
-      }
-
     }
 
   // energy evaluation
   void apply( const VectorType& ActiveGeometry, RealType & Dest ) const {
-
-    _stream.open( "/home/s24pjoha_hpc/goast_old_old/goast/build/examples/SimpleBendingEnergy.log");
 
     if( ActiveGeometry.size() != _inactiveGeometry.size() ){
       std::cerr << "size of active = " << ActiveGeometry.size() << " vs. size of inactive = " << _inactiveGeometry.size() << std::endl;

@@ -19,7 +19,7 @@ int main()
         // ---------------------- TOPOLOGICAL PREPARATIONS --------------------------------------
 
         MyMesh mesh;
-        OpenMesh::IO::read_mesh(mesh, "../../data/plate/basePlateSharpCreaseDevelopability.ply");
+        OpenMesh::IO::read_mesh(mesh, "/home/s24pjoha_hpc/goast_old_old/goast/data/plate/basePlateSharpCreaseDevelopability.ply");
         QuadMeshTopologySaver quadTopol(mesh);
         VectorType geom;
         QuadMeshTopologySaver::getGeometry(mesh,geom);
@@ -67,7 +67,7 @@ int main()
 
         // -------------------------- SETUP BOUNDARY ------------------------------------------
 
-        double tolerance = 1e-4;
+        double tolerance = 1e-3;
 
         std::vector<int> bdryMask;
         for(int i = 0; i < num_vertices; i++)
@@ -105,6 +105,37 @@ int main()
                 }
                 continue;
             }
+
+            // Now, we interpolate on the inside:
+            /*
+            if(coords[0] <= 0.5 + 1e-4 && coords[1] <= 0.5 + 1e-4)
+            {
+                double factor_x = 1.0; //;coords[0] / (coords[0] + coords[1]);
+                double factor_y = 1.0;//coords[1] / (coords[0] + coords[1]);
+                geom[3*i + 2] = (factor_x*0.4*coords[0] + factor_y*0.4*coords[1]);
+                continue;
+            }
+            else if(coords[0] >= 0.5 - 1e-4 && coords[1] <= 0.5 + 1e-4)
+            {
+                double factor_x = 1.0;//(1.0 - coords[0]) / ((1.0 - coords[0]) + coords[1]);
+                double factor_y = 1.0;//coords[1] / ((1.0 - coords[0]) + coords[1]);
+                geom[3*i + 2] = (factor_x*0.4*(1.0 - coords[0]) + factor_y*0.4*coords[1]);
+                continue;
+            }
+            else if(coords[0] <= 0.5 + 1e-4 && coords[1] >= 0.5 - 1e-4)
+            {
+                double factor_x = 1.0;//coords[0] / (coords[0] + (1.0 - coords[1]));
+                double factor_y = 1.0;//(1.0 - coords[1]) / (coords[0] + (1.0 - coords[1]));
+                geom[3*i + 2] = (factor_x*0.4*coords[0] + factor_y*0.4*(1.0 - coords[1]));
+                continue;
+            }
+            else if(coords[0] >= 0.5 - 1e-4 && coords[1] >= 0.5 - 1e-4)
+            {
+                double factor_x = 1.0;//(1.0 - coords[0]) / ((1.0 - coords[0]) + (1.0 - coords[1]));
+                double factor_y = 1.0;//(1.0 - coords[1]) / ((1.0 - coords[0]) + (1.0 - coords[1]));
+                geom[3*i + 2] = (factor_x*0.4*(1.0 - coords[0]) + factor_y*0.4*(1.0 - coords[1]));
+                continue;
+            }*/
         }
 
         // ----------------- GENERATE DEFORMED CENTROID MESHES --------------------------------
@@ -119,16 +150,31 @@ int main()
         OpenMesh::IO::write_mesh(centroid_mesh, "centroid.ply");
         // Now, first recalculate the boundary in the TriMesh format
         std::vector<int> bdryMaskTri;
+        int counter = 0;
         for(int i = 0; i < centroid_topol.getNumVertices(); i++)
         {
             VecType coords;
-            getXYZCoord<VectorType, VecType>(centroid_base_geom,coords, i);
+            getXYZCoord<VectorType, VecType>(centroid_geom,coords, i);
 
             if(std::abs(coords[0]) < tolerance || std::abs(1.0 - coords[0]) < tolerance || std::abs(coords[1]) < tolerance || std::abs(1.0 - coords[1]) < tolerance)
             {
+                counter++;
                 bdryMaskTri.push_back(i);
             }
+
+            bool bool_1 = (coords[1] <= 0.5 + 1e-4 + coords[0]);
+            bool bool_2 = (coords[1] <= 1.5 - coords[0] + 1e-4);
+            bool bool_3 = (coords[1] >= 0.5 - 1e-4 - coords[0]);
+            bool bool_4 = (coords[1] >= coords[0] - 1e-4 - 0.5);
+            /*
+            if(bool_1 && bool_2 && bool_3 && bool_4)
+            {
+                coords[2] = 0.2;
+                bdryMaskTri.push_back(i);
+            }*/
+            setXYZCoord<VectorType, VecType>(centroid_geom, coords, i);
         }
+        std::cout<<"counter: "<<counter<<std::endl;
         extendBoundaryMask(centroid_topol.getNumVertices(), bdryMaskTri);
 
         for(int i = 0; i < centroidTopol.getNumVertices(); i++)
@@ -139,6 +185,9 @@ int main()
             coords[0] *= sqrt(1.0 - (0.4*0.4));
             setXYZCoord<VectorType, VecType>(centroid_geom, coords, i);
         }
+
+        setGeometry(centroid_mesh, centroid_geom);
+        OpenMesh::IO::write_mesh(centroid_mesh, "centroid_new2.ply");
 
         // Now, apply the Dirichlet smoothing
         DirichletSmoother<DefaultConfigurator> dirichletSmoother(centroid_base_geom, bdryMaskTri, centroid_topol);

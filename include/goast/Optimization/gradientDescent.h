@@ -178,13 +178,11 @@ public:
 
       // Calculate energy and gradient at the new position
       _DE.apply( x_k, currGradient );
-      std::cout<<"Current gradient norm 0: "<<currGradient.norm()<<std::endl;
+
       if ( _bdryMask )
         applyMaskToVector( *_bdryMask, currGradient );
       _E.apply( x_k, energyScalar );
       energyNew = energyScalar;
-
-      std::cout<<"Current gradient norm 1: "<<currGradient.norm()<<std::endl;
 
       // compute error
       error = _useGradientBasedStopping ? currGradient.norm() : energy - energyNew;

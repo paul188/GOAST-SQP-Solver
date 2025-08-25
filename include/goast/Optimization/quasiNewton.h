@@ -263,6 +263,10 @@ public:
         break;
       }
 
+      if(iterations == 3){
+        std::cout<<" Pause "<<std::endl;
+      }
+
       if ( forcedReset && m_UseForcedSteps )
         tau = 1.;
     } // end while
