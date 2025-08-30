@@ -58,11 +58,11 @@ add_executable(SharpCreaseDevelopability QuadMeshExamples/SharpCreaseDevelopabil
 add_executable(CrossFoldInterpolationTest FoldOptimization/CrossFoldInterpolationTest.cpp)
 add_executable(QuadElasticEnergyTest QuadMeshExamples/QuadElasticEnergyTest.cpp)
 add_executable(bendingFoldQuadReduced QuadMeshExamples/bendingFoldQuadReduced.cpp)
-add_executable(bendingFoldQuadReduced2 QuadMeshExamples/bendingFoldQuadReduced2.cpp)
+#add_executable(bendingFoldQuadReduced2 QuadMeshExamples/bendingFoldQuadReduced2.cpp)
 
 target_link_libraries(SharpCreaseDevelopability2 PRIVATE GOAST::GOAST)
 
-target_link_libraries(bendingFoldQuadReduced2 PRIVATE GOAST::GOAST)
+#target_link_libraries(bendingFoldQuadReduced2 PRIVATE GOAST::GOAST)
 
 target_link_libraries(bendingFoldQuadReduced PRIVATE GOAST::GOAST)
 

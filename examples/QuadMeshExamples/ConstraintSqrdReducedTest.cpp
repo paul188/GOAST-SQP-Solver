@@ -77,7 +77,7 @@ try{
 
     //ScalarValuedDerivativeTester<DefaultConfigurator> tester(constraint,constraintGrad,0.01,50);
     VectorValuedDerivativeTester<DefaultConfigurator> tester(constraintGrad, constraintHess,0.01, Dest_mat.rows());
-    tester.plotAllDirections(test_input,"/lustre/scratch/data/s24pjoha_hpc-results/deriv_test_22/");
+    tester.plotAllDirections(test_input,"/lustre/scratch/data/s24pjoha_hpc-results/deriv_test_61/");
 
 }catch(std::exception &e){
     std::cerr << "Exception caught: " << e.what() << std::endl;

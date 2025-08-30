@@ -86,7 +86,7 @@ rw_rulings_2 = []
 n = None
 
 # Open the file and read it line by line
-with open('/home/s24pjoha_hpc/goast_old_old/goast/build/rw_rulings.txt', 'r') as file:
+with open('/home/s24pjoha_hpc/goast_old_old/goast/examples/QuadMeshExamples/plotting/rw_rulings_newest.txt', 'r') as file:
     n = sum(1 for _ in file)
 
     # Reset file pointer to the beginning

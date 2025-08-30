@@ -376,6 +376,11 @@ try{
     NLS.setBoundaryMask( bdryMaskOpt );
     NLS.solve( initialization, plateGeomDef );
 
+    CostFunctional<DefaultConfigurator> costFunctional(foldVertices);
+    RealType costFuntional_val = 0.0;
+    costFunctional.apply( plateGeomDef, costFuntional_val);
+    std::cout<<"Cost functional after optimization: "<<std::setprecision(15)<<costFuntional_val<<std::endl;
+
     setGeometry( plate, plateGeomDef );
     OpenMesh::IO::write_mesh( plate, "deformed_plate_after_optimization_dirichlet.ply" );
 } 

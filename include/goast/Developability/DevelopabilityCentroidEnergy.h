@@ -231,6 +231,135 @@ class CoordConverter
         }
 };
 
+template<typename ConfiguratorType>
+class BijectiveCoordConverter
+{
+    protected:
+        typedef typename DefaultConfigurator::RealType   RealType;
+        typedef typename DefaultConfigurator::VectorType VectorType;
+        typedef typename DefaultConfigurator::VecType    VecType;
+        typedef typename DefaultConfigurator::MatType    MatType;
+
+        const QuadMeshTopologySaver &_quadTopol;
+        const MeshTopologySaver &_centroidTopol;
+
+        std::map<int,int> _centroidToQuadIdxMap;
+        std::map<int,int> _quadToCentroidIdxMap;
+
+        Eigen::PermutationMatrix<Eigen::Dynamic, Eigen::Dynamic> _perm;
+
+        const VectorType &_quadBaseGeometry;
+        const VectorType &_centroidBaseGeometry;
+
+    public:
+        BijectiveCoordConverter(QuadMeshTopologySaver &quadTopol,
+                        MeshTopologySaver &centroidTopol,
+                       const VectorType &quadBaseGeometry,
+                       const VectorType &centroidBaseGeometry)
+            : _quadTopol(quadTopol), 
+              _centroidTopol(centroidTopol),
+              _quadBaseGeometry(quadBaseGeometry),
+              _centroidBaseGeometry(centroidBaseGeometry)
+        {
+            // First, assemble centroidToQuadIdxMap
+            bool foundMatch = false;
+            for(int i = 0; i < _centroidTopol.getNumVertices(); i++){
+                VecType coords_tri;
+                getXYZCoord<VectorType, VecType>(_centroidBaseGeometry,coords_tri, i);
+                for(int j = 0; j < _quadTopol.getNumVertices(); j++)
+                {
+                    VecType coords_quad;
+                    coords_quad[0] = _quadBaseGeometry[3*j];
+                    coords_quad[1] = _quadBaseGeometry[3*j+1];
+                    coords_quad[2] = _quadBaseGeometry[3*j+2];
+    
+                    if((coords_quad - coords_tri).norm() < 1e-4)
+                    {
+                        _centroidToQuadIdxMap[i] = j;
+                        _quadToCentroidIdxMap[j] = i;
+                        foundMatch = true;
+                        break;
+                    }
+                    
+                }
+                if(!foundMatch)
+                {
+                    throw std::runtime_error("Error: No bijective mapping between centroid and quad mesh possible, as there are centroid vertices that do not correspond to any quad vertex.");
+                }
+                
+                // reset foundMatch
+                foundMatch = false;
+            }
+
+            Eigen::VectorXi permVec(3*_centroidTopol.getNumVertices());
+
+            for(int i = 0; i  < _quadTopol.getNumVertices(); ++i)
+            {
+                permVec[i] = _quadToCentroidIdxMap[i];
+                permVec[i + 1] = _quadToCentroidIdxMap[i] + _centroidTopol.getNumVertices();
+                permVec[i + 2] = _quadToCentroidIdxMap[i] + 2*_centroidTopol.getNumVertices();
+            }
+
+            _perm.indices() = permVec;
+        }
+
+        void convertQuadToCentroid(const VectorType &quadGeom, VectorType &centroidGeom) const
+        {
+            
+        }
+};
+
+template<typename ConfiguratorType>
+class QuadTriConverter
+{
+    protected:
+        int _num_vertices;
+        Eigen::PermutationMatrix<Eigen::Dynamic, Eigen::Dynamic> _perm;
+
+    public:
+        QuadTriConverter(int num_vertices) 
+        :_num_vertices(num_vertices)
+        {
+            Eigen::VectorXi permVec(3*_num_vertices);
+            for(int i = 0; i < _num_vertices; i++)
+            {
+                permVec[3*i] = i;
+                permVec[3*i + 1] = i + _num_vertices;
+                permVec[3*i + 2] = i + 2*_num_vertices;
+            }
+
+            _perm.indices() = permVec;
+        }
+
+        void convertTriToQuad(const VectorType &triGeom, VectorType &quadGeom) const
+        {
+            if(triGeom.size() != quadGeom.size())
+            {
+                quadGeom.resize(triGeom.size());
+            }
+            quadGeom = _perm.inverse()*triGeom;
+        }
+
+        void convertQuadToTri(const VectorType &quadGeom, VectorType &triGeom) const
+        {
+            if(quadGeom.size() != triGeom.size())
+            {
+                triGeom.resize(quadGeom.size());
+            }
+            triGeom = _perm*quadGeom;
+        }
+
+        void convertTriHessianToQuad(const typename ConfiguratorType::SparseMatrixType &triHessian, typename ConfiguratorType::SparseMatrixType &quadHessian) const
+        {
+            if(triHessian.rows() != quadHessian.rows() || triHessian.cols() != quadHessian.cols())
+            {
+                quadHessian.resize(triHessian.rows(), triHessian.cols());
+            }
+            quadHessian = _perm.transpose()*triHessian*_perm;
+        }
+
+};
+
 // Combines the developability constraint with the centroid bending and membrane energies
 template<typename ConfiguratorType>
 class ElasticDevelopabilityCentroidEnergy : public BaseOp<typename ConfiguratorType::VectorType, typename ConfiguratorType::RealType> 
@@ -246,22 +375,20 @@ protected:
     SimpleBendingEnergy<ConfiguratorType> _E_bend;
 
     const QuadMeshTopologySaver& _quadTopol;
-    const MeshTopologySaver &_centroidTopol;
-
-    const VectorType &_centroidBaseGeometry;
 
     const MatrixType _W;
 
     const Constraint<ConfiguratorType> &_constraint;
 
-    const CoordConverter<ConfiguratorType> _coordConverter;
-
     const VectorType _factors_elasticity_dev;
     const VectorType _factors_mem_bend;
 
     const VarsIdx<ConfiguratorType> _variablesIdx;
+    const QuadTriConverter<ConfiguratorType> _quadTriConverter;
 
     mutable int counter;
+
+    int _num_vertices;
 
     std::string _path;
     std::string _path_vert_1;
@@ -292,25 +419,23 @@ protected:
 public:
 
     ElasticDevelopabilityCentroidEnergy(const QuadMeshTopologySaver &quadTopol,
-                                        const MeshTopologySaver &centroidTopol,
-                                        const VectorType &quadBaseGeometry,
-                                        const VectorType &centroidBaseGeometry,
+                                        const MeshTopologySaver &triangleTopol,
+                                        const VectorType &baseGeometryTri,
                                         VectorType factors_elasticity_dev,
                                         VectorType factors_mem_bend,
                                         Constraint<ConfiguratorType> &constraint,
                                         VarsIdx<ConfiguratorType> variablesIdx,
                                         MatrixType W)
         : _quadTopol(quadTopol), 
-          _centroidTopol(centroidTopol),
-          _centroidBaseGeometry(centroidBaseGeometry),
           _constraint(constraint),
-          _coordConverter(quadTopol, centroidTopol, quadBaseGeometry, centroidBaseGeometry),
           _factors_elasticity_dev(factors_elasticity_dev),
           _factors_mem_bend(factors_mem_bend),
           _variablesIdx(variablesIdx),
           _W(W),
-          _E_bend(centroidTopol, centroidBaseGeometry, true),
-          _E_mem(centroidTopol, centroidBaseGeometry, true)
+          _E_bend(triangleTopol, baseGeometryTri, true),
+          _E_mem(triangleTopol, baseGeometryTri, true),
+          _num_vertices(quadTopol.getNumVertices()),
+          _quadTriConverter(quadTopol.getNumVertices())
         {
             counter = 0;
         }
@@ -320,34 +445,23 @@ public:
         // Further, the centroid vertices are ordered component major as in all the TriMesh examples
         // Will convert this to point major format for quad meshes via permutation
         // The components after the centroid vertices are the other quad optimization variables
-        void apply(const VectorType &centroidVars, RealType &energy) const override
+        void apply(const VectorType &vars, RealType &energy) const override
         {
             // First, evaluate the elastic energies on the centroid vertices
-            VectorType centroidVertices = centroidVars.segment(_variablesIdx["vertices"],3*_centroidTopol.getNumVertices());
+            VectorType quad_vertices = vars.segment(_variablesIdx["vertices"],3*_num_vertices);
+            VectorType tri_vertices(3*_num_vertices);
+            _quadTriConverter.convertQuadToTri(quad_vertices, tri_vertices);
             
             RealType elasticCentroidEnergy_mem, elasticCentroidEnergy_bend, elasticCentroidEnergy;
             if(!(_factors_elasticity_dev[0] == 0.0))
             {
-                _E_bend.apply(centroidVertices, elasticCentroidEnergy_bend);
-                _E_mem.apply(centroidVertices, elasticCentroidEnergy_mem);
+                _E_bend.apply(tri_vertices, elasticCentroidEnergy_bend);
+                _E_mem.apply(tri_vertices, elasticCentroidEnergy_mem);
                 elasticCentroidEnergy = _factors_mem_bend[0]*elasticCentroidEnergy_mem + _factors_mem_bend[1]*elasticCentroidEnergy_bend;
             }
             else{
                 elasticCentroidEnergy = 0.0;
             }
-            
-            VectorType quadVertices(3*_quadTopol.getNumVertices());
-            _coordConverter.convertCentroidToQuad(centroidVertices, quadVertices);
-
-            //printVectorToFile(quadVertices, "/home/paul_johannssen/Desktop/masterarbeit/goast/goast/build/examples/quad_vertices_in_dev_energy.txt");
-
-            // Now, calculate the Quad constraints using this vars vector
-            VectorType vars(centroidVars.size() - 3*(_centroidTopol.getNumVertices() - _quadTopol.getNumVertices()));
-
-            vars.segment(0, _variablesIdx["vertices"]) = centroidVars.segment(0, _variablesIdx["vertices"]);
-            vars.segment(_variablesIdx["vertices"], 3*_quadTopol.getNumVertices()) = quadVertices;
-            vars.segment(_variablesIdx["vertices"] + 3*_quadTopol.getNumVertices(), vars.size() - (3*_quadTopol.getNumVertices() + _variablesIdx["vertices"])) = centroidVars.segment(_variablesIdx["vertices"] + 3*_centroidTopol.getNumVertices(), centroidVars.size() - (_variablesIdx["vertices"] + 3*_centroidTopol.getNumVertices()));   
-
             // Calculate the constraint
             VectorType constraint(_W.rows());
             if(!_factors_elasticity_dev[1] == 0.0)
@@ -357,115 +471,9 @@ public:
             else{
                 constraint.setZero();
             }
-
-            // now, output all the constraints
-            RealType product = constraint.dot(_W*constraint);
-            _outFile.open(_path, std::ios::app);  // open in append mode
-            _outFile << product << "\n";  // write scalar followed by newline
-            _outFile.close();
-
-            // Output the individual components of the constraint for debugging
-             size_t num_vertices = _quadTopol.getNumVertices();
-             size_t num_faces = _quadTopol.getNumFaces();
-             size_t num_halfedges = 2*_quadTopol.getNumEdges();
-             size_t num_bdryHalfEdges = _quadTopol.getBdryHalfEdges().size();
-             size_t num_bdryFaces = _quadTopol.getBdryFaces().size();
- 
-             size_t num_constraints_vert_1 = num_vertices;
-             size_t num_constraints_vert_2 = 3*num_vertices;
-             size_t num_constraints_edge_vec_1 = 3*num_faces;
-             size_t num_constraints_edge_vec_2 = 3*num_faces;
-             size_t num_constraints_normal_1 = num_faces;
-             size_t num_constraints_normal_2 = num_faces;
-             size_t num_constraints_normal_3 = num_faces;
-             size_t num_constraints_ruling_0 = 3*(num_halfedges - num_bdryHalfEdges);
-             size_t num_constraints_ruling_1 = 3*(num_faces - num_bdryFaces);
-             size_t num_constraints_ruling_2 = 3*(num_faces - num_bdryFaces);
-             size_t num_constraints_dev = 3*(num_faces - num_bdryFaces);
- 
-             int start_vertex_0 = 0;
-             int start_vertex_1 = start_vertex_0 + num_constraints_vert_1;
-             int start_edge_vec_1 = start_vertex_1 + num_constraints_vert_2;
-             int start_edge_vec_2 = start_edge_vec_1 + num_constraints_edge_vec_1;
-             int start_normal_1 = start_edge_vec_2 + num_constraints_edge_vec_2;
-             int start_normal_2 = start_normal_1 + num_constraints_normal_1;
-             int start_normal_3 = start_normal_2 + num_constraints_normal_2;
-             int start_ruling_0 = start_normal_3 + num_constraints_normal_3;
-             int start_ruling_1 = start_ruling_0 + num_constraints_ruling_0;
-             int start_ruling_2 = start_ruling_1 + num_constraints_ruling_1;
-             int start_dev = start_ruling_2 + num_constraints_ruling_2;
-
-            RealType constraint_vertex_1 = constraint.segment(start_vertex_0, num_constraints_vert_1).norm();
-            RealType constraint_vertex_2 = constraint.segment(start_vertex_1, num_constraints_vert_2).norm();             
-
-            RealType constraint_edge_vec_1 = constraint.segment(start_edge_vec_1, num_constraints_edge_vec_1).norm();
-            RealType constraint_edge_vec_2 = constraint.segment(start_edge_vec_2, num_constraints_edge_vec_2).norm();
-
-            RealType constraint_normal_1 = constraint.segment(start_normal_1, num_constraints_normal_1).norm();
-            RealType constraint_normal_2 = constraint.segment(start_normal_2, num_constraints_normal_2).norm();
-
-            RealType constraint_normal_3 = constraint.segment(start_normal_3, num_constraints_normal_3).norm();
-            RealType constraint_ruling_0 = constraint.segment(start_ruling_0, num_constraints_ruling_0).norm();
-            RealType constraint_ruling_1 = constraint.segment(start_ruling_1, num_constraints_ruling_1).norm();
-            RealType constraint_ruling_2 = constraint.segment(start_ruling_2, num_constraints_ruling_2).norm();
-            RealType constraint_dev = constraint.segment(start_dev, num_constraints_dev).norm();
-
-            //printVectorToFile(vars, "/home/paul_johannssen/Desktop/masterarbeit/goast/goast/build/examples/init_2.txt");
-            //printVectorToFile(constraint, "/home/paul_johannssen/Desktop/masterarbeit/goast/goast/build/examples/constraint.txt");
 
             energy =  _factors_elasticity_dev[0]*elasticCentroidEnergy + _factors_elasticity_dev[1]*constraint.dot(_W*constraint);
             std::cout<<"energy elastic: "<<_factors_elasticity_dev[0]*elasticCentroidEnergy<<"; energy constraint: "<<_factors_elasticity_dev[1]*constraint.dot(_W*constraint)<<"; total energy: "<<energy<<std::endl;
-        }
-
-        void apply2(const VectorType &centroidVars, RealType &energy)
-        {
-            // First, evaluate the elastic energies on the centroid vertices
-            VectorType centroidVertices = centroidVars.segment(_variablesIdx["vertices"],3*_centroidTopol.getNumVertices());
-            
-            RealType elasticCentroidEnergy_mem, elasticCentroidEnergy_bend, elasticCentroidEnergy;
-            if(!(_factors_elasticity_dev[0] == 0.0))
-            {
-                _E_bend.apply(centroidVertices, elasticCentroidEnergy_bend);
-                _E_mem.apply(centroidVertices, elasticCentroidEnergy_mem);
-                elasticCentroidEnergy = _factors_mem_bend[0]*elasticCentroidEnergy_mem + _factors_mem_bend[1]*elasticCentroidEnergy_bend;
-            }
-            else{
-                elasticCentroidEnergy = 0.0;
-            }
-            
-            VectorType quadVertices(3*_quadTopol.getNumVertices());
-            _coordConverter.convertCentroidToQuad(centroidVertices, quadVertices);
-
-            //printVectorToFile(quadVertices, "/home/paul_johannssen/Desktop/masterarbeit/goast/goast/build/examples/quad_vertices_in_dev_energy.txt");
-
-            // Now, calculate the Quad constraints using this vars vector
-            VectorType vars(centroidVars.size() - 3*(_centroidTopol.getNumVertices() - _quadTopol.getNumVertices()));
-
-            vars.segment(0, _variablesIdx["vertices"]) = centroidVars.segment(0, _variablesIdx["vertices"]);
-            vars.segment(_variablesIdx["vertices"], 3*_quadTopol.getNumVertices()) = quadVertices;
-            vars.segment(_variablesIdx["vertices"] + 3*_quadTopol.getNumVertices(), vars.size() - (3*_quadTopol.getNumVertices() + _variablesIdx["vertices"])) = centroidVars.segment(_variablesIdx["vertices"] + 3*_centroidTopol.getNumVertices(), centroidVars.size() - (_variablesIdx["vertices"] + 3*_centroidTopol.getNumVertices()));   
-
-            // Calculate the constraint
-            VectorType constraint(_W.rows());
-            if(!_factors_elasticity_dev[1] == 0.0)
-            {
-                _constraint.apply(vars, constraint);
-            }
-            else{
-                constraint.setZero();
-            }
-
-            // now, output all the constraints
-            RealType product = constraint.dot(_W*constraint);
-            _outFile.open(_path, std::ios::app);  // open in append mode
-            _outFile << product << "\n";  // write scalar followed by newline
-            _outFile.close();
-
-            //printVectorToFile(vars, "/home/paul_johannssen/Desktop/masterarbeit/goast/goast/build/examples/init_2.txt");
-            //printVectorToFile(constraint, "/home/paul_johannssen/Desktop/masterarbeit/goast/goast/build/examples/constraint.txt");
-
-            energy =  _factors_elasticity_dev[0]*elasticCentroidEnergy + _factors_elasticity_dev[1]*constraint.dot(_W*constraint);
-            //std::cout<<"energy elastic: "<<_factors_elasticity_dev[0]*elasticCentroidEnergy<<"; energy constraint: "<<_factors_elasticity_dev[1]*constraint.dot(_W*constraint)<<"; total energy: "<<energy<<std::endl;
         }
 };
 
@@ -483,32 +491,28 @@ protected:
     SimpleBendingGradient<ConfiguratorType> _DE_bend;
 
     const QuadMeshTopologySaver& _quadTopol;
-    const MeshTopologySaver &_centroidTopol;
-
-    const VectorType &_centroidBaseGeometry;
+    const MeshTopologySaver &_triangleTopol;
 
     const MatrixType _W;
 
     const Constraint<ConfiguratorType> &_constraint;
     const ConstraintsGradient<ConfiguratorType> &_DConstraint;
 
-    VectorType _factors;
+    const QuadTriConverter<ConfiguratorType> _quadTriConverter;
 
-    const CoordConverter<ConfiguratorType> _coordConverter;
+    VectorType _factors;
 
     const VectorType _factors_elasticity_dev;
     const VectorType _factors_mem_bend;
 
     const VarsIdx<ConfiguratorType> _variablesIdx;
 
-    // We are going to set the gradient of noQuadCentroidVertices to the average of the surrounding quad vertices
-    const std::vector<int> _noQuadCentroidVertices;
+    int _num_vertices;
 
 public:
     ElasticDevelopabilityCentroidGradient(const QuadMeshTopologySaver &quadTopol,
-                                           const MeshTopologySaver &centroidTopol,
-                                           const VectorType &quadBaseGeometry,
-                                           const VectorType &centroidBaseGeometry,
+                                           const MeshTopologySaver &triangleTopol,
+                                           const VectorType &baseGeometryTri,
                                            VectorType factors_elasticity_dev,
                                            VectorType factors_mem_bend,
                                            Constraint<ConfiguratorType> &constraint,
@@ -516,38 +520,35 @@ public:
                                            VarsIdx<ConfiguratorType> &variablesIdx,
                                            MatrixType W)
         : _quadTopol(quadTopol), 
-          _centroidTopol(centroidTopol),
-          _centroidBaseGeometry(centroidBaseGeometry),
+          _triangleTopol(triangleTopol),
           _DConstraint(DConstraint),
           _constraint(constraint),
-          _coordConverter(quadTopol, centroidTopol, quadBaseGeometry, centroidBaseGeometry),
           _factors_elasticity_dev(factors_elasticity_dev),
           _factors_mem_bend(factors_mem_bend),
           _W(W),
           _variablesIdx(variablesIdx),
-          _DE_bend(centroidTopol, centroidBaseGeometry),
-          _DE_mem(centroidTopol, centroidBaseGeometry)
+          _DE_bend(triangleTopol, baseGeometryTri),
+          _DE_mem(triangleTopol, baseGeometryTri),
+          _num_vertices(quadTopol.getNumVertices()),
+          _quadTriConverter(quadTopol.getNumVertices())
         {}
 
-        void apply(const VectorType &centroidVars, VectorType &gradient) const override
+        void apply(const VectorType &vars, VectorType &gradient) const override
         {
-            // First, evaluate the elastic energies on the centroid vertices
-            VectorType centroidVertices = centroidVars.segment(_variablesIdx["vertices"], 3*_centroidTopol.getNumVertices());
-            VectorType DelasticCentroidEnergy_mem, DelasticCentroidEnergy_bend, DelasticCentroidEnergy;
-            _DE_bend.apply(centroidVertices, DelasticCentroidEnergy_bend);
-            _DE_mem.apply(centroidVertices, DelasticCentroidEnergy_mem);
+            VectorType quad_vertices = vars.segment(_variablesIdx["vertices"],3*_num_vertices);
+            VectorType tri_vertices(3*_num_vertices);
+            _quadTriConverter.convertQuadToTri(quad_vertices, tri_vertices);
 
-            DelasticCentroidEnergy = _factors_mem_bend[0]*DelasticCentroidEnergy_mem + _factors_mem_bend[1]*DelasticCentroidEnergy_bend;
+            VectorType DelasticTriEnergy_mem, DelasticTriEnergy_bend, DelasticTriEnergy;
+            _DE_bend.apply(tri_vertices, DelasticTriEnergy_bend);
+            _DE_mem.apply(tri_vertices, DelasticTriEnergy_mem);
 
-            VectorType quadVertices(3*_quadTopol.getNumVertices());
-            _coordConverter.convertCentroidToQuad(centroidVertices, quadVertices);
+            DelasticTriEnergy = _factors_mem_bend[0]*DelasticTriEnergy_mem + _factors_mem_bend[1]*DelasticTriEnergy_bend;
 
-            // Now, calculate the Quad constraints using this vars vector
-            VectorType vars(centroidVars.size() - 3*(_centroidTopol.getNumVertices() - _quadTopol.getNumVertices()));
+            // convert this to the quad format
+            VectorType DelasticQuadEnergy(3*_num_vertices);
+            _quadTriConverter.convertTriToQuad(DelasticTriEnergy, DelasticQuadEnergy);
 
-            vars.segment(0, _variablesIdx["vertices"]) = centroidVars.segment(0, _variablesIdx["vertices"]);
-            vars.segment(_variablesIdx["vertices"], 3*_quadTopol.getNumVertices()) = quadVertices;
-            vars.segment(_variablesIdx["vertices"] + 3*_quadTopol.getNumVertices(), vars.size() - (3*_quadTopol.getNumVertices() + _variablesIdx["vertices"])) = centroidVars.segment(_variablesIdx["vertices"] + 3*_centroidTopol.getNumVertices(), centroidVars.size() - (_variablesIdx["vertices"] + 3*_centroidTopol.getNumVertices()));   
             VectorType constraint;
             _constraint.apply(vars, constraint);
 
@@ -559,23 +560,11 @@ public:
             VectorType constraintGrad_sqrd_2 = ((_W*constraintGrad).transpose()*constraint).transpose();
             VectorType constraintGrad_sqrd = constraintGrad_sqrd_1 + constraintGrad_sqrd_2;
 
-            // Now, need to convert the first quad vertex components of constraintGrad_sqrd to centroid components
+            constraintGrad_sqrd *= _factors_elasticity_dev[1];
 
-            VectorType constraintGrad_sqrd_quad_vertices = constraintGrad_sqrd.segment(_variablesIdx["vertices"], 3*_quadTopol.getNumVertices());
-            VectorType constraintGrad_sqrd_centroid = VectorType::Zero(3*_centroidTopol.getNumVertices());
-            _coordConverter.convertQuadToCentroid(constraintGrad_sqrd_quad_vertices, constraintGrad_sqrd_centroid);
-            VectorType final_constraints(centroidVars.size());
-            final_constraints.segment(0, _variablesIdx["vertices"]) = constraintGrad_sqrd.segment(0, _variablesIdx["vertices"]);
-            final_constraints.segment(_variablesIdx["vertices"], 3*_centroidTopol.getNumVertices()) = constraintGrad_sqrd_centroid;
-            final_constraints.segment(_variablesIdx["vertices"] + 3*_centroidTopol.getNumVertices(), final_constraints.size() - (_variablesIdx["vertices"] + 3*_centroidTopol.getNumVertices())) = constraintGrad_sqrd.segment(_variablesIdx["vertices"] + 3*_quadTopol.getNumVertices(), constraintGrad_sqrd.size() - (_variablesIdx["vertices"] + 3*_quadTopol.getNumVertices()));
+            constraintGrad_sqrd.segment(_variablesIdx["vertices"], 3*_num_vertices) += _factors_elasticity_dev[0]*DelasticQuadEnergy;
 
-            VectorType final_elastic_energies = VectorType::Zero(centroidVars.size());
-            final_elastic_energies.segment(_variablesIdx["vertices"], 3*_centroidTopol.getNumVertices()) = DelasticCentroidEnergy;
-
-            // Now, transfer this to the component major coordinates
-            //std::cout<<"factors elasticity dev: "<<_factors_elasticity_dev[0]<<"; "<<_factors_elasticity_dev[1]<<std::endl;
-            //std::cout<<"norm1: "<<_factors_elasticity_dev[0]*final_elastic_energies.norm()<<"; norm2: "<<_factors_elasticity_dev[1]*final_constraints.norm()<<std::endl;
-            gradient = _factors_elasticity_dev[0]*final_elastic_energies + _factors_elasticity_dev[1]*final_constraints;
+            gradient = constraintGrad_sqrd;
             //std::cout<<"gradient energy elastic: "<< _factors_elasticity_dev[0]*final_elastic_energies.norm() <<"; "<<" gradient energy constraint: "<< _factors_elasticity_dev[1]*final_constraints.norm() <<"; total gradient: "<<gradient.norm()<<std::endl;
         }
 };
@@ -659,169 +648,214 @@ public:
 template<typename ConfiguratorType>
 class QuadElasticEnergy : public BaseOp<typename ConfiguratorType::VectorType, typename ConfiguratorType::RealType>
 {
-protected:
-    typedef typename DefaultConfigurator::RealType   RealType;
-    typedef typename DefaultConfigurator::VectorType VectorType;
-    typedef typename DefaultConfigurator::VecType    VecType;
-    typedef typename DefaultConfigurator::MatType    MatType;
+    protected:
+        typedef typename DefaultConfigurator::RealType   RealType;
+        typedef typename DefaultConfigurator::VectorType VectorType;
+        typedef typename DefaultConfigurator::VecType    VecType;
+        typedef typename DefaultConfigurator::MatType    MatType;
 
-    QuadMeshTopologySaver _quadTopol;
-    MeshTopologySaver _centroidTopol;
+        NonlinearMembraneEnergy<ConfiguratorType> _E_mem;
+        SimpleBendingEnergy<ConfiguratorType> _E_bend;
 
-    VectorType _quadBaseGeometry;
-    VectorType _centroidBaseGeometry;
+        const QuadMeshTopologySaver _quadTopol;
 
-    VectorType _factors_elasticity_dev;
-    VectorType _factors_mem_bend;
+        const ConstraintSqrdReduced<ConfiguratorType> _constraint;
 
-    NonlinearMembraneEnergy<ConfiguratorType> _E_mem;
-    SimpleBendingEnergy<ConfiguratorType> _E_bend;
+        const VectorType _factors_elasticity_dev;
+        const VectorType _factors_mem_bend;
 
-    ConstraintSqrdReduced<ConfiguratorType> _constraint;
-    EdgeLengthQuadEnergy<ConfiguratorType> _constraintEdgeLength;
+        const QuadTriConverter<ConfiguratorType> _quadTriConverter;
 
-    CoordConverter<ConfiguratorType> _coordConverter;
+    public:
+        QuadElasticEnergy(const QuadMeshTopologySaver &quadTopol,
+                            const MeshTopologySaver &triangleTopol,
+                            const VectorType &baseGeomTri,
+                            VectorType factors_elasticity_dev,
+                            VectorType factors_mem_bend)
+            : _quadTopol(quadTopol),
+            _constraint(quadTopol),
+            _factors_elasticity_dev(factors_elasticity_dev),
+            _factors_mem_bend(factors_mem_bend),
+            _E_bend(triangleTopol, baseGeomTri, true),
+            _E_mem(triangleTopol, baseGeomTri, true),
+            _quadTriConverter(quadTopol.getNumVertices())
+            {}
 
-public:
-    QuadElasticEnergy(const QuadMeshTopologySaver &quadTopol,
-                        const MeshTopologySaver &centroidTopol,
-                        const VectorType &quadBaseGeometry,
-                        const VectorType &centroidBaseGeometry,
-                        VectorType factors_elasticity_dev,
-                        VectorType factors_mem_bend)
-        : _quadTopol(quadTopol),
-        _centroidTopol(centroidTopol),
-        _quadBaseGeometry(quadBaseGeometry),
-        _centroidBaseGeometry(centroidBaseGeometry),
-        _factors_elasticity_dev(factors_elasticity_dev),
-        _factors_mem_bend(factors_mem_bend),
-        _E_bend(centroidTopol, centroidBaseGeometry, true),
-        _E_mem(centroidTopol, centroidBaseGeometry, true),
-        _constraint(quadTopol),
-        _constraintEdgeLength(quadTopol,quadBaseGeometry),
-        _coordConverter(quadTopol, centroidTopol, quadBaseGeometry, centroidBaseGeometry)
-        {}
-
-    void apply(const VectorType &centroidGeom, RealType &energy) const override
-    {
-        // First, evaluate the elastic energies on the centroid vertices
-        RealType membraneEnergy = 0.0;
-        RealType bendingEnergy = 0.0;
-        
-        if(!(_factors_elasticity_dev[0] == 0.0))
+        void apply(const VectorType &quad_vertices, RealType &energy) const override
         {
-            if(!(_factors_mem_bend[0] == 0.0)){
-                _E_mem.apply(centroidGeom, membraneEnergy);
-            }
-            if(!(_factors_mem_bend[1] == 0.0)){
-                _E_bend.apply(centroidGeom, bendingEnergy);
-            }
-        }
-        RealType elasticEnergies = _factors_mem_bend[0]*membraneEnergy + _factors_mem_bend[1]*bendingEnergy;
-        //std::cout<<"elastic energies: "<<elasticEnergies<<std::endl;
-        //std::cout<<"Factors mem bend: "<<_factors_mem_bend[0]<<"; "<<_factors_mem_bend[1]<<std::endl;
+            // First, evaluate the elastic energies on the centroid vertices
+            RealType membraneEnergy = 0.0;
+            RealType bendingEnergy = 0.0;
 
-        VectorType quadGeom(3*_quadTopol.getNumVertices());
-        _coordConverter.convertCentroidToQuad(centroidGeom, quadGeom);
+            VectorType tri_vertices(3*_quadTopol.getNumVertices());
+            _quadTriConverter.convertQuadToTri(quad_vertices, tri_vertices);
+            
+            if(!(_factors_elasticity_dev[0] == 0.0))
+            {
+                if(!(_factors_mem_bend[0] == 0.0)){
+                    _E_mem.apply(tri_vertices, membraneEnergy);
+                }
+                if(!(_factors_mem_bend[1] == 0.0)){
+                    _E_bend.apply(tri_vertices, bendingEnergy);
+                }
+            }
+            RealType elasticEnergies = _factors_mem_bend[0]*membraneEnergy + _factors_mem_bend[1]*bendingEnergy;
 
-        RealType developabilityEnergy = 0.0;
-        if(!(_factors_elasticity_dev[1] == 0.0))
-        {
-            _constraint.apply(quadGeom, developabilityEnergy);
+            RealType developabilityEnergy = 0.0;
+            if(!(_factors_elasticity_dev[1] == 0.0))
+            {
+                _constraint.apply(quad_vertices, developabilityEnergy);
+            }
+
+            energy = _factors_elasticity_dev[0]*elasticEnergies + _factors_elasticity_dev[1]*developabilityEnergy;
+            std::cout<<"energy elastic: "<<_factors_elasticity_dev[0]*elasticEnergies<<"; energy constraint: "<<_factors_elasticity_dev[1]*developabilityEnergy<<"; total energy: "<<energy<<std::endl;
         }
-        RealType constraintEdge = 0.0;
-        _constraintEdgeLength.apply(quadGeom, constraintEdge);
-        //std::cout<<"developability energy: "<<developabilityEnergy<<std::endl;
-        //std::cout<<"Factors elasticity dev: "<<_factors_elasticity_dev[0]<<"; "<<_factors_elasticity_dev[1]<<std::endl;
-        energy = _factors_elasticity_dev[0]*elasticEnergies + _factors_elasticity_dev[1] + developabilityEnergy + 0.0*constraintEdge;
-    }
 };
 
 template<typename ConfiguratorType>
 class QuadElasticEnergyGradient : public BaseOp<typename ConfiguratorType::VectorType, typename ConfiguratorType::VectorType>
 {
-protected:
-    typedef typename DefaultConfigurator::RealType   RealType;
-    typedef typename DefaultConfigurator::VectorType VectorType;
-    typedef typename DefaultConfigurator::VecType    VecType;
+    protected:
+        typedef typename DefaultConfigurator::RealType   RealType;
+        typedef typename DefaultConfigurator::VectorType VectorType;
+        typedef typename DefaultConfigurator::VecType    VecType;
 
-    QuadMeshTopologySaver _quadTopol;
-    MeshTopologySaver _centroidTopol;
-
-    VectorType _quadBaseGeometry;
-    VectorType _centroidBaseGeometry;
-    
-    VectorType _factors_elasticity_dev;
-    VectorType _factors_mem_bend;
-
-    NonlinearMembraneGradientDef<ConfiguratorType> _DE_mem;
-    SimpleBendingGradientDef<ConfiguratorType> _DE_bend;
-    
-    ConstraintSqrdReducedGradient<ConfiguratorType> _DConstraint;
-    EdgeLengthQuadEnergyGradient<ConfiguratorType> _DconstraintEdgeLength;
-
-    CoordConverter<ConfiguratorType> _coordConverter;
-
-public:
-    QuadElasticEnergyGradient(const QuadMeshTopologySaver &quadTopol,
-                                const MeshTopologySaver &centroidTopol,
-                                const VectorType &quadBaseGeometry,
-                                const VectorType &centroidBaseGeometry,
-                                VectorType factors_elasticity_dev,
-                                VectorType factors_mem_bend)
-        : _quadTopol(quadTopol),
-          _centroidTopol(centroidTopol),
-          _quadBaseGeometry(quadBaseGeometry),
-          _centroidBaseGeometry(centroidBaseGeometry),
-          _factors_elasticity_dev(factors_elasticity_dev),
-          _factors_mem_bend(factors_mem_bend),
-          _DE_bend(centroidTopol, centroidBaseGeometry, true),
-          _DE_mem(centroidTopol, centroidBaseGeometry, true),
-          _DConstraint(quadTopol),
-          _DconstraintEdgeLength(quadTopol, quadBaseGeometry),
-            _coordConverter(quadTopol, centroidTopol, quadBaseGeometry, centroidBaseGeometry)
-          {}
-
-    void apply(const VectorType &centroidGeom, VectorType &gradient) const override
-    {
-        // First, evaluate the elastic energies on the centroid vertices
-        VectorType DmembraneEnergy = VectorType::Zero(centroidGeom.size());
-        VectorType DbendingEnergy = VectorType::Zero(centroidGeom.size());
+        QuadMeshTopologySaver _quadTopol;
+        MeshTopologySaver _triangleTopol;
         
-        if(!(_factors_elasticity_dev[0] == 0.0))
-        {
-            if(!(_factors_mem_bend[0] == 0.0)){
-                _DE_mem.apply(centroidGeom, DmembraneEnergy);
+        VectorType _factors_elasticity_dev;
+        VectorType _factors_mem_bend;
+
+        NonlinearMembraneGradientDef<ConfiguratorType> _DE_mem;
+        SimpleBendingGradientDef<ConfiguratorType> _DE_bend;
+        
+        ConstraintSqrdReducedGradient<ConfiguratorType> _DConstraint;
+
+        QuadTriConverter<ConfiguratorType> _quadTriConverter;
+
+    public:
+        QuadElasticEnergyGradient(const QuadMeshTopologySaver &quadTopol,
+                                    const MeshTopologySaver &triangleTopol,
+                                    const VectorType &triangleBaseGeometry,
+                                    VectorType factors_elasticity_dev,
+                                    VectorType factors_mem_bend)
+            : _quadTopol(quadTopol),
+            _triangleTopol(triangleTopol),
+            _factors_elasticity_dev(factors_elasticity_dev),
+            _factors_mem_bend(factors_mem_bend),
+            _DE_bend(triangleTopol, triangleBaseGeometry, true),
+            _DE_mem(triangleTopol, triangleBaseGeometry, true),
+            _DConstraint(quadTopol),
+                _quadTriConverter(quadTopol.getNumVertices())
+            {
+                std::cout<<"basegeomtri size: "<<triangleBaseGeometry.size()<<std::endl;
             }
-            if(!(_factors_mem_bend[1] == 0.0)){
-                _DE_bend.apply(centroidGeom, DbendingEnergy);
-            }
-        }
-        VectorType DelasticEnergies = _factors_mem_bend[0]*DmembraneEnergy + _factors_mem_bend[1]*DbendingEnergy;
 
-        VectorType Dconstraint = VectorType::Zero(3*_quadTopol.getNumVertices());
-        VectorType quadGeom(3*_quadTopol.getNumVertices());
-        _coordConverter.convertCentroidToQuad(centroidGeom, quadGeom);
-
-        if(!(_factors_elasticity_dev[1] == 0.0))
+        void apply(const VectorType &quad_vertices, VectorType &gradient) const override
         {
-            _DConstraint.apply(quadGeom, Dconstraint);
+            // First, evaluate the elastic energies on the centroid vertices
+            VectorType DmembraneEnergy = VectorType::Zero(quad_vertices.size());
+            VectorType DbendingEnergy = VectorType::Zero(quad_vertices.size());
+
+            VectorType tri_vertices(3*_quadTopol.getNumVertices());
+            _quadTriConverter.convertQuadToTri(quad_vertices, tri_vertices);
+
+            
+            if(!(_factors_elasticity_dev[0] == 0.0))
+            {
+                if(!(_factors_mem_bend[0] == 0.0)){
+                    _DE_mem.apply(tri_vertices, DmembraneEnergy);
+                }
+                if(!(_factors_mem_bend[1] == 0.0)){
+                    _DE_bend.apply(tri_vertices, DbendingEnergy);
+                }
+            }
+
+            VectorType DelasticEnergies = _factors_mem_bend[0]*DmembraneEnergy + _factors_mem_bend[1]*DbendingEnergy;
+            VectorType DelasticEnergies_quad(3*_quadTopol.getNumVertices());
+            _quadTriConverter.convertTriToQuad(DelasticEnergies, DelasticEnergies_quad);
+
+            VectorType DConstraint = VectorType::Zero(3*_quadTopol.getNumVertices());
+
+            if(!(_factors_elasticity_dev[1] == 0.0))
+            {
+                _DConstraint.apply(quad_vertices, DConstraint);
+            }
+
+            gradient = _factors_elasticity_dev[0]*DelasticEnergies_quad + _factors_elasticity_dev[1]*DConstraint;
+        }
+};
+
+template<typename ConfiguratorType>
+class QuadElasticEnergyHessian : public BaseOp<typename ConfiguratorType::VectorType, typename ConfiguratorType::SparseMatrixType>
+{
+    protected:
+        typedef typename DefaultConfigurator::RealType   RealType;
+        typedef typename DefaultConfigurator::VectorType VectorType;
+        typedef typename DefaultConfigurator::SparseMatrixType MatrixType;
+
+        QuadMeshTopologySaver _quadTopol;
+        MeshTopologySaver _triangleTopol;
+        VectorType _factors_elasticity_dev;
+        VectorType _factors_mem_bend;
+        NonlinearMembraneHessianDef<ConfiguratorType> _D2E_mem;
+        SimpleBendingHessianDef<ConfiguratorType> _D2E_bend;
+        ConstraintSqrdReducedHessian<ConfiguratorType> _D2Constraint;
+
+        QuadTriConverter<ConfiguratorType> _quadTriConverter;
+
+    public:
+        QuadElasticEnergyHessian(const QuadMeshTopologySaver &quadTopol,
+                                    const MeshTopologySaver &triangleTopol,
+                                    const VectorType &triangleBaseGeometry,
+                                    VectorType factors_elasticity_dev,
+                                    VectorType factors_mem_bend)
+            : _quadTopol(quadTopol),
+            _triangleTopol(triangleTopol),
+            _factors_elasticity_dev(factors_elasticity_dev),
+            _factors_mem_bend(factors_mem_bend),
+            _D2E_bend(triangleTopol, triangleBaseGeometry, true),
+            _D2E_mem(triangleTopol, triangleBaseGeometry, true),
+            _D2Constraint(quadTopol),
+            _quadTriConverter(quadTopol.getNumVertices())
+            {}
+
+        void apply(const VectorType &quad_vertices, MatrixType &hessian) const override
+        {
+            VectorType tri_vertices(3*_quadTopol.getNumVertices());
+            _quadTriConverter.convertQuadToTri(quad_vertices, tri_vertices);
+
+            MatrixType D2elasticCentroidEnergy_mem(3*_quadTopol.getNumVertices(), 3*_quadTopol.getNumVertices());
+            MatrixType D2elasticCentroidEnergy_bend(3*_quadTopol.getNumVertices(), 3*_quadTopol.getNumVertices());
+            MatrixType D2Constraint(3*_quadTopol.getNumVertices(), 3*_quadTopol.getNumVertices());
+            if(_factors_elasticity_dev[0] != 0.0)
+            {
+                if(_factors_mem_bend[0] != 0.0){
+                    _D2E_mem.apply(tri_vertices, D2elasticCentroidEnergy_mem);
+                }
+                if(_factors_mem_bend[1] != 0.0){
+                    _D2E_bend.apply(tri_vertices, D2elasticCentroidEnergy_bend);
+                }
+            }
+            else{
+                D2elasticCentroidEnergy_mem.setZero();
+                D2elasticCentroidEnergy_bend.setZero();
+            }
+
+            _quadTriConverter.convertTriHessianToQuad(D2elasticCentroidEnergy_mem, D2elasticCentroidEnergy_mem);
+            _quadTriConverter.convertTriHessianToQuad(D2elasticCentroidEnergy_bend, D2elasticCentroidEnergy_bend);
+
+            if(_factors_elasticity_dev[1] != 0.0)
+            {
+                _D2Constraint.apply(quad_vertices, D2Constraint);
+            }
+            else{
+                D2Constraint.setZero();
+            }
+            hessian = _factors_elasticity_dev[0]*(_factors_mem_bend[0]*D2elasticCentroidEnergy_mem + _factors_mem_bend[1]*D2elasticCentroidEnergy_bend) + _factors_elasticity_dev[1]*D2Constraint;
+
         }
 
-        VectorType DconstraintEdgeLength = VectorType::Zero(3*_quadTopol.getNumVertices());
-        _DconstraintEdgeLength.apply(quadGeom, DconstraintEdgeLength);
-
-        //std::cout<<"Dconstraint norm: "<<Dconstraint.norm()<<std::endl;
-
-        // Convert the derivative vector from quad to centroid coordinates
-        VectorType Dconstraint_centroid(3*_centroidTopol.getNumVertices());
-        _coordConverter.convertQuadToCentroid(Dconstraint, Dconstraint_centroid);
-
-        VectorType DconstraintEdgeLength_centroid(3*_centroidTopol.getNumVertices());
-        _coordConverter.convertQuadToCentroid(DconstraintEdgeLength, DconstraintEdgeLength_centroid);
-
-        gradient = _factors_elasticity_dev[0]*DelasticEnergies + _factors_elasticity_dev[1]*Dconstraint_centroid + 0.0*DconstraintEdgeLength_centroid;
-    }
 };
 
 template<typename ConfiguratorType>

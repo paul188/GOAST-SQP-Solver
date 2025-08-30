@@ -51,32 +51,14 @@ try{
     TriMesh plate;
     OpenMesh::IO::read_mesh(plate, "/home/s24pjoha_hpc/goast_old_old/goast/data/plate/paperCrissCross_coarse.ply");
     MeshTopologySaver plateTopol( plate );
-    std::cout<<"Hello2"<<std::endl;
     std::cout<<"num vertices: "<<plateTopol.getNumVertices()<<std::endl;
     VectorType plateGeomRef, plateGeomDef, plateGeomInitial; // plateGeomRef is the geometry without the arc crease in the mesh
     getGeometry(plate,plateGeomRef);
     getGeometry(plate,plateGeomDef);
     getGeometry(plate,plateGeomInitial);
 
-    RealType t_0 = 0.3;
+    RealType t_0 = -1.0;
     RealType tolerance = 1e-4;
-
-    std::cout<<"Fold vertices: "<<std::endl;
-    for(int i = 0; i < plateTopol.getNumVertices(); i++)
-    {
-        VecType coords;
-        getXYZCoord<VectorType, VecType>( plateGeomInitial, coords, i);
-        if(std::abs(coords[0] - 0.5)<tolerance)
-        {
-            std::cout<<i<<std::endl;
-        }
-        if(std::abs(coords[1] - 0.5)<tolerance)
-        {
-            std::cout<<i<<std::endl;
-        }
-    }
-
-    std::cout<<"Hello1"<<std::endl;
 
     // bdryMaskRef_1 fixes x,y,z coordinates in the reference geometry
     std::vector<int> bdryMaskRef_1;
@@ -316,20 +298,10 @@ try{
     VectorType t_initial = VectorType::Ones(1)*t_0;
     ProblemDOFs<DefaultConfigurator> problemDOFs(t_initial, plateGeomDef, VectorType::Zero(3*plateTopol.getNumVertices()),foldDofsPtr, DfoldDofsPtr);
     SQPLineSearchSolver<DefaultConfigurator> solver(pars, costFunctional, DcostFunctional, std::move(factory), boundaryDOFs, problemDOFs, 20);
-    const std::string filename_def_geometries = "/lustre/scratch/data/s24pjoha_hpc-results/thesis_results/deformed_SkewedCrossFoldOptimization/";
-    const std::string filename_ref_geometries = "/lustre/scratch/data/s24pjoha_hpc-results/thesis_results/reference_SkewedCrossFoldOptimization/";
+    const std::string filename_def_geometries = "/lustre/scratch/data/s24pjoha_hpc-results/thesis_results/deformed_SkewedCrossFoldOptimization_min10/";
+    const std::string filename_ref_geometries = "/lustre/scratch/data/s24pjoha_hpc-results/thesis_results/reference_SkewedCrossFoldOptimization_min10/";
 
     solver.solve(plateGeomRef, filename_def_geometries, filename_ref_geometries, plate);
-    std::string filename;
-
-    for(int i = 0; i < def_geometries.size(); i++){
-        filename = "deformed/plate_" + std::to_string(i) + ".ply";
-        setGeometry(plate, def_geometries[i]);
-        OpenMesh::IO::write_mesh(plate,filename);
-        setGeometry(plate, ref_geometries[i]);
-        filename = "reference/plate_" + std::to_string(i) + ".ply";
-        OpenMesh::IO::write_mesh(plate, filename);
-    }
 
 }catch ( BasicException &el ){
     std::cerr << std::endl << "ERROR!! CAUGHT FOLLOWING EXECEPTION: " << std::endl << el.getMessage() << std::endl << std::flush;

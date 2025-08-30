@@ -19,10 +19,8 @@ int main(int argc, char *argv[])
 try{
 
     MyMesh mesh;
-
-    std::cout<<"Hello10"<<std::endl;
     
-    OpenMesh::IO::read_mesh(mesh, "/home/s24pjoha_hpc/goast_old_old/goast/data/plate/quadTest.ply");
+    OpenMesh::IO::read_mesh(mesh, "/home/s24pjoha_hpc/goast_old_old/goast/data/plate/quadMesh2.ply");
 
     VectorType geom;
 
@@ -45,50 +43,40 @@ try{
         }
     }
 
-    std::cout<<"Hello11"<<std::endl;
-
-    // Initialize all the centroid stuff
-    TriMesh centroid_base_mesh = quadTopol.makeQuadMeshCentroid();
-    MeshTopologySaver centroidTopol(centroid_base_mesh);
-    VectorType centroidReferenceGeometry;
-    getGeometry(centroid_base_mesh, centroidReferenceGeometry);
-    OpenMesh::IO::write_mesh(centroid_base_mesh, "centroid_base_coarse.ply");
-
-    std::cout<<"Hello12"<<std::endl;
+    TriMesh tri_base_mesh;
+    OpenMesh::IO::read_mesh(tri_base_mesh, "/home/s24pjoha_hpc/goast_old_old/goast/data/plate/quadMesh2_refined.ply");
+    MeshTopologySaver triangleTopol(tri_base_mesh);
+    VectorType triBaseGeometry;
+    getGeometry(tri_base_mesh, triBaseGeometry);
 
     VectorType _factors_elasticity_dev = VectorType::Ones(2);
     _factors_elasticity_dev[0] = 1.0;
-    _factors_elasticity_dev[1] = 10000.0;
+    _factors_elasticity_dev[1] = 1.0;
 
     VectorType _factors_mem_bend = VectorType::Ones(2);
     _factors_mem_bend[0] = 10000.0;
     _factors_mem_bend[1] = 1.0;
-    VectorType test_input = centroidReferenceGeometry;
-    /*
+
+    VectorType test_input = quadGeomRef;
+    std::cout<<"test input size: "<<test_input.size()<<std::endl;
+
     std::default_random_engine generator;
     std::uniform_real_distribution<double> distribution(-0.05, 0.05); // range: [-0.05, 0.05]
 
     
     for (int i = 0; i < num_vertices; i++)
     {
-        VectorType coords;
-        getXYZCoord(test_input, coords, i);
-        coords[0] += distribution(generator); // x
-        coords[1] += distribution(generator); // y
-        coords[2] += distribution(generator); // z
-        setXYZCoord(test_input, coords, i);
+        test_input[3*i] += distribution(generator); // x
+        test_input[3*i + 1] += distribution(generator); // y
+        test_input[3*i + 2] += distribution(generator); // z
     }
-        */
-    
-    std::cout<<"Hello1"<<std::endl;
 
     RealType dest;
     VectorType Dest;
 
-    QuadElasticEnergy<DefaultConfigurator> quadElasticEnergy(quadTopol, centroidTopol, quadGeomRef, centroidReferenceGeometry,_factors_elasticity_dev, _factors_mem_bend);
-    QuadElasticEnergyGradient<DefaultConfigurator> quadElasticEnergyGrad(quadTopol, centroidTopol, quadGeomRef, centroidReferenceGeometry, _factors_elasticity_dev, _factors_mem_bend);
-
-    std::cout<<"Hello2"<<std::endl;
+    QuadElasticEnergy<DefaultConfigurator> quadElasticEnergy(quadTopol, triangleTopol , triBaseGeometry,_factors_elasticity_dev, _factors_mem_bend);
+    QuadElasticEnergyGradient<DefaultConfigurator> quadElasticEnergyGrad(quadTopol, triangleTopol, triBaseGeometry, _factors_elasticity_dev, _factors_mem_bend);
+    QuadElasticEnergyHessian<DefaultConfigurator> quadElasticEnergyHess(quadTopol, triangleTopol, triBaseGeometry, _factors_elasticity_dev, _factors_mem_bend);
 
     quadElasticEnergy.apply(test_input, dest);
     quadElasticEnergyGrad.apply(test_input, Dest);
@@ -96,9 +84,9 @@ try{
     std::cout<<"Energy: "<<dest<<std::endl;
     std::cout<<"Gradient size: "<<Dest.size()<<std::endl;
 
-    ScalarValuedDerivativeTester<DefaultConfigurator> tester(quadElasticEnergy,quadElasticEnergyGrad,0.01,50);
-    //VectorValuedDerivativeTester<DefaultConfigurator> tester(constraint, constraintGrad,0.01, Dest.rows());
-    tester.plotAllDirections(test_input,"/lustre/scratch/data/s24pjoha_hpc-results/deriv_test/");
+    //ScalarValuedDerivativeTester<DefaultConfigurator> tester(quadElasticEnergy,quadElasticEnergyGrad,0.001,50);
+    VectorValuedDerivativeTester<DefaultConfigurator> tester(quadElasticEnergyGrad, quadElasticEnergyHess,0.001, Dest.rows());
+    tester.plotAllDirections(test_input,"/lustre/scratch/data/s24pjoha_hpc-results/deriv_test_51/");
 
 }catch(std::exception &e){
     std::cerr << "Exception caught: " << e.what() << std::endl;

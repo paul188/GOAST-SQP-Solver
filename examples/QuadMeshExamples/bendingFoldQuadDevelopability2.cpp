@@ -12,8 +12,24 @@ int main()
     using VectorType = typename DefaultConfigurator::VectorType;
     using MatrixType = typename DefaultConfigurator::SparseMatrixType;
     using VecType = typename DefaultConfigurator::VecType;
+    using RealType = typename DefaultConfigurator::RealType;
 
     try{
+
+        std::cout<<"test"<<std::endl;
+
+        MyMesh mesh_test;
+        OpenMesh::IO::read_mesh(mesh_test, "/home/s24pjoha_hpc/job_files_master_thesis/job_files_developability/result_2.ply");
+        VectorType testGeometry;
+        QuadMeshTopologySaver quadTopolTest(mesh_test);
+        QuadMeshTopologySaver::getGeometry(mesh_test, testGeometry);
+        ConstraintSqrdReduced<DefaultConfigurator> constraintSqrdReduced_test(quadTopolTest);
+        RealType value = 0;
+        constraintSqrdReduced_test.apply(testGeometry, value);
+
+        std::cout<<"Test value: "<<value<<std::endl;
+
+        std::cout<<"test end"<<std::endl;
 
         MyMesh mesh;
         OpenMesh::IO::read_mesh(mesh, "../../data/plate/testPlateDevelopability.ply");

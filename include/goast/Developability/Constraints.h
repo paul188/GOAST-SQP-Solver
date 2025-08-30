@@ -2488,9 +2488,6 @@ class ConstraintSqrdReduced : public BaseOp<typename ConfiguratorType::VectorTyp
         size_t _num_edges;
         size_t _num_halfedges;
 
-        mutable VectorType normals;
-        mutable VectorType rw_rulings;
-
         mutable SkippingBdryFaceIterator _it_face;
 
     public:
@@ -2502,15 +2499,17 @@ class ConstraintSqrdReduced : public BaseOp<typename ConfiguratorType::VectorTyp
                 _num_halfedges(2*_num_edges),
                 _it_face(quadTopol)
         {
-            normals.resize(3*_num_faces);
-            normals.setZero();
         }
     
         void apply(const VectorType &vertices, RealType &Dest) const override
         {
 
             Dest = 0.0;
+            //VectorType rw_rulings(6*_num_faces);
+            //rw_rulings.setZero();
 
+            VectorType normals;
+            normals.resize(3*_num_faces);
             normals.setZero();
 
             // Iterate over all the faces
@@ -2553,11 +2552,8 @@ class ConstraintSqrdReduced : public BaseOp<typename ConfiguratorType::VectorTyp
             }   
 
             // Next, compute the reweighted rulings
-            _it_face.reset();
-            for(_it_face; _it_face.valid(); _it_face++)
+            for(int i = 0; i < _quadTopol.getNumFaces(); i++)
             {
-                int i = _it_face.idx();
-                int i_nobdry = _it_face.idx_nobdry();
 
                 // First, iterate over edges of the face
                 int he_0 = _quadTopol.getHalfEdgeOfQuad(i,0);
@@ -2570,16 +2566,136 @@ class ConstraintSqrdReduced : public BaseOp<typename ConfiguratorType::VectorTyp
                 int face_2 = _quadTopol.getFaceOfHalfEdge(he_2, 1);
                 int face_3 = _quadTopol.getFaceOfHalfEdge(he_3, 1);
 
-                Eigen::Vector3d n_i     = normals.segment(3 * i, 3);
-                Eigen::Vector3d n_face0 = normals.segment(3 * face_0, 3);
-                Eigen::Vector3d n_face1 = normals.segment(3 * face_1, 3);
-                Eigen::Vector3d n_face2 = normals.segment(3 * face_2, 3);
-                Eigen::Vector3d n_face3 = normals.segment(3 * face_3, 3);
+                // nodes of face i
+                int node_0 = _quadTopol.getNodeOfQuad(i,0);
+                int node_1 = _quadTopol.getNodeOfQuad(i,1);
+                int node_2 = _quadTopol.getNodeOfQuad(i,2);
+                int node_3 = _quadTopol.getNodeOfQuad(i,3);
 
-                Eigen::Vector3d ruling_01 = n_i.cross(n_face0);
-                Eigen::Vector3d ruling_12 = n_i.cross(n_face1);
-                Eigen::Vector3d ruling_23 = n_i.cross(n_face2);
-                Eigen::Vector3d ruling_30 = n_i.cross(n_face3);
+                Eigen::Vector3d vertex_0 = vertices.segment(3*node_0, 3).template head<3>();
+                Eigen::Vector3d vertex_1 = vertices.segment(3*node_1, 3).template head<3>();
+                Eigen::Vector3d vertex_2 = vertices.segment(3*node_2, 3).template head<3>();
+                Eigen::Vector3d vertex_3 = vertices.segment(3*node_3, 3).template head<3>();
+
+                // center of face i
+                Eigen::Vector3d face_i_center = 0.25*(vertex_0 + vertex_1 + vertex_2 + vertex_3);
+                // difference vectors of face centers c_k - c_i for k = 0,1,2,3
+                Eigen::Vector3d center_diff_0 = Eigen::Vector3d::Zero();
+                center_diff_0[0] = 1.0;
+                Eigen::Vector3d center_diff_1 = Eigen::Vector3d::Zero();
+                center_diff_1[0] = 1.0;
+                Eigen::Vector3d center_diff_2 = Eigen::Vector3d::Zero();
+                center_diff_2[0] = 1.0;
+                Eigen::Vector3d center_diff_3 = Eigen::Vector3d::Zero();
+                center_diff_3[0] = 1.0;
+
+                // Normal vector of current face i
+                Eigen::Vector3d n_i = normals.segment(3 * i, 3).template head<3>();
+
+                // Initialize the normals as the same face normal n_i. -> This is the boundary case so that the term in the sum evaluates to zero
+                Eigen::Vector3d n_0 = n_i;
+                Eigen::Vector3d n_1 = n_i;
+                Eigen::Vector3d n_2 = n_i;
+                Eigen::Vector3d n_3 = n_i;
+
+                // Initialize the rulings as zero vectors -> This is the boundary case
+                Eigen::Vector3d ruling_01 = Eigen::Vector3d::Zero();
+                Eigen::Vector3d ruling_12 = Eigen::Vector3d::Zero();
+                Eigen::Vector3d ruling_23 = Eigen::Vector3d::Zero();
+                Eigen::Vector3d ruling_30 = Eigen::Vector3d::Zero();
+
+                if(face_0 != -1)
+                {
+                    // Calculate center point of face 0
+                    int node_0_f0 = _quadTopol.getNodeOfQuad(face_0,0);
+                    int node_1_f0 = _quadTopol.getNodeOfQuad(face_0,1);
+                    int node_2_f0 = _quadTopol.getNodeOfQuad(face_0,2);
+                    int node_3_f0 = _quadTopol.getNodeOfQuad(face_0,3);
+
+                    Eigen::Vector3d vertex_0_f0 = vertices.segment(3*node_0_f0, 3).template head<3>();
+                    Eigen::Vector3d vertex_1_f0 = vertices.segment(3*node_1_f0, 3).template head<3>();
+                    Eigen::Vector3d vertex_2_f0 = vertices.segment(3*node_2_f0, 3).template head<3>();
+                    Eigen::Vector3d vertex_3_f0 = vertices.segment(3*node_3_f0, 3).template head<3>();
+
+                    Eigen::Vector3d face_0_center = 0.25*(vertex_0_f0 + vertex_1_f0 + vertex_2_f0 + vertex_3_f0);
+
+                    // Calculate the difference of centers of face i and face 0
+                    center_diff_0 = face_0_center - face_i_center;
+
+                    // Now, for rulings
+                    n_0  = normals.segment(3 * face_0, 3).template head<3>();
+                    ruling_01 = n_i.cross(n_0);
+                }
+
+                if(face_1 != -1)
+                {
+                    // Calculate center point of face 1
+                    int node_0_f1 = _quadTopol.getNodeOfQuad(face_1,0);
+                    int node_1_f1 = _quadTopol.getNodeOfQuad(face_1,1);
+                    int node_2_f1 = _quadTopol.getNodeOfQuad(face_1,2);
+                    int node_3_f1 = _quadTopol.getNodeOfQuad(face_1,3);
+
+                    Eigen::Vector3d vertex_0_f1 = vertices.segment(3*node_0_f1, 3).template head<3>();
+                    Eigen::Vector3d vertex_1_f1 = vertices.segment(3*node_1_f1, 3).template head<3>();
+                    Eigen::Vector3d vertex_2_f1 = vertices.segment(3*node_2_f1, 3).template head<3>();
+                    Eigen::Vector3d vertex_3_f1 = vertices.segment(3*node_3_f1, 3).template head<3>();
+
+                    Eigen::Vector3d face_1_center = 0.25*(vertex_0_f1 + vertex_1_f1 + vertex_2_f1 + vertex_3_f1);
+
+                    // Calculate the difference of centers of face i and face 1
+                    center_diff_1 = face_1_center - face_i_center;
+
+                    // Now, for rulings
+                    n_1  = normals.segment(3 * face_1, 3).template head<3>();
+                    ruling_12 = n_i.cross(n_1);
+                }
+
+                if(face_2 != -1)
+                {
+                    // Calculate center point of face 1
+                    int node_0_f2 = _quadTopol.getNodeOfQuad(face_2,0);
+                    int node_1_f2 = _quadTopol.getNodeOfQuad(face_2,1);
+                    int node_2_f2 = _quadTopol.getNodeOfQuad(face_2,2);
+                    int node_3_f2 = _quadTopol.getNodeOfQuad(face_2,3);
+
+                    Eigen::Vector3d vertex_0_f2 = vertices.segment(3*node_0_f2, 3).template head<3>();
+                    Eigen::Vector3d vertex_1_f2 = vertices.segment(3*node_1_f2, 3).template head<3>();
+                    Eigen::Vector3d vertex_2_f2 = vertices.segment(3*node_2_f2, 3).template head<3>();
+                    Eigen::Vector3d vertex_3_f2 = vertices.segment(3*node_3_f2, 3).template head<3>();
+
+                    Eigen::Vector3d face_2_center = 0.25*(vertex_0_f2 + vertex_1_f2 + vertex_2_f2 + vertex_3_f2);
+
+                    // Calculate the difference of centers of face i and face 2
+                    center_diff_2 = face_2_center - face_i_center;
+
+                    // Now, for rulings
+                    n_2  = normals.segment(3 * face_2, 3).template head<3>();
+                    ruling_23 = n_i.cross(n_2);
+                }
+
+                if(face_3 != -1)
+                {
+                    // Calculate center point of face 1
+                    int node_0_f3 = _quadTopol.getNodeOfQuad(face_3,0);
+                    int node_1_f3 = _quadTopol.getNodeOfQuad(face_3,1);
+                    int node_2_f3 = _quadTopol.getNodeOfQuad(face_3,2);
+                    int node_3_f3 = _quadTopol.getNodeOfQuad(face_3,3);
+
+                    Eigen::Vector3d vertex_0_f3 = vertices.segment(3*node_0_f3, 3).template head<3>();
+                    Eigen::Vector3d vertex_1_f3 = vertices.segment(3*node_1_f3, 3).template head<3>();
+                    Eigen::Vector3d vertex_2_f3 = vertices.segment(3*node_2_f3, 3).template head<3>();
+                    Eigen::Vector3d vertex_3_f3 = vertices.segment(3*node_3_f3, 3).template head<3>();
+
+                    Eigen::Vector3d face_3_center = 0.25*(vertex_0_f3 + vertex_1_f3 + vertex_2_f3 + vertex_3_f3);
+
+                    // Calculate the difference of centers of face i and face 3
+                    center_diff_3 = face_3_center - face_i_center;
+
+                    // Now, for rulings
+                    n_3  = normals.segment(3 * face_3, 3).template head<3>();
+                    ruling_30 = n_i.cross(n_3);
+                }
+
 
                 // Calculate the reweighted rulings
                 Eigen::Vector3d rw_ruling_13 = 0.5*ruling_12 - 0.5*ruling_30;
@@ -2587,8 +2703,90 @@ class ConstraintSqrdReduced : public BaseOp<typename ConfiguratorType::VectorTyp
 
                 // Now, finally calculate the developability constraint
                 VectorType rw_rulings_cross = rw_ruling_13.cross(rw_ruling_02);
+                //rw_rulings.segment(6*i, 3) = rw_ruling_02;
+                //rw_rulings.segment(6*i + 3, 3) = rw_ruling_13;
                 Dest += rw_rulings_cross.dot(rw_rulings_cross);
+
+                // Now, add the additional scalar constraints. 
+                center_diff_0 = center_diff_0 / center_diff_0.norm();
+                center_diff_1 = center_diff_1 / center_diff_1.norm();
+                center_diff_2 = center_diff_2 / center_diff_2.norm();
+                center_diff_3 = center_diff_3 / center_diff_3.norm();
+                // First, from rw_ruling_13:
+                Eigen::Vector3d sum_13 = (n_0 - n_i)*(center_diff_0.dot(rw_ruling_13)) + (n_1 - n_i)*(center_diff_1.dot(rw_ruling_13)) 
+                                    + (n_2 - n_i)*(center_diff_2.dot(rw_ruling_13)) + (n_3 - n_i)*(center_diff_3.dot(rw_ruling_13));
+
+                Eigen::Vector3d sum_02 = (n_0 - n_i)*(center_diff_0.dot(rw_ruling_02)) + (n_1 - n_i)*(center_diff_1.dot(rw_ruling_02)) 
+                                    + (n_2 - n_i)*(center_diff_2.dot(rw_ruling_02)) + (n_3 - n_i)*(center_diff_3.dot(rw_ruling_02));
+                
+                Dest += sum_13.squaredNorm() + sum_02.squaredNorm();
             }
+
+            /*
+            std::ofstream stream;
+            stream.open("/home/s24pjoha_hpc/goast_old_old/goast/examples/QuadMeshExamples/plotting/rw_rulings_newest.txt");
+
+            // Now, for each face, first want again the middle point of the face
+            for(int i = 0; i < _quadTopol.getNumFaces(); i++)
+            {
+                auto vertex_0_idx = _quadTopol.getNodeOfQuad(i,0);
+                auto vertex_1_idx = _quadTopol.getNodeOfQuad(i,1);
+                auto vertex_2_idx = _quadTopol.getNodeOfQuad(i,2);
+                auto vertex_3_idx = _quadTopol.getNodeOfQuad(i,3);
+
+                auto vertex_0 = vertices.segment(3*vertex_0_idx, 3);
+                auto vertex_1 = vertices.segment(3*vertex_1_idx, 3);
+                auto vertex_2 = vertices.segment(3*vertex_2_idx, 3);
+                auto vertex_3 = vertices.segment(3*vertex_3_idx, 3);
+
+                std::cout<<"Face index: "<<i<<std::endl;
+                std::cout<<"Vertices: "<<vertex_0.transpose()<<", "<<vertex_1.transpose()<<", "<<vertex_2.transpose()<<", "<<vertex_3.transpose()<<std::endl;
+                std::cout<<"Middle pos: "<<(0.25*(vertex_0 + vertex_1 + vertex_2 + vertex_3)).transpose()<<std::endl;
+
+                auto middle_pos = 0.25*(vertex_0 + vertex_1 + vertex_2 + vertex_3);
+                stream << middle_pos[0] << " " << middle_pos[1] << " " << middle_pos[2] << std::endl;
+            }
+
+            for(int i = 0; i < _quadTopol.getNumFaces(); i++)
+            {
+
+                auto rw_ruling_1 = rw_rulings.segment(6*i, 3);
+                auto rw_ruling_2 = rw_rulings.segment(6*i + 3, 3);
+
+                auto rw_ruling_1_vec = rw_ruling_1.template head<3>();
+                auto rw_ruling_2_vec = rw_ruling_2.template head<3>();
+
+                stream << rw_ruling_1_vec[0] << " " << rw_ruling_1_vec[1] << " " << rw_ruling_1_vec[2] << std::endl;
+                stream << rw_ruling_2_vec[0] << " " << rw_ruling_2_vec[1] << " " << rw_ruling_2_vec[2] << std::endl;
+            }
+
+            stream.close();
+            std::ofstream stream_normals;
+            stream_normals.open("/home/s24pjoha_hpc/goast_old_old/goast/examples/QuadMeshExamples/plotting/normals_newest.txt");
+            
+            for(int i = 0; i < _quadTopol.getNumFaces(); i++)
+            {
+                auto vertex_0_idx = _quadTopol.getNodeOfQuad(i,0);
+                auto vertex_1_idx = _quadTopol.getNodeOfQuad(i,1);
+                auto vertex_2_idx = _quadTopol.getNodeOfQuad(i,2);
+                auto vertex_3_idx = _quadTopol.getNodeOfQuad(i,3);
+
+                auto vertex_0 = vertices.segment(3*vertex_0_idx, 3);
+                auto vertex_1 = vertices.segment(3*vertex_1_idx, 3);
+                auto vertex_2 = vertices.segment(3*vertex_2_idx, 3);
+                auto vertex_3 = vertices.segment(3*vertex_3_idx, 3);
+
+                auto middle_pos = 0.25*(vertex_0 + vertex_1 + vertex_2 + vertex_3);
+                stream_normals << middle_pos[0] << " " << middle_pos[1] << " " << middle_pos[2] << std::endl;
+            }
+
+            for(int i = 0; i < _quadTopol.getNumFaces(); i++)
+            {
+                auto normal = normals.segment(3*i, 3);
+                stream_normals << normal[0] << " " << normal[1] << " " << normal[2] << std::endl;
+            }
+            stream_normals.close();
+            */
         }
 };
 
@@ -2690,9 +2888,6 @@ class ConstraintSqrdReducedGradient : public BaseOp<typename ConfiguratorType::V
         //VarsIdxReduced<ConfiguratorType> &_vars_idx;
         mutable SkippingBdryFaceIterator _it_face;
 
-        mutable VectorType normals;
-        mutable FullMatrixType dnormal_dv;
-
     public:
         ConstraintSqrdReducedGradient(const QuadMeshTopologySaver &quadTopol):
             _quadTopol(quadTopol),
@@ -2704,11 +2899,6 @@ class ConstraintSqrdReducedGradient : public BaseOp<typename ConfiguratorType::V
             _num_bdryFaces(quadTopol.getBdryFaces().size()),
             _it_face(_quadTopol)
             {
-                normals.resize(3*_num_faces);
-                normals.setZero();
-
-                dnormal_dv.resize(3*_num_faces, 3*_num_vertices);
-                dnormal_dv.setZero();
             }
 
     template <typename Vector, typename Real>
@@ -2755,12 +2945,8 @@ class ConstraintSqrdReducedGradient : public BaseOp<typename ConfiguratorType::V
         }   
 
         // Next, compute the reweighted rulings
-        _it_face.reset();
-        for(_it_face; _it_face.valid(); _it_face++)
+        for(int i = 0; i < _quadTopol.getNumFaces(); i++)
         {
-            int i = _it_face.idx();
-            int i_nbdry = _it_face.idx_nobdry();
-
             // First, iterate over edges of the face
             int he_0 = _quadTopol.getHalfEdgeOfQuad(i,0);
             int he_1 = _quadTopol.getHalfEdgeOfQuad(i,1);
@@ -2771,62 +2957,207 @@ class ConstraintSqrdReducedGradient : public BaseOp<typename ConfiguratorType::V
             int face_1 = _quadTopol.getFaceOfHalfEdge(he_1, 1);
             int face_2 = _quadTopol.getFaceOfHalfEdge(he_2, 1);
             int face_3 = _quadTopol.getFaceOfHalfEdge(he_3, 1);
-            
-            ADEigenVec3 n_i     = normals.segment(3 * i, 3);
-            ADEigenVec3 n_face0 = normals.segment(3 * face_0, 3);
-            ADEigenVec3 n_face1 = normals.segment(3 * face_1, 3);
-            ADEigenVec3 n_face2 = normals.segment(3 * face_2, 3);
-            ADEigenVec3 n_face3 = normals.segment(3 * face_3, 3);
 
-            ADEigenVec3 ruling_01 = n_i.cross(n_face0);
-            ADEigenVec3 ruling_12 = n_i.cross(n_face1);
-            ADEigenVec3 ruling_23 = n_i.cross(n_face2);
-            ADEigenVec3 ruling_30 = n_i.cross(n_face3);
+            // nodes of face i
+            int node_0 = _quadTopol.getNodeOfQuad(i,0);
+            int node_1 = _quadTopol.getNodeOfQuad(i,1);
+            int node_2 = _quadTopol.getNodeOfQuad(i,2);
+            int node_3 = _quadTopol.getNodeOfQuad(i,3);
 
-            ADEigenVec3 rw_ruling_13 = 0.5 * ruling_12 - 0.5 * ruling_30;
-            ADEigenVec3 rw_ruling_02 = 0.5 * ruling_01 - 0.5 * ruling_23;
+            ADEigenVec3 vertex_0 = vertices_eigen.segment(3*node_0, 3).template head<3>();
+            ADEigenVec3 vertex_1 = vertices_eigen.segment(3*node_1, 3).template head<3>();
+            ADEigenVec3 vertex_2 = vertices_eigen.segment(3*node_2, 3).template head<3>();
+            ADEigenVec3 vertex_3 = vertices_eigen.segment(3*node_3, 3).template head<3>();
 
+            // center of face i
+            ADEigenVec3 face_i_center = 0.25*(vertex_0 + vertex_1 + vertex_2 + vertex_3);
+            // difference vectors of face centers c_k - c_i for k = 0,1,2,3
+            ADEigenVec3 center_diff_0;
+            center_diff_0.setZero();
+            center_diff_0[0] = 1.0;
+            ADEigenVec3 center_diff_1;
+            center_diff_1.setZero();
+            center_diff_1[0] = 1.0;
+            ADEigenVec3 center_diff_2;
+            center_diff_2.setZero();
+            center_diff_2[0] = 1.0;
+            ADEigenVec3 center_diff_3;
+            center_diff_3.setZero();
+            center_diff_3[0] = 1.0;
+
+            // Normal vector of current face i
+            ADEigenVec3 n_i = normals.segment(3 * i, 3).template head<3>();
+
+            // Initialize the normals as the same face normal n_i. -> This is the boundary case so that the term in the sum evaluates to zero
+            ADEigenVec3 n_0 = n_i;
+            ADEigenVec3 n_1 = n_i;
+            ADEigenVec3 n_2 = n_i;
+            ADEigenVec3 n_3 = n_i;
+
+            // Initialize the rulings as zero vectors -> This is the boundary case
+            ADEigenVec3 ruling_01;
+            ruling_01.setZero();
+            ADEigenVec3 ruling_12;
+            ruling_12.setZero();
+            ADEigenVec3 ruling_23;
+            ruling_23.setZero();
+            ADEigenVec3 ruling_30;
+            ruling_30.setZero();
+
+            if(face_0 != -1)
+            {
+                // Calculate center point of face 0
+                int node_0_f0 = _quadTopol.getNodeOfQuad(face_0,0);
+                int node_1_f0 = _quadTopol.getNodeOfQuad(face_0,1);
+                int node_2_f0 = _quadTopol.getNodeOfQuad(face_0,2);
+                int node_3_f0 = _quadTopol.getNodeOfQuad(face_0,3);
+
+                ADEigenVec3 vertex_0_f0 = vertices_eigen.segment(3*node_0_f0, 3).template head<3>();
+                ADEigenVec3 vertex_1_f0 = vertices_eigen.segment(3*node_1_f0, 3).template head<3>();
+                ADEigenVec3 vertex_2_f0 = vertices_eigen.segment(3*node_2_f0, 3).template head<3>();
+                ADEigenVec3 vertex_3_f0 = vertices_eigen.segment(3*node_3_f0, 3).template head<3>();
+
+                ADEigenVec3 face_0_center = 0.25*(vertex_0_f0 + vertex_1_f0 + vertex_2_f0 + vertex_3_f0);
+
+                // Calculate the difference of centers of face i and face 0
+                center_diff_0 = face_0_center - face_i_center;
+
+                // Now, for rulings
+                n_0  = normals.segment(3 * face_0, 3).template head<3>();
+                ruling_01 = n_i.cross(n_0);
+            }
+
+            if(face_1 != -1)
+            {
+                // Calculate center point of face 1
+                int node_0_f1 = _quadTopol.getNodeOfQuad(face_1,0);
+                int node_1_f1 = _quadTopol.getNodeOfQuad(face_1,1);
+                int node_2_f1 = _quadTopol.getNodeOfQuad(face_1,2);
+                int node_3_f1 = _quadTopol.getNodeOfQuad(face_1,3);
+
+                ADEigenVec3 vertex_0_f1 = vertices_eigen.segment(3*node_0_f1, 3).template head<3>();
+                ADEigenVec3 vertex_1_f1 = vertices_eigen.segment(3*node_1_f1, 3).template head<3>();
+                ADEigenVec3 vertex_2_f1 = vertices_eigen.segment(3*node_2_f1, 3).template head<3>();
+                ADEigenVec3 vertex_3_f1 = vertices_eigen.segment(3*node_3_f1, 3).template head<3>();
+
+                ADEigenVec3 face_1_center = 0.25*(vertex_0_f1 + vertex_1_f1 + vertex_2_f1 + vertex_3_f1);
+
+                // Calculate the difference of centers of face i and face 1
+                center_diff_1 = face_1_center - face_i_center;
+
+                // Now, for rulings
+                n_1  = normals.segment(3 * face_1, 3).template head<3>();
+                ruling_12 = n_i.cross(n_1);
+            }
+
+            if(face_2 != -1)
+            {
+                // Calculate center point of face 1
+                int node_0_f2 = _quadTopol.getNodeOfQuad(face_2,0);
+                int node_1_f2 = _quadTopol.getNodeOfQuad(face_2,1);
+                int node_2_f2 = _quadTopol.getNodeOfQuad(face_2,2);
+                int node_3_f2 = _quadTopol.getNodeOfQuad(face_2,3);
+
+                ADEigenVec3 vertex_0_f2 = vertices_eigen.segment(3*node_0_f2, 3).template head<3>();
+                ADEigenVec3 vertex_1_f2 = vertices_eigen.segment(3*node_1_f2, 3).template head<3>();
+                ADEigenVec3 vertex_2_f2 = vertices_eigen.segment(3*node_2_f2, 3).template head<3>();
+                ADEigenVec3 vertex_3_f2 = vertices_eigen.segment(3*node_3_f2, 3).template head<3>();
+
+                ADEigenVec3 face_2_center = 0.25*(vertex_0_f2 + vertex_1_f2 + vertex_2_f2 + vertex_3_f2);
+
+                // Calculate the difference of centers of face i and face 2
+                center_diff_2 = face_2_center - face_i_center;
+
+                // Now, for rulings
+                n_2  = normals.segment(3 * face_2, 3).template head<3>();
+                ruling_23 = n_i.cross(n_2);
+            }
+
+            if(face_3 != -1)
+            {
+                // Calculate center point of face 1
+                int node_0_f3 = _quadTopol.getNodeOfQuad(face_3,0);
+                int node_1_f3 = _quadTopol.getNodeOfQuad(face_3,1);
+                int node_2_f3 = _quadTopol.getNodeOfQuad(face_3,2);
+                int node_3_f3 = _quadTopol.getNodeOfQuad(face_3,3);
+
+                ADEigenVec3 vertex_0_f3 = vertices_eigen.segment(3*node_0_f3, 3).template head<3>();
+                ADEigenVec3 vertex_1_f3 = vertices_eigen.segment(3*node_1_f3, 3).template head<3>();
+                ADEigenVec3 vertex_2_f3 = vertices_eigen.segment(3*node_2_f3, 3).template head<3>();
+                ADEigenVec3 vertex_3_f3 = vertices_eigen.segment(3*node_3_f3, 3).template head<3>();
+
+                ADEigenVec3 face_3_center = 0.25*(vertex_0_f3 + vertex_1_f3 + vertex_2_f3 + vertex_3_f3);
+
+                // Calculate the difference of centers of face i and face 3
+                center_diff_3 = face_3_center - face_i_center;
+
+                // Now, for rulings
+                n_3  = normals.segment(3 * face_3, 3).template head<3>();
+                ruling_30 = n_i.cross(n_3);
+            }
+
+
+            // Calculate the reweighted rulings
+            ADEigenVec3 rw_ruling_13 = 0.5*ruling_12 - 0.5*ruling_30;
+            ADEigenVec3 rw_ruling_02 = 0.5*ruling_01 - 0.5*ruling_23;
+
+            // Now, finally calculate the developability constraint
             ADEigenVec3 rw_rulings_cross = rw_ruling_13.cross(rw_ruling_02);
-
+            //rw_rulings.segment(6*i, 3) = rw_ruling_02;
+            //rw_rulings.segment(6*i + 3, 3) = rw_ruling_13;
             Dest += rw_rulings_cross.dot(rw_rulings_cross);
+
+            // Now, add the additional scalar constraints. 
+            center_diff_0 = center_diff_0 / (CppAD::sqrt(center_diff_0.squaredNorm()));
+            center_diff_1 = center_diff_1 / (CppAD::sqrt(center_diff_1.squaredNorm()));
+            center_diff_2 = center_diff_2 / (CppAD::sqrt(center_diff_2.squaredNorm()));
+            center_diff_3 = center_diff_3 / (CppAD::sqrt(center_diff_3.squaredNorm()));
+            // First, from rw_ruling_13:
+            ADEigenVec3 sum_13 = (n_0 - n_i)*(center_diff_0.dot(rw_ruling_13)) + (n_1 - n_i)*(center_diff_1.dot(rw_ruling_13)) 
+                                + (n_2 - n_i)*(center_diff_2.dot(rw_ruling_13)) + (n_3 - n_i)*(center_diff_3.dot(rw_ruling_13));
+
+            ADEigenVec3 sum_02 = (n_0 - n_i)*(center_diff_0.dot(rw_ruling_02)) + (n_1 - n_i)*(center_diff_1.dot(rw_ruling_02)) 
+                                + (n_2 - n_i)*(center_diff_2.dot(rw_ruling_02)) + (n_3 - n_i)*(center_diff_3.dot(rw_ruling_02));
+            
+            Dest += sum_13.squaredNorm() + sum_02.squaredNorm();
         }
         Dest_vec[0] = Dest;
         return Dest_vec;
     }
 
     void apply(const VectorType &quad_geom, VectorType &Dest) const override
-        {
-            size_t n = quad_geom.size();
-            Dest.resize(n);
-            Dest.setZero();
+    {
+        size_t n = quad_geom.size();
+        Dest.resize(n);
+        Dest.setZero();
 
-            // Step 1: Create AD variables
-            CppAD::vector<AD<double>> vertices_ad(n);
-            for (size_t i = 0; i < n; ++i)
-                vertices_ad[i] = quad_geom[i];
+        // Step 1: Create AD variables
+        CppAD::vector<AD<double>> vertices_ad(n);
+        for (size_t i = 0; i < n; ++i)
+            vertices_ad[i] = quad_geom[i];
 
-            // Step 2: Start recording
-            CppAD::Independent(vertices_ad);
+        // Step 2: Start recording
+        CppAD::Independent(vertices_ad);
 
-            // Step 3: Evaluate function in AD
-            ADVector Y = computeDestAD<CppAD::vector<AD<double>>, AD<double>>(vertices_ad);
+        // Step 3: Evaluate function in AD
+        ADVector Y = computeDestAD<CppAD::vector<AD<double>>, AD<double>>(vertices_ad);
 
-            // Step 4: Stop recording
-            CppAD::ADFun<double> f(vertices_ad, Y);
+        // Step 4: Stop recording
+        CppAD::ADFun<double> f(vertices_ad, Y);
 
-            // Step 5: Prepare input as double
-            CppAD::vector<double> x(n);
-            for (size_t i = 0; i < n; ++i)
-                x[i] = quad_geom[i]; // or vertices_ad[i].Value() if you prefer
+        // Step 5: Prepare input as double
+        CppAD::vector<double> x(n);
+        for (size_t i = 0; i < n; ++i)
+            x[i] = quad_geom[i]; // or vertices_ad[i].Value() if you prefer
 
-            // Step 6: Compute Hessian
-            auto Jacobian = f.Jacobian(x); // input must be double
+        // Step 6: Compute Hessian
+        auto Jacobian = f.Jacobian(x); // input must be double
 
-            // Step 7: Copy to Eigen
-            for (size_t i = 0; i < n; ++i){
-                Dest[i] = Jacobian[i]; // Jacobian is 1xn for scalar output
-            }
+        // Step 7: Copy to Eigen
+        for (size_t i = 0; i < n; ++i){
+            Dest[i] = Jacobian[i]; // Jacobian is 1xn for scalar output
         }
+    }
 
 };
 
@@ -2859,7 +3190,7 @@ class ConstraintSqrdReducedHessian : public BaseOp<typename ConfiguratorType::Ve
         {
         }
 
-    template <typename Vector, typename Real>
+            template <typename Vector, typename Real>
     Vector computeDestAD(Vector &vertices_ad) const
     {
         Vector Dest_vec(1);
@@ -2903,12 +3234,8 @@ class ConstraintSqrdReducedHessian : public BaseOp<typename ConfiguratorType::Ve
         }   
 
         // Next, compute the reweighted rulings
-        _it_face.reset();
-        for(_it_face; _it_face.valid(); _it_face++)
+        for(int i = 0; i < _quadTopol.getNumFaces(); i++)
         {
-            int i = _it_face.idx();
-            int i_nbdry = _it_face.idx_nobdry();
-
             // First, iterate over edges of the face
             int he_0 = _quadTopol.getHalfEdgeOfQuad(i,0);
             int he_1 = _quadTopol.getHalfEdgeOfQuad(i,1);
@@ -2919,63 +3246,208 @@ class ConstraintSqrdReducedHessian : public BaseOp<typename ConfiguratorType::Ve
             int face_1 = _quadTopol.getFaceOfHalfEdge(he_1, 1);
             int face_2 = _quadTopol.getFaceOfHalfEdge(he_2, 1);
             int face_3 = _quadTopol.getFaceOfHalfEdge(he_3, 1);
-            
-            ADEigenVec3 n_i     = normals.segment(3 * i, 3);
-            ADEigenVec3 n_face0 = normals.segment(3 * face_0, 3);
-            ADEigenVec3 n_face1 = normals.segment(3 * face_1, 3);
-            ADEigenVec3 n_face2 = normals.segment(3 * face_2, 3);
-            ADEigenVec3 n_face3 = normals.segment(3 * face_3, 3);
 
-            ADEigenVec3 ruling_01 = n_i.cross(n_face0);
-            ADEigenVec3 ruling_12 = n_i.cross(n_face1);
-            ADEigenVec3 ruling_23 = n_i.cross(n_face2);
-            ADEigenVec3 ruling_30 = n_i.cross(n_face3);
+            // nodes of face i
+            int node_0 = _quadTopol.getNodeOfQuad(i,0);
+            int node_1 = _quadTopol.getNodeOfQuad(i,1);
+            int node_2 = _quadTopol.getNodeOfQuad(i,2);
+            int node_3 = _quadTopol.getNodeOfQuad(i,3);
 
-            ADEigenVec3 rw_ruling_13 = 0.5 * ruling_12 - 0.5 * ruling_30;
-            ADEigenVec3 rw_ruling_02 = 0.5 * ruling_01 - 0.5 * ruling_23;
+            ADEigenVec3 vertex_0 = vertices_eigen.segment(3*node_0, 3).template head<3>();
+            ADEigenVec3 vertex_1 = vertices_eigen.segment(3*node_1, 3).template head<3>();
+            ADEigenVec3 vertex_2 = vertices_eigen.segment(3*node_2, 3).template head<3>();
+            ADEigenVec3 vertex_3 = vertices_eigen.segment(3*node_3, 3).template head<3>();
 
+            // center of face i
+            ADEigenVec3 face_i_center = 0.25*(vertex_0 + vertex_1 + vertex_2 + vertex_3);
+            // difference vectors of face centers c_k - c_i for k = 0,1,2,3
+            ADEigenVec3 center_diff_0;
+            center_diff_0.setZero();
+            center_diff_0[0] = 1.0;
+            ADEigenVec3 center_diff_1;
+            center_diff_1.setZero();
+            center_diff_1[0] = 1.0;
+            ADEigenVec3 center_diff_2;
+            center_diff_2.setZero();
+            center_diff_2[0] = 1.0;
+            ADEigenVec3 center_diff_3;
+            center_diff_3.setZero();
+            center_diff_3[0] = 1.0;
+
+            // Normal vector of current face i
+            ADEigenVec3 n_i = normals.segment(3 * i, 3).template head<3>();
+
+            // Initialize the normals as the same face normal n_i. -> This is the boundary case so that the term in the sum evaluates to zero
+            ADEigenVec3 n_0 = n_i;
+            ADEigenVec3 n_1 = n_i;
+            ADEigenVec3 n_2 = n_i;
+            ADEigenVec3 n_3 = n_i;
+
+            // Initialize the rulings as zero vectors -> This is the boundary case
+            ADEigenVec3 ruling_01;
+            ruling_01.setZero();
+            ADEigenVec3 ruling_12;
+            ruling_12.setZero();
+            ADEigenVec3 ruling_23;
+            ruling_23.setZero();
+            ADEigenVec3 ruling_30;
+            ruling_30.setZero();
+
+            if(face_0 != -1)
+            {
+                // Calculate center point of face 0
+                int node_0_f0 = _quadTopol.getNodeOfQuad(face_0,0);
+                int node_1_f0 = _quadTopol.getNodeOfQuad(face_0,1);
+                int node_2_f0 = _quadTopol.getNodeOfQuad(face_0,2);
+                int node_3_f0 = _quadTopol.getNodeOfQuad(face_0,3);
+
+                ADEigenVec3 vertex_0_f0 = vertices_eigen.segment(3*node_0_f0, 3).template head<3>();
+                ADEigenVec3 vertex_1_f0 = vertices_eigen.segment(3*node_1_f0, 3).template head<3>();
+                ADEigenVec3 vertex_2_f0 = vertices_eigen.segment(3*node_2_f0, 3).template head<3>();
+                ADEigenVec3 vertex_3_f0 = vertices_eigen.segment(3*node_3_f0, 3).template head<3>();
+
+                ADEigenVec3 face_0_center = 0.25*(vertex_0_f0 + vertex_1_f0 + vertex_2_f0 + vertex_3_f0);
+
+                // Calculate the difference of centers of face i and face 0
+                center_diff_0 = face_0_center - face_i_center;
+
+                // Now, for rulings
+                n_0  = normals.segment(3 * face_0, 3).template head<3>();
+                ruling_01 = n_i.cross(n_0);
+            }
+
+            if(face_1 != -1)
+            {
+                // Calculate center point of face 1
+                int node_0_f1 = _quadTopol.getNodeOfQuad(face_1,0);
+                int node_1_f1 = _quadTopol.getNodeOfQuad(face_1,1);
+                int node_2_f1 = _quadTopol.getNodeOfQuad(face_1,2);
+                int node_3_f1 = _quadTopol.getNodeOfQuad(face_1,3);
+
+                ADEigenVec3 vertex_0_f1 = vertices_eigen.segment(3*node_0_f1, 3).template head<3>();
+                ADEigenVec3 vertex_1_f1 = vertices_eigen.segment(3*node_1_f1, 3).template head<3>();
+                ADEigenVec3 vertex_2_f1 = vertices_eigen.segment(3*node_2_f1, 3).template head<3>();
+                ADEigenVec3 vertex_3_f1 = vertices_eigen.segment(3*node_3_f1, 3).template head<3>();
+
+                ADEigenVec3 face_1_center = 0.25*(vertex_0_f1 + vertex_1_f1 + vertex_2_f1 + vertex_3_f1);
+
+                // Calculate the difference of centers of face i and face 1
+                center_diff_1 = face_1_center - face_i_center;
+
+                // Now, for rulings
+                n_1  = normals.segment(3 * face_1, 3).template head<3>();
+                ruling_12 = n_i.cross(n_1);
+            }
+
+            if(face_2 != -1)
+            {
+                // Calculate center point of face 1
+                int node_0_f2 = _quadTopol.getNodeOfQuad(face_2,0);
+                int node_1_f2 = _quadTopol.getNodeOfQuad(face_2,1);
+                int node_2_f2 = _quadTopol.getNodeOfQuad(face_2,2);
+                int node_3_f2 = _quadTopol.getNodeOfQuad(face_2,3);
+
+                ADEigenVec3 vertex_0_f2 = vertices_eigen.segment(3*node_0_f2, 3).template head<3>();
+                ADEigenVec3 vertex_1_f2 = vertices_eigen.segment(3*node_1_f2, 3).template head<3>();
+                ADEigenVec3 vertex_2_f2 = vertices_eigen.segment(3*node_2_f2, 3).template head<3>();
+                ADEigenVec3 vertex_3_f2 = vertices_eigen.segment(3*node_3_f2, 3).template head<3>();
+
+                ADEigenVec3 face_2_center = 0.25*(vertex_0_f2 + vertex_1_f2 + vertex_2_f2 + vertex_3_f2);
+
+                // Calculate the difference of centers of face i and face 2
+                center_diff_2 = face_2_center - face_i_center;
+
+                // Now, for rulings
+                n_2  = normals.segment(3 * face_2, 3).template head<3>();
+                ruling_23 = n_i.cross(n_2);
+            }
+
+            if(face_3 != -1)
+            {
+                // Calculate center point of face 1
+                int node_0_f3 = _quadTopol.getNodeOfQuad(face_3,0);
+                int node_1_f3 = _quadTopol.getNodeOfQuad(face_3,1);
+                int node_2_f3 = _quadTopol.getNodeOfQuad(face_3,2);
+                int node_3_f3 = _quadTopol.getNodeOfQuad(face_3,3);
+
+                ADEigenVec3 vertex_0_f3 = vertices_eigen.segment(3*node_0_f3, 3).template head<3>();
+                ADEigenVec3 vertex_1_f3 = vertices_eigen.segment(3*node_1_f3, 3).template head<3>();
+                ADEigenVec3 vertex_2_f3 = vertices_eigen.segment(3*node_2_f3, 3).template head<3>();
+                ADEigenVec3 vertex_3_f3 = vertices_eigen.segment(3*node_3_f3, 3).template head<3>();
+
+                ADEigenVec3 face_3_center = 0.25*(vertex_0_f3 + vertex_1_f3 + vertex_2_f3 + vertex_3_f3);
+
+                // Calculate the difference of centers of face i and face 3
+                center_diff_3 = face_3_center - face_i_center;
+
+                // Now, for rulings
+                n_3  = normals.segment(3 * face_3, 3).template head<3>();
+                ruling_30 = n_i.cross(n_3);
+            }
+
+
+            // Calculate the reweighted rulings
+            ADEigenVec3 rw_ruling_13 = 0.5*ruling_12 - 0.5*ruling_30;
+            ADEigenVec3 rw_ruling_02 = 0.5*ruling_01 - 0.5*ruling_23;
+
+            // Now, finally calculate the developability constraint
             ADEigenVec3 rw_rulings_cross = rw_ruling_13.cross(rw_ruling_02);
-
+            //rw_rulings.segment(6*i, 3) = rw_ruling_02;
+            //rw_rulings.segment(6*i + 3, 3) = rw_ruling_13;
             Dest += rw_rulings_cross.dot(rw_rulings_cross);
+
+            // Now, add the additional scalar constraints. 
+            center_diff_0 = center_diff_0 / (CppAD::sqrt(center_diff_0.squaredNorm()));
+            center_diff_1 = center_diff_1 / (CppAD::sqrt(center_diff_1.squaredNorm()));
+            center_diff_2 = center_diff_2 / (CppAD::sqrt(center_diff_2.squaredNorm()));
+            center_diff_3 = center_diff_3 / (CppAD::sqrt(center_diff_3.squaredNorm()));
+            // First, from rw_ruling_13:
+            ADEigenVec3 sum_13 = (n_0 - n_i)*(center_diff_0.dot(rw_ruling_13)) + (n_1 - n_i)*(center_diff_1.dot(rw_ruling_13)) 
+                                + (n_2 - n_i)*(center_diff_2.dot(rw_ruling_13)) + (n_3 - n_i)*(center_diff_3.dot(rw_ruling_13));
+
+            ADEigenVec3 sum_02 = (n_0 - n_i)*(center_diff_0.dot(rw_ruling_02)) + (n_1 - n_i)*(center_diff_1.dot(rw_ruling_02)) 
+                                + (n_2 - n_i)*(center_diff_2.dot(rw_ruling_02)) + (n_3 - n_i)*(center_diff_3.dot(rw_ruling_02));
+            
+            Dest += sum_13.squaredNorm() + sum_02.squaredNorm();
         }
         Dest_vec[0] = Dest;
         return Dest_vec;
     }
 
-        void apply(const VectorType &quad_geom, MatrixType &Dest) const override
-        {
-            size_t n = quad_geom.size();
+    void apply(const VectorType &quad_geom, MatrixType &Dest) const override
+    {
+        size_t n = quad_geom.size();
 
-            // Step 1: Create AD variables
-            CppAD::vector<AD<double>> vertices_ad(n);
-            for (size_t i = 0; i < n; ++i)
-                vertices_ad[i] = quad_geom[i];
+        // Step 1: Create AD variables
+        CppAD::vector<AD<double>> vertices_ad(n);
+        for (size_t i = 0; i < n; ++i)
+            vertices_ad[i] = quad_geom[i];
 
-            // Step 2: Start recording
-            CppAD::Independent(vertices_ad);
+        // Step 2: Start recording
+        CppAD::Independent(vertices_ad);
 
-            // Step 3: Evaluate function in AD
-            ADVector Y = computeDestAD<CppAD::vector<AD<double>>, AD<double>>(vertices_ad);
+        // Step 3: Evaluate function in AD
+        ADVector Y = computeDestAD<CppAD::vector<AD<double>>, AD<double>>(vertices_ad);
 
-            // Step 4: Stop recording
-            CppAD::ADFun<double> f(vertices_ad, Y);
+        // Step 4: Stop recording
+        CppAD::ADFun<double> f(vertices_ad, Y);
 
-            // Step 5: Prepare input as double
-            CppAD::vector<double> x(n);
-            for (size_t i = 0; i < n; ++i)
-                x[i] = quad_geom[i]; // or vertices_ad[i].Value() if you prefer
+        // Step 5: Prepare input as double
+        CppAD::vector<double> x(n);
+        for (size_t i = 0; i < n; ++i)
+            x[i] = quad_geom[i]; // or vertices_ad[i].Value() if you prefer
 
-            // Step 6: Compute Hessian
-            auto Hessian = f.Hessian(x, 0); // input must be double
+        // Step 6: Compute Hessian
+        auto Hessian = f.Hessian(x, 0); // input must be double
 
-            // Step 7: Copy to Eigen
-            MatrixType H_eigen(n, n);
-            for (size_t i = 0; i < n; ++i)
-                for (size_t j = 0; j < n; ++j)
-                    H_eigen.coeffRef(i, j) = Hessian[i * n + j];
+        // Step 7: Copy to Eigen
+        MatrixType H_eigen(n, n);
+        for (size_t i = 0; i < n; ++i)
+            for (size_t j = 0; j < n; ++j)
+                H_eigen.coeffRef(i, j) = Hessian[i * n + j];
 
-            Dest = H_eigen;
-        }
+        Dest = H_eigen;
+    }
 
 
 

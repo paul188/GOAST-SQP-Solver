@@ -17,35 +17,6 @@ int main()
 
     try{
 
-        /*
-        MyMesh mesh_test;
-        OpenMesh::IO::read_mesh(mesh_test,"/home/s24pjoha_hpc/goast_old_old/goast/build/examples/smoothed_quad_newest.ply");
-        VectorType testGeometry;
-        QuadMeshTopologySaver quadTopolTest(mesh_test);
-        QuadMeshTopologySaver::getGeometry(mesh_test, testGeometry);
-        ConstraintSqrdReduced<DefaultConfigurator> constraintSqrdReduced_test(quadTopolTest);
-        RealType value = 0;
-        constraintSqrdReduced_test.apply(testGeometry, value);
-        std::cout<<"ConstraintSqrdReduced value: "<<value<<std::endl;
-
-        ConstraintSqrdReducedHessian<DefaultConfigurator> constraintSqrdReducedHess_test(quadTopolTest);
-        std::cout<<"test geometry size: "<<testGeometry.size()<<std::endl;
-        auto start = std::chrono::high_resolution_clock::now();
-        MatrixType hess_test(testGeometry.size(), testGeometry.size());
-        constraintSqrdReducedHess_test.apply(testGeometry, hess_test);
-        auto end = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double> elapsed = end - start;
-        std::cout << "calc_hessian took " << elapsed.count() << " seconds." << std::endl;
-
-        std::cout<<hess_test.rows()<<" x "<<hess_test.cols()<<std::endl;
-
-        for(int i = 0; i < hess_test.outerSize(); i++){
-            for(typename MatrixType::InnerIterator it(hess_test,i); it; ++it)
-            {
-                std::cout<<"Hess entry: ("<<it.row()<<","<<it.col()<<") = "<<it.value()<<std::endl;
-            }
-        }*/
-
         // ---------------------- TOPOLOGICAL PREPARATIONS --------------------------------------
 
         MyMesh mesh;
@@ -174,7 +145,6 @@ int main()
 
         VectorType result = quadDeformedGeometry;
 
-
         /*
         GradientDescent<DefaultConfigurator> GD( constraintSqrdReduced, DE_combined, optPars);
         GD.setBoundaryMask( bdryMask );
@@ -191,8 +161,10 @@ int main()
 
         QuadMeshTopologySaver::setGeometry(mesh, result);
         // was centroid_base_deformed_newest.ply for the original without Edge length contributions
-        OpenMesh::IO::write_mesh(mesh, "centroid_base_deformed_newest_with_edges.ply");
-        OpenMesh::IO::write_mesh(centroidMesh, "/lustre/scratch/data/s24pjoha_hpc-results/thesis_results/developability/result.ply");
+        printVectorToFile( result, "mesh_result.txt" , 15);
+        printVectorToFile( result, "result_2.txt" , 15);
+        OpenMesh::IO::write_mesh(mesh, "result_2.ply");
+        //OpenMesh::IO::write_mesh(centroidMesh, "/lustre/scratch/data/s24pjoha_hpc-results/thesis_results/developability/result.ply");
 
     }catch(std::exception &e){
         std::cerr << "Exception caught: " << e.what() << std::endl;

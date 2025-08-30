@@ -28,22 +28,26 @@ int main()
 
         // --------------------- GENERATE BASE CENTROID TOPOLOGY ----------------------------
 
-        TriMesh centroid_base_mesh = quadTopol.makeQuadMeshCentroid();
-        MeshTopologySaver centroidTopol(centroid_base_mesh);
-        VectorType centroidReferenceGeometry;
-        getGeometry(centroid_base_mesh, centroidReferenceGeometry);
-        OpenMesh::IO::write_mesh(centroid_base_mesh, "centroid_base_coarse.ply");
+        TriMesh triMesh;
+        OpenMesh::IO::read_mesh(triMesh, "/home/s24pjoha_hpc/goast_old_old/goast/data/plate/quadMesh2_refined.ply");
+        MeshTopologySaver triangleTopol(triMesh);
+        VectorType triBaseGeometry;
+        getGeometry(triMesh, triBaseGeometry);
 
-        VectorType centroidDeformedGeometry = centroidReferenceGeometry;
         double tolerance = 1e-4;
+        VectorType quadDeformedGeometry = quadReferenceGeometry;
 
         std::vector<int> bdryMask;
-        for(int i = 0; i < centroidTopol.getNumVertices(); i++)
+        for(int i = 0; i < quadTopol.getNumVertices(); i++)
         {
             VecType coords;
-            getXYZCoord<VectorType, VecType>(centroidReferenceGeometry,coords, i);
+            coords[0] = quadReferenceGeometry[3*i];
+            coords[1] = quadReferenceGeometry[3*i+1];
+            coords[2] = quadReferenceGeometry[3*i+2];
             if(std::abs(coords[0]) < tolerance || std::abs(1.0 - coords[0]) < tolerance){
-                bdryMask.push_back(i);
+                bdryMask.push_back(3*i);
+                bdryMask.push_back(3*i+1);
+                bdryMask.push_back(3*i+2);
             }
             if(coords[0] <= 0.5){
                 coords[2] = -coords[0]*sqrt(0.34);
@@ -53,57 +57,50 @@ int main()
                 coords[2] = -(1.0-coords[0])*sqrt(0.34);
                 coords[0] = 0.5 + (coords[0]-0.5) *(0.4/0.5);
             }
-            setXYZCoord<VectorType, VecType>(centroidDeformedGeometry,coords, i);
+            quadDeformedGeometry[3*i] = coords[0];
+            quadDeformedGeometry[3*i+1] = coords[1];
+            quadDeformedGeometry[3*i+2] = coords[2];
         }
 
-        setGeometry(centroid_base_mesh, centroidDeformedGeometry);
-        OpenMesh::IO::write_mesh(centroid_base_mesh, "centroid_base_deformed_0.ply");
-
-        extendBoundaryMask(centroidTopol.getNumVertices(), bdryMask);
-
         VectorType factors_mem_bend(2);
-        factors_mem_bend[0] = 0.0;//10000.0;
+        factors_mem_bend[0] = 10000.0;
         factors_mem_bend[1] = 1.0;
 
         VectorType factors_elasticity_dev(2);
-        factors_elasticity_dev[0] = 0.0;//1.0; // Elasticity factor
+        factors_elasticity_dev[0] = 1.0;//1.0; // Elasticity factor
         factors_elasticity_dev[1] = 1.0;//10000.0; // Developability factor
+    
+        QuadElasticEnergy<DefaultConfigurator> quadElasticEnergy(quadTopol, triangleTopol, triBaseGeometry ,factors_elasticity_dev, factors_mem_bend);
+        QuadElasticEnergyGradient<DefaultConfigurator> quadElasticEnergyGrad(quadTopol, triangleTopol, triBaseGeometry ,factors_elasticity_dev, factors_mem_bend);
+        QuadElasticEnergyHessian<DefaultConfigurator> quadElasticEnergyHess(quadTopol, triangleTopol, triBaseGeometry ,factors_elasticity_dev, factors_mem_bend);
 
-        // Create random number generator
-        std::default_random_engine generator;
-        std::uniform_real_distribution<double> distribution(-0.05, 0.05); // range: [-0.05, 0.05]
-
-        QuadElasticEnergy<DefaultConfigurator> quadElasticEnergy(quadTopol, centroidTopol, quadReferenceGeometry, centroidReferenceGeometry,factors_elasticity_dev, factors_mem_bend);
-        QuadElasticEnergyGradient<DefaultConfigurator> quadElasticEnergyGrad(quadTopol, centroidTopol, quadReferenceGeometry, centroidReferenceGeometry, factors_elasticity_dev, factors_mem_bend);
-
-        SimpleBendingEnergy<DefaultConfigurator> E_bend(centroidTopol, centroidReferenceGeometry, true);
-        SimpleBendingGradientDef<DefaultConfigurator> DE_bend(centroidTopol, centroidReferenceGeometry);
-
-        NonlinearMembraneEnergy<DefaultConfigurator> E_mem(centroidTopol, centroidReferenceGeometry,true);
-        NonlinearMembraneGradientDef<DefaultConfigurator> DE_mem(centroidTopol, centroidReferenceGeometry);
-
-        AdditionOp<DefaultConfigurator> E_tot( factors_mem_bend, E_mem, E_bend);
-        AdditionGradient<DefaultConfigurator> DE_tot( factors_mem_bend, DE_mem, DE_bend);
-        
         // set outer optimization parameters
         OptimizationParameters<DefaultConfigurator> optPars;
-        optPars.setGradientIterations( 200 );
-        optPars.setBFGSIterations( 2000 );
-        optPars.setEpsilon( 1e-10);
+        //optPars.setGradientIterations( 2000 );
+        //optPars.setBFGSIterations( 2000 );
+        optPars.setNewtonIterations( 2000 );
+        optPars.setEpsilon( 1e-7);
         optPars.setQuietMode( SHOW_ALL );
 
-        VectorType result_centroid = centroidDeformedGeometry;
+        VectorType result = quadDeformedGeometry;
+        RealType test_1 = 0.0;
 
+        /*
         GradientDescent<DefaultConfigurator> GD( quadElasticEnergy, quadElasticEnergyGrad, optPars);
         GD.setBoundaryMask( bdryMask );
-        GD.solve( centroidDeformedGeometry, result_centroid );
+        GD.solve( quadDeformedGeometry, result );
 
         QuasiNewtonBFGS<DefaultConfigurator> BFGS( quadElasticEnergy, quadElasticEnergyGrad, optPars);
         BFGS.setBoundaryMask( bdryMask );
-        BFGS.solve( result_centroid, result_centroid );
+        BFGS.solve( result, result );
+        */
 
-        setGeometry(centroid_base_mesh, result_centroid);
-        OpenMesh::IO::write_mesh(centroid_base_mesh, "centroid_base_deformed.ply");
+        LineSearchNewton<DefaultConfigurator> Newton( quadElasticEnergy, quadElasticEnergyGrad, quadElasticEnergyHess, optPars);
+        Newton.setBoundaryMask( bdryMask );
+        Newton.solve( quadDeformedGeometry, result );
+
+        QuadMeshTopologySaver::setGeometry(mesh, result);
+        OpenMesh::IO::write_mesh(mesh, "result_quad_reduced.ply");
 
     }catch(std::exception &e){
         std::cerr << "Exception caught: " << e.what() << std::endl;

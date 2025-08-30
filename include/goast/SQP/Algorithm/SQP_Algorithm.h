@@ -14,7 +14,7 @@ class SQPBaseParams{
     public:
         using RealType = typename ConfiguratorType::RealType;
         RealType eps = 1e-12; // Convergence criterion
-        size_t maxIter = 10000; // maximum number of iterations
+        size_t maxIter = 1500; // maximum number of iterations
         size_t iter = 0; // current iteration
 };
 // Specific parameters needed for SQP Line Search
@@ -61,6 +61,8 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
         bool _secondOrderCorrection;
         ScipySolver _scipy_solver;
 
+        RealType t_fixed = -1.0;
+
     public:
         // pars: Parameters for the SQP Solver
         // costFunctional: Cost functional
@@ -92,6 +94,7 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
         //void solve(const VectorType& plateGeomRef_basic, std::vector<VectorType> &def_geometries, std::vector<VectorType> &ref_geometries, std::vector<VectorType> &fold_DOFs)
           void solve(const VectorType& plateGeomRef_basic, const std::string &filename_def_geometries, const std::string filename_ref_geometries, TriMesh& plate)
         {
+
             size_t nAllVertexDOFs = _boundaryDOFs.getNumVertexDOFs();
             size_t nFoldDOFs = _boundaryDOFs.getNumFoldDOFs();
             size_t nAllDOFs = nAllVertexDOFs + nFoldDOFs;
@@ -110,9 +113,11 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
             //FullMatrixType A_k(nEffectiveDOFs + nEffectiveVertexDOFs, nEffectiveDOFs + nEffectiveVertexDOFs);
 
             // Reserve the memory for the Jacobian of the constraint
-            FullMatrixType C_k( nEffectiveVertexDOFs, nEffectiveDOFs );
+            FullMatrixType C_k( nEffectiveVertexDOFs + 1, nEffectiveDOFs );
 
-            FullMatrixType C_k_inv( nEffectiveDOFs, nEffectiveVertexDOFs );
+            VectorType auto_1 = _problemDOFs.getReferenceGeometry();
+
+            VectorType auto_2 = _problemDOFs.getDeformedGeometry();
 
             // Create the constraint, i.e. that derivative of the energy w.r.t. the vertex DOFs is zero
             VectorType Constraint;
@@ -139,27 +144,30 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
             _boundaryDOFs.transformRowColToReducedSpace(D2E_vertex);
             _boundaryDOFs.transformRowToReducedSpace(D2E_mix);
 
+            // Add the constraint for the fold dof
+            Constraint.conservativeResize(Constraint.size()+1);
+            Constraint[Constraint.size() -1] = _problemDOFs.getFoldDOFs()[0] - t_fixed;
+
             // Reserve memory for the r.h.s for the linear system
-            VectorType rhs_k = VectorType::Zero(nEffectiveDOFs + nEffectiveVertexDOFs);
+            VectorType rhs_k = VectorType::Zero(nEffectiveDOFs + nEffectiveVertexDOFs + 1);
 
             // Create solution vector for linear system that contains as subvector the Lagrange multipliers
-            VectorType sol_k = VectorType::Zero(nEffectiveDOFs + nEffectiveVertexDOFs);
+            VectorType sol_k = VectorType::Zero(nEffectiveDOFs + nEffectiveVertexDOFs + 1);
 
             // Create the subvectors of the solution vector
             VectorType d_k = VectorType::Zero(nEffectiveDOFs);
-            VectorType lambda_kplus1 = VectorType::Zero(nEffectiveVertexDOFs);
-            VectorType lambda_k = VectorType::Zero(nEffectiveVertexDOFs);
-            VectorType lambda_diff = VectorType::Zero(nEffectiveVertexDOFs);
+            VectorType lambda_kplus1 = VectorType::Zero(nEffectiveVertexDOFs + 1);
+            VectorType lambda_k = VectorType::Zero(nEffectiveVertexDOFs + 1);
+            VectorType lambda_diff = VectorType::Zero(nEffectiveVertexDOFs + 1);
 
             // difference of the gradient of the lagrangian w.r.t. x between the last iteration and this one
             // Set initially to 1.0 so that convergence criterion is not immediately met
             VectorType DiffGradxLagrange = VectorType::Ones(nEffectiveDOFs);
 
             // DiffConstraint as derivative w.r.t. lambda of the Lagrangian
-            VectorType DiffConstraint =  VectorType::Ones(nEffectiveVertexDOFs);
+            VectorType DiffConstraint =  VectorType::Ones(nEffectiveVertexDOFs + 1);
 
             FullMatrixType mult(nEffectiveVertexDOFs, nEffectiveVertexDOFs);
-            FullMatrixType B_invC(nEffectiveDOFs, nEffectiveVertexDOFs);
 
             size_t terminationCounter = 0;
 
@@ -181,17 +189,18 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
 
                 C_k.setZero();
                 C_k.block(0,0, D2E_mix.rows(), D2E_mix.cols()) = D2E_mix;
-                C_k.block(0,nFoldDOFs, D2E_vertex.rows(), D2E_vertex.cols()) = D2E_vertex;          
+                C_k.block(0,nFoldDOFs, D2E_vertex.rows(), D2E_vertex.cols()) = D2E_vertex;
+                C_k.block(D2E_mix.rows(), 0, 1, 1) = VectorType::Ones(1);          
 
                 // Construct the r.h.s for the linear system
                 // the derivative of the cost functional
                 rhs_k.segment(0,nEffectiveDOFs) = -DCostFunctional_val;
                 // then the derivative of the energy, i.e. the constraint
-                rhs_k.segment(nEffectiveDOFs,nEffectiveVertexDOFs) = -Constraint;
+                rhs_k.segment(nEffectiveDOFs,nEffectiveVertexDOFs +1 ) = -Constraint;
 
                 // Solve the quadratic subproblem, store the solution in d_k and lambda_kplus1
                 // In the process, invert C_k and store the 
-                solveQP(nFoldDOFs, nEffectiveVertexDOFs, B_k_inv,C_k,mult,B_invC, rhs_k, d_k, lambda_kplus1);
+                solveQP(nFoldDOFs, nEffectiveVertexDOFs, B_k_inv,C_k,mult, rhs_k, d_k, lambda_kplus1);
 
                 lambda_diff = lambda_kplus1 - lambda_k;
 
@@ -218,7 +227,6 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                             lambda_k,
                             Constraint,
                             C_k,
-                            C_k_inv,
                             B_k,
                             D2E_vertex,
                             rhs_k,
@@ -246,12 +254,16 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                 _factory->produceDE_vertex(_problemDOFs, Constraint_kplus1);
                 _boundaryDOFs.transformToReducedSpace(Constraint_kplus1);
 
+                // Add the constraint for the fold dof
+                Constraint_kplus1.conservativeResize(Constraint_kplus1.size()+1);
+                Constraint_kplus1[Constraint_kplus1.size() -1] = _problemDOFs.getFoldDOFs()[0] - t_fixed;
+
                 // Want to calculate \grad_{x} L(x_{k+1}) - \grad_{x} L(x_{k})
                 VectorType DiffGradxCostFunctional;
                 DiffGradxCostFunctional = DCostFunctional_kplus1_val - DCostFunctional_val;
 
                 VectorType DiffGradxEnergy_kplus1(nEffectiveVertexDOFs);
-                MatrixType temp(nEffectiveVertexDOFs,nEffectiveDOFs);
+                MatrixType temp(nEffectiveVertexDOFs + 1,nEffectiveDOFs);
                 // Recalculate D2E_val
 
                 MatrixType D2E_vertex_kplus1;
@@ -267,6 +279,7 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                 std::vector<Eigen::Triplet<RealType>> temp_tripletList;
                 assignSparseBlockInplace(temp, D2E_mix_kplus1 - D2E_mix, 0,0, temp_tripletList);
                 assignSparseBlockInplace(temp, D2E_vertex_kplus1 - D2E_vertex, 0,nFoldDOFs, temp_tripletList);
+                temp.coeffRef(D2E_mix.rows(),0) = 0.0;
 
                 DiffGradxEnergy_kplus1 = lambda_kplus1.transpose()*(temp);
                 temp_tripletList.clear();
@@ -359,7 +372,6 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                             const VectorType &lambda_k,
                             const VectorType &Constraint,
                             const FullMatrixType &C_k,
-                            const FullMatrixType &C_k_inv,
                             const FullMatrixType &B_k,
                             MatrixType &D2E_vertex,
                             VectorType &rhs_k,
@@ -405,6 +417,8 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                 
                 _factory->produceDE_vertex(lineSearchDOFs,Constraint_linesearch);
                 _boundaryDOFs.transformToReducedSpace(Constraint_linesearch);
+                Constraint_linesearch.conservativeResize(Constraint_linesearch.size()+1);
+                Constraint_linesearch[Constraint_linesearch.size() -1] = _problemDOFs.getFoldDOFs()[0] - t_fixed;
 
                 constr_l1_linesearch = norm_l1(Constraint_linesearch);
                 RealType phi_l1_step = CostFunctional_val_linesearch + mu * constr_l1_linesearch;
@@ -426,6 +440,8 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                 
                     _factory->produceDE_vertex(lineSearchDOFs,Constraint_linesearch);
                     _boundaryDOFs.transformToReducedSpace(Constraint_linesearch);
+                    Constraint_linesearch.conservativeResize(Constraint_linesearch.size()+1);
+                    Constraint_linesearch[Constraint_linesearch.size() -1] = _problemDOFs.getFoldDOFs()[0] - t_fixed;
 
                     constr_l1_linesearch = norm_l1(Constraint_linesearch);
                     phi_l1_step = CostFunctional_val_linesearch + mu * constr_l1_linesearch;
@@ -475,20 +491,20 @@ class SQPLineSearchSolver : SQPBaseSolver<ConfiguratorType>{
                      const FullMatrixType &B_k_inv,
                      const FullMatrixType &C_k,
                      FullMatrixType &mult,
-                     FullMatrixType &B_invC,
                      const VectorType &rhs_k, 
                      VectorType &d_k, 
                      VectorType& lambda_kplus1) {
 
             size_t nEffectiveDOFs = nFoldDOFs + nEffectiveVertexDOFs;
 
-            B_invC = C_k.transpose();
-            mult = -C_k * B_invC;
+            mult = -C_k * C_k.transpose();
             VectorType Br1 = B_k_inv*rhs_k.segment(0, nEffectiveDOFs);
-            VectorType rhs = C_k*Br1 - rhs_k.segment(nEffectiveDOFs, nEffectiveVertexDOFs);
+            VectorType rhs = C_k*Br1 - rhs_k.segment(nEffectiveDOFs, nEffectiveVertexDOFs + 1);
             VectorType sol(rhs.size());
+            std::cout<<"mult number of rows: "<<mult.rows()<<" cols: "<<mult.cols()<<std::endl;
+            std::cout<<"rhs size: "<<rhs.size()<<std::endl;
             sol = _scipy_solver.solve_with_scipy(mult, rhs);
-            d_k = Br1 + B_invC*sol;
+            d_k = Br1 + C_k.transpose()*sol;
             lambda_kplus1 = -sol;
         }
 };
