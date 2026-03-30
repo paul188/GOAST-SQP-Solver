@@ -4,33 +4,49 @@
 [![C++ Standard](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.cppreference.com/w/cpp/17)
 [![Thesis](https://img.shields.io/badge/Thesis-Mathematics-green)](https://www.ins.uni-bonn.de/)
 
-This repository contains the implementation of a specialized **Sequential Quadratic Programming (SQP) Solver** for the optimization of folds and developability on discrete plates. This work was developed as part of a Master's Thesis in Mathematics at the **University of Bonn**.
+This repository contains the implementation of a specialized **Sequential Quadratic Programming (SQP) solver** for optimizing folds and developability on discrete plates. The project was developed as part of a Master's thesis in Mathematics at the **University of Bonn**.
+
+---
 
 ## 📖 Project Overview
 
-This project extends the [GOAST (Geodesic Orbitals and Small Transformations)](https://gitlab.com/numod/goast) library to handle complex geometric optimization problems. The core focus is on:
+This project extends the [GOAST (Geodesic Orbitals and Small Transformations)](https://gitlab.com/numod/goast) library to address complex geometric optimization problems.
 
-* **Developable Surfaces:** Ensuring that discrete meshes can be flattened into a plane without stretching or tearing.
-* **Fold Optimization:** Strategically placing and adjusting folds to reach target 3D geometries.
-* **SQP Solver:** A custom Sequential Quadratic Programming implementation designed to handle high-dimensional non-linear constraints inherent in discrete differential geometry.
+The main objectives are:
+
+* **Developable Surfaces**
+  Ensure that discrete meshes can be flattened into a plane without stretching or tearing.
+
+* **Fold Optimization**
+  Automatically place and refine folds to approximate target 3D geometries.
+
+* **Custom SQP Solver**
+  A tailored Sequential Quadratic Programming implementation designed for high-dimensional nonlinear constraints arising in discrete differential geometry.
 
 ---
 
 ## 🛠 Features
 
-* **Custom SQP Implementation:** Tailored for energy functionals related to discrete plate theory.
-* **Constraint Management:** Efficient handling of isometric and developability constraints.
-* **GOAST Integration:** Built directly upon the robust GOAST framework for geodesic calculations and manifold optimization.
-* **Visualization Support:** Tools to export optimization steps for analysis in software like ParaView or Polyscope.
+* **Custom SQP Implementation**
+  Designed specifically for energy functionals in discrete plate theory.
+
+* **Constraint Handling**
+  Efficient treatment of isometry and developability constraints.
+
+* **GOAST Integration**
+  Built on top of the GOAST framework for geodesic computations and manifold optimization.
+
+* **Visualization Support**
+  Export tools for analyzing optimization steps in software such as ParaView or Polyscope.
 
 ---
 
 ## 🖼 Gallery
 
-> **Note:** To display images, save your thesis plots as `.png` files in a folder named `docs/` and update the links below.
+> **Note:** Place your images (e.g., `.png`, `.gif`) inside a `docs/` directory and update the paths below.
 
-| Initial Mesh | SQP Optimization Progress | Final Folded State |
-| :---: | :---: | :---: |
+|            Initial Mesh            |     Optimization Progress    |       Final Folded State       |
+| :--------------------------------: | :--------------------------: | :----------------------------: |
 | ![Initial State](docs/initial.png) | ![Process](docs/process.gif) | ![Final State](docs/final.png) |
 
 ---
@@ -38,12 +54,62 @@ This project extends the [GOAST (Geodesic Orbitals and Small Transformations)](h
 ## ⚙️ Installation & Build
 
 ### Prerequisites
+
 * C++17 compatible compiler (GCC, Clang, or MSVC)
 * [CMake](https://cmake.org/) (>= 3.14)
 * [Eigen3](https://eigen.tuxfamily.org/)
- ## 🚀 Quick Start
 
-To run a fold optimization experiment using the SQP solver:
+### Build Instructions
+
+```bash
+git clone https://gitlab.com/numod/goast.git
+cd goast
+
+mkdir build && cd build
+cmake ..
+make -j$(nproc)
+```
+
+---
+
+## 🚀 Quick Start
+
+Run a fold optimization experiment using the SQP solver:
 
 ```bash
 ./bin/fold_optimizer --config configs/your_experiment.json
+```
+
+---
+
+## 📂 Project Structure
+
+```
+├── src/                # Core implementation
+├── configs/            # Experiment configurations
+├── docs/               # Images and visualization output
+├── bin/                # Compiled executables
+└── CMakeLists.txt
+```
+
+---
+
+## 📊 Output & Visualization
+
+The solver can export intermediate and final states for visualization. Recommended tools:
+
+* ParaView
+* Polyscope
+
+---
+
+## 📜 License
+
+This project is licensed under the MIT License.
+
+---
+
+## 🙌 Acknowledgements
+
+* GOAST library contributors
+* Institute for Numerical Simulation, University of Bonn
