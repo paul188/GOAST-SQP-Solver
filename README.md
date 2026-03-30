@@ -49,7 +49,7 @@ The main objectives are:
 * **Optimality Comparison**
 SQP Solver finds the optimal fold curvature $t \sim 0.8084$
 
-[!Comparison](imgs/img_comparison.png)
+![Comparison](imgs/img_comparison.png)
 ---
 
 ## ⚙️ Installation & Build
