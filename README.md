@@ -43,8 +43,13 @@ The main objectives are:
 
 |  Initial Mesh  (Folds marked red)  |   Optimal Folding Pattern      |
 | :--------------------------------: | :----------------------------: |
-| ![Initial State](imgs/base_0.png) | ![Final State](imgs/img_0.png) |
+| ![Initial State](imgs/base_0.png) | ![Final State](imgs/img_0.png)  |
+| ![Initial State 1](imgs/base_1.png) | ![Final State 1](imgs/img_1.png)  |
 
+* **Optimality Comparison**
+SQP Solver finds the optimal fold curvature $t \sim 0.8084$
+
+[!Comparison](imgs/img_comparison.png)
 ---
 
 ## ⚙️ Installation & Build
@@ -57,36 +62,7 @@ The main objectives are:
 
 ### Build Instructions
 
-```bash
-git clone https://gitlab.com/numod/goast.git
-cd goast
-
-mkdir build && cd build
-cmake ..
-make -j$(nproc)
-```
-
----
-
-## 🚀 Quick Start
-
-Run a fold optimization experiment using the SQP solver:
-
-```bash
-./bin/fold_optimizer --config configs/your_experiment.json
-```
-
----
-
-## 📂 Project Structure
-
-```
-├── src/                # Core implementation
-├── configs/            # Experiment configurations
-├── docs/               # Images and visualization output
-├── bin/                # Compiled executables
-└── CMakeLists.txt
-```
+See GOAST project at https://gitlab.com/numod/goast
 
 ---
 
