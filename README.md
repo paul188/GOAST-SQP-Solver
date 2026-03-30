@@ -47,7 +47,7 @@ This project extends the [GOAST (Geodesic Orbitals and Small Transformations)](h
 To run a fold optimization experiment using the SQP solver:
 
 ```bash
-./bin/fold_optimizer --config configs/your_experiment.json ```
+./bin/fold_optimizer --config configs/your_experiment.json ```bash
 
 ## 📊 Results
 
