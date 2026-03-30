@@ -41,11 +41,9 @@ The main objectives are:
 
 ## 🖼 Gallery
 
-> **Note:** Place your images (e.g., `.png`, `.gif`) inside a `docs/` directory and update the paths below.
-
-|            Initial Mesh            |       Final Folded State       |
+|  Initial Mesh  (Folds marked red)  |   Optimal Folding Pattern      |
 | :--------------------------------: | :----------------------------: |
-| ![Initial State](imgs/initial_0.png) | ![Final State](imgs/final_0.png) |
+| ![Initial State](imgs/base_0.png) | ![Final State](imgs/img_0.png) |
 
 ---
 
