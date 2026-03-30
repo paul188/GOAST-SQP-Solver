@@ -10,15 +10,16 @@ This repository contains the implementation of a specialized **Sequential Quadra
 
 ## 📖 Project Overview
 
-This project extends the [GOAST (Geodesic Orbitals and Small Transformations)](https://gitlab.com/numod/goast) library to address complex geometric optimization problems.
+This project extends the [GOAST (The Geometric Optimization and Simulation Toolbox)](https://gitlab.com/numod/goast) library to address complex geometric optimization problems.
 
 The main objectives are:
 
-* **Developable Surfaces**
-  Ensure that discrete meshes can be flattened into a plane without stretching or tearing.
-
 * **Fold Optimization**
-  Automatically place and refine folds to approximate target 3D geometries.
+  Automatically place and refine folds in thin plates and shells to calculate geometries as minimizers of elastic energies.
+
+* **Developable Surfaces**
+  Automatically generate meshes that are "developable", i.e. can be flattened into a plane without stretching or tearing,
+  under chosen boundary conditions.
 
 * **Custom SQP Solver**
   A tailored Sequential Quadratic Programming implementation designed for high-dimensional nonlinear constraints arising in discrete differential geometry.
@@ -35,9 +36,6 @@ The main objectives are:
 
 * **GOAST Integration**
   Built on top of the GOAST framework for geodesic computations and manifold optimization.
-
-* **Visualization Support**
-  Export tools for analyzing optimization steps in software such as ParaView or Polyscope.
 
 ---
 
@@ -100,6 +98,7 @@ The solver can export intermediate and final states for visualization. Recommend
 
 * ParaView
 * Polyscope
+* Blender
 
 ---
 
