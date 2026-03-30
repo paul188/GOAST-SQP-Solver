@@ -43,9 +43,9 @@ The main objectives are:
 
 > **Note:** Place your images (e.g., `.png`, `.gif`) inside a `docs/` directory and update the paths below.
 
-|            Initial Mesh            |     Optimization Progress    |       Final Folded State       |
-| :--------------------------------: | :--------------------------: | :----------------------------: |
-| ![Initial State](docs/initial.png) | ![Process](docs/process.gif) | ![Final State](docs/final.png) |
+|            Initial Mesh            |       Final Folded State       |
+| :--------------------------------: | :----------------------------: |
+| ![Initial State](imgs/initial_0.png) | ![Final State](imgs/final_0.png) |
 
 ---
 
