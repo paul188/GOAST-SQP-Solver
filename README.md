@@ -48,3 +48,23 @@ To run a fold optimization experiment using the SQP solver:
 
 ```bash
 ./bin/fold_optimizer --config configs/your_experiment.json ```
+
+## 📊 Results
+
+The SQP solver implemented in this repository has been tested on a variety of discrete plate optimization problems. Below are the key results highlighting the solver's performance and capabilities.
+
+### Fold Optimization on Discrete Plates
+The solver successfully identifies optimal fold configurations that minimize energy functionals while strictly adhering to developability and boundary constraints.
+
+| Initial State | SQP Convergence | Final Geometry |
+| :---: | :---: | :---: |
+| ![Flat Plate](docs/img/initial_plate.png) | ![Energy Decay](docs/img/convergence_plot.png) | ![Folded Result](docs/img/optimized_fold.png) |
+
+### Key Performance Metrics
+* **Convergence Efficiency**: The SQP approach demonstrates superior convergence rates compared to standard gradient-based methods for non-linear developability constraints.
+* **Constraint Satisfaction**: Achieves high-precision isometric mapping, ensuring the discrete plates remain developable throughout the optimization process.
+* **Versatility**: Capable of handling complex target curvatures and intricate fold patterns on high-resolution meshes.
+
+### Example Cases
+* **Target Curvature Matching**: Optimizing a flat sheet to match a specified Gaussian curvature distribution while maintaining a discrete plate structure.
+* **Boundary-Driven Folds**: Generating folding patterns based on external boundary forces and prescribed fold line locations.
